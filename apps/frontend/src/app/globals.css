@@ -1,0 +1,53 @@
+@import 'tailwindcss';
+
+:root {
+  --bg: #090b11;
+  --ink: #f8fafc;
+}
+
+@theme inline {
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--bg);
+  font-family: var(--font-sans), sans-serif;
+}
+
+.field {
+  width: 100%;
+  border-radius: 0.625rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.625rem 0.75rem;
+  color: #fff;
+}
+
+.field::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.btn-primary {
+  border-radius: 0.625rem;
+  background: #00d0a2;
+  color: #04111d;
+  padding: 0.625rem 0.875rem;
+  font-weight: 800;
+}
+
+.btn-primary:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
