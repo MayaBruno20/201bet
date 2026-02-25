@@ -1,0 +1,38 @@
+{
+  "name": "201bet",
+  "version": "1.0.0",
+  "description": "Monorepo MVP 201Bet (Next.js + NestJS + WebSocket)",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c cyan,magenta \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:full": "npm run infra:up && npm run dev",
+    "dev:backend": "DATABASE_URL=${DATABASE_URL:-postgresql://betuser:betpass@localhost:3504/betdb?schema=public} npm --prefix apps/backend run start:dev",
+    "dev:frontend": "npm --prefix apps/frontend run dev",
+    "build": "npm run build:backend && npm run build:frontend",
+    "build:backend": "npm --prefix apps/backend run build",
+    "build:frontend": "npm --prefix apps/frontend run build",
+    "start:backend": "npm --prefix apps/backend run start:prod",
+    "start:frontend": "npm --prefix apps/frontend run start",
+    "lint": "npm run lint:backend && npm run lint:frontend",
+    "lint:backend": "npm --prefix apps/backend run lint",
+    "lint:frontend": "npm --prefix apps/frontend run lint",
+    "db:generate": "DATABASE_URL=${DATABASE_URL:-postgresql://betuser:betpass@localhost:3504/betdb?schema=public} npm --prefix apps/backend run prisma:generate",
+    "db:push": "DATABASE_URL=${DATABASE_URL:-postgresql://betuser:betpass@localhost:3504/betdb?schema=public} npm --prefix apps/backend run prisma:push",
+    "db:migrate": "DATABASE_URL=${DATABASE_URL:-postgresql://betuser:betpass@localhost:3504/betdb?schema=public} npm --prefix apps/backend run prisma:migrate",
+    "db:seed": "DATABASE_URL=${DATABASE_URL:-postgresql://betuser:betpass@localhost:3504/betdb?schema=public} npm --prefix apps/backend run prisma:seed",
+    "infra:up": "docker start bet-postgres bet-redis >/dev/null 2>&1 || true; docker compose up -d --no-recreate postgres redis",
+    "infra:down": "docker compose stop postgres redis",
+    "infra:logs": "docker compose logs -f postgres redis"
+  },
+  "keywords": [
+    "nestjs",
+    "nextjs",
+    "websocket",
+    "201bet"
+  ],
+  "author": "201Bet Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

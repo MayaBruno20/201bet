@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.local
+coverage
+.nyc_output
+
+apps/backend/dist
+apps/backend/node_modules
+apps/frontend/.next
+apps/frontend/node_modules
+
+.DS_Store

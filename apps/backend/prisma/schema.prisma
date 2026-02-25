@@ -1,0 +1,336 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  OPERATOR
+  AUDITOR
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum EventStatus {
+  SCHEDULED
+  LIVE
+  FINISHED
+  CANCELED
+}
+
+enum MarketStatus {
+  OPEN
+  SUSPENDED
+  CLOSED
+  SETTLED
+}
+
+enum OddStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum BetStatus {
+  OPEN
+  WON
+  LOST
+  CANCELED
+  REFUNDED
+}
+
+enum WalletTransactionType {
+  DEPOSIT
+  WITHDRAW
+  BET_PLACED
+  BET_WON
+  BET_REFUND
+  BONUS
+  ADJUSTMENT
+}
+
+enum PaymentType {
+  DEPOSIT
+  WITHDRAW
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  FAILED
+  CANCELED
+}
+
+enum BonusStatus {
+  PENDING
+  ACTIVE
+  CONSUMED
+  CANCELED
+  EXPIRED
+}
+
+enum DuelStatus {
+  SCHEDULED
+  BOOKING_OPEN
+  BOOKING_CLOSED
+  FINISHED
+  CANCELED
+}
+
+model User {
+  id             String      @id @default(uuid())
+  email          String      @unique
+  password       String
+  name           String
+  firstName      String?
+  lastName       String?
+  cpf            String      @unique
+  birthDate      DateTime
+  phone          String?
+  country        String?
+  state          String?
+  city           String?
+  address        String?
+  postalCode     String?
+  nationality    String?
+  gender         String?
+  avatarUrl      String?
+  emailVerified  Boolean     @default(false)
+  role           UserRole    @default(USER)
+  status         UserStatus  @default(ACTIVE)
+  googleSub      String?     @unique
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  wallet         Wallet?
+  bets           Bet[]
+  payments       Payment[]
+  bonuses        Bonus[]
+  auditLogs      AuditLog[]  @relation("auditActor")
+  settings       GlobalSetting[] @relation("settingsUpdatedBy")
+
+  @@index([status])
+  @@index([role])
+}
+
+model Wallet {
+  id           String              @id @default(uuid())
+  userId       String              @unique
+  balance      Decimal             @default(0) @db.Decimal(20, 4)
+  currency     String              @default("BRL")
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  ledger       WalletTransaction[]
+}
+
+model WalletTransaction {
+  id           String                @id @default(uuid())
+  walletId     String
+  type         WalletTransactionType
+  amount       Decimal               @db.Decimal(20, 4)
+  reference    String?
+  createdAt    DateTime              @default(now())
+
+  wallet       Wallet                @relation(fields: [walletId], references: [id], onDelete: Restrict)
+
+  @@index([walletId, createdAt])
+  @@index([type])
+}
+
+model Event {
+  id           String      @id @default(uuid())
+  sport        String
+  name         String
+  startAt      DateTime
+  status       EventStatus @default(SCHEDULED)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  markets      Market[]
+  duels        Duel[]
+
+  @@index([startAt])
+  @@index([status])
+}
+
+model Driver {
+  id           String      @id @default(uuid())
+  name         String
+  nickname     String?
+  active       Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  cars         Car[]
+
+  @@index([active])
+}
+
+model Car {
+  id           String      @id @default(uuid())
+  driverId     String
+  name         String
+  category     String
+  number       String?
+  active       Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  driver       Driver      @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  leftDuels    Duel[]      @relation("leftCar")
+  rightDuels   Duel[]      @relation("rightCar")
+
+  @@index([driverId])
+  @@index([active])
+}
+
+model Duel {
+  id             String      @id @default(uuid())
+  eventId        String
+  leftCarId      String
+  rightCarId     String
+  startsAt       DateTime
+  bookingCloseAt DateTime
+  status         DuelStatus  @default(SCHEDULED)
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  event          Event       @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  leftCar        Car         @relation("leftCar", fields: [leftCarId], references: [id], onDelete: Restrict)
+  rightCar       Car         @relation("rightCar", fields: [rightCarId], references: [id], onDelete: Restrict)
+
+  @@index([eventId, startsAt])
+  @@index([status])
+}
+
+model Market {
+  id           String       @id @default(uuid())
+  eventId      String
+  name         String
+  status       MarketStatus @default(OPEN)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  event        Event        @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  odds         Odd[]
+
+  @@index([eventId])
+  @@index([status])
+}
+
+model Odd {
+  id             String      @id @default(uuid())
+  marketId       String
+  label          String
+  value          Decimal     @db.Decimal(12, 4)
+  status         OddStatus   @default(ACTIVE)
+  version        Int         @default(1)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  market         Market      @relation(fields: [marketId], references: [id], onDelete: Restrict)
+  betItems       BetItem[]
+
+  @@index([marketId, status])
+}
+
+model Bet {
+  id             String      @id @default(uuid())
+  userId         String
+  stake          Decimal     @db.Decimal(20, 4)
+  potentialWin   Decimal     @db.Decimal(20, 4)
+  status         BetStatus   @default(OPEN)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user           User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items          BetItem[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+model BetItem {
+  id               String      @id @default(uuid())
+  betId            String
+  oddId            String
+  oddAtPlacement   Decimal     @db.Decimal(12, 4)
+
+  bet              Bet         @relation(fields: [betId], references: [id], onDelete: Restrict)
+  odd              Odd         @relation(fields: [oddId], references: [id], onDelete: Restrict)
+
+  @@index([betId])
+  @@index([oddId])
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  userId        String
+  type          PaymentType
+  amount        Decimal       @db.Decimal(20, 4)
+  status        PaymentStatus @default(PENDING)
+  provider      String
+  providerRef   String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([status, type])
+}
+
+model Bonus {
+  id            String      @id @default(uuid())
+  userId        String
+  amount        Decimal     @db.Decimal(20, 4)
+  wagering      Int
+  status        BonusStatus @default(PENDING)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  user          User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+}
+
+model GlobalSetting {
+  id            String      @id @default(uuid())
+  key           String      @unique
+  value         String
+  description   String?
+  updatedById   String?
+  updatedAt     DateTime    @updatedAt
+  createdAt     DateTime    @default(now())
+
+  updatedBy     User?       @relation("settingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+model AuditLog {
+  id            String      @id @default(uuid())
+  actorUserId   String?
+  action        String
+  entity        String
+  entityId      String?
+  payload       Json?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime    @default(now())
+
+  actorUser     User?       @relation("auditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([entity, createdAt])
+}

@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install backend deps
+        run: npm ci
+        working-directory: apps/backend
+
+      - name: Install frontend deps
+        run: npm ci
+        working-directory: apps/frontend
+
+      - name: Build backend
+        run: npm run build
+        working-directory: apps/backend
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: apps/frontend
