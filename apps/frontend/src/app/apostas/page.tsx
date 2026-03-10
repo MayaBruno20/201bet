@@ -256,14 +256,14 @@ export default function ApostasPage() {
       <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
         <MainNav />
 
-        <section className='rounded-2xl border border-white/10 bg-[#101525] p-5'>
-          <p className='text-xs font-bold uppercase tracking-[0.18em] text-amber-300'>Apostas 50/50 em tempo real</p>
-          <h1 className='mt-2 text-3xl font-bold'>Escolha o evento, a etapa e o carro para apostar com clareza</h1>
-          <div className='mt-3 flex flex-wrap items-center gap-3 text-xs'>
-            <span className={`rounded-full px-3 py-1 font-bold ${connected ? 'bg-emerald-500/20 text-emerald-200' : 'bg-amber-500/20 text-amber-200'}`}>
-              {connected ? 'Atualização ao vivo conectada' : 'Reconectando atualização ao vivo'}
+        <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-5 sm:p-6'>
+          <h1 className='text-2xl font-semibold sm:text-3xl'>Apostas 50/50 em tempo real</h1>
+          <p className='mt-2 text-sm text-white/60'>Escolha o evento, a etapa e o carro para apostar.</p>
+          <div className='mt-4 flex flex-wrap items-center gap-3 text-xs'>
+            <span className={`inline-flex items-center rounded-full px-3 py-1.5 font-medium ${connected ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+              <span className={`mr-2 h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`}></span>
+              {connected ? 'Ao vivo' : 'Reconectando...'}
             </span>
-            <span className='rounded-full bg-white/10 px-3 py-1 text-white/70'>Sem necessidade de atualizar a página</span>
           </div>
         </section>
 
@@ -272,78 +272,103 @@ export default function ApostasPage() {
         {loading ? (
           <p className='mt-6 text-white/70'>Carregando mercados de apostas...</p>
         ) : (
-          <section className='mt-6 grid gap-5 lg:grid-cols-[0.95fr_1.35fr]'>
-            <aside className='space-y-4'>
-              <article className='rounded-2xl border border-white/10 bg-[#101525] p-4'>
-                <p className='text-xs font-bold uppercase tracking-[0.16em] text-cyan-300'>1) Escolha o evento</p>
-                <div className='mt-3 space-y-2'>
+          <section className='mt-4 grid gap-6 lg:grid-cols-[380px_1fr]'>
+            <aside className='space-y-6'>
+
+              <div className='space-y-4'>
+                <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3'>Eventos Disponíveis</p>
+                <div className='flex flex-col gap-2'>
                   {board?.events.map((event) => (
                     <button
                       key={event.id}
-                      className={`w-full rounded-lg border px-3 py-2 text-left text-sm ${selectedEventId === event.id ? 'border-cyan-400/60 bg-cyan-500/10' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
+                      className={`group flex items-center justify-between rounded-2xl p-4 transition-all duration-300 ${selectedEventId === event.id
+                        ? 'bg-gradient-to-r from-blue-500/25 to-blue-500/5 border-l-2 border-blue-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
+                        : 'bg-transparent hover:bg-white/5 border-l-2 border-transparent'
+                        }`}
                       type='button'
                       onClick={() => {
                         setSelectedEventId(event.id);
                         setSelectedDuelId(event.currentDuelId ?? event.stages[0]?.duelId ?? '');
                       }}
                     >
-                      <p className='font-semibold'>{event.name}</p>
-                      <p className='text-xs text-white/65'>{new Date(event.startAt).toLocaleString('pt-BR')} • {event.status}</p>
+                      <div className='text-left'>
+                        <p className={`font-medium transition-colors ${selectedEventId === event.id ? 'text-blue-100' : 'text-white/70 group-hover:text-white'}`}>{event.name}</p>
+                        <p className='mt-1 text-xs text-white/40'>{new Date(event.startAt).toLocaleDateString('pt-BR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                      </div>
+                      {selectedEventId === event.id && (
+                        <div className='h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]' />
+                      )}
                     </button>
                   ))}
                 </div>
-              </article>
+              </div>
 
-              <article className='rounded-2xl border border-white/10 bg-[#101525] p-4'>
-                <p className='text-xs font-bold uppercase tracking-[0.16em] text-emerald-300'>2) Modalidades disponíveis</p>
-                <div className='mt-3 flex flex-wrap gap-2'>
-                  {(selectedEvent?.marketNames ?? []).map((name) => (
-                    <span key={name} className='rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs'>
-                      {name}
-                    </span>
-                  ))}
+              {selectedEvent && (
+                <div className='space-y-4'>
+                  <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3'>Etapas da Corrida</p>
+                  <div className='flex flex-wrap gap-2'>
+                    {(selectedEvent.stages ?? []).map((stage) => (
+                      <button
+                        key={stage.duelId}
+                        className={`rounded-full px-4 py-2 text-sm font-medium transition-all duration-300 ${currentDuelId === stage.duelId
+                          ? 'bg-white text-[#090b11] shadow-lg scale-105'
+                          : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                          }`}
+                        type='button'
+                        onClick={() => setSelectedDuelId(stage.duelId)}
+                      >
+                        {stage.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </article>
+              )}
 
-              <article className='rounded-2xl border border-white/10 bg-[#101525] p-4'>
-                <p className='text-xs font-bold uppercase tracking-[0.16em] text-amber-300'>3) Etapa / corrida atual</p>
-                <div className='mt-3 space-y-2'>
-                  {(selectedEvent?.stages ?? []).map((stage) => (
-                    <button
-                      key={stage.duelId}
-                      className={`w-full rounded-lg border px-3 py-2 text-left text-xs ${currentDuelId === stage.duelId ? 'border-amber-300/60 bg-amber-400/10' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
-                      type='button'
-                      onClick={() => setSelectedDuelId(stage.duelId)}
-                    >
-                      <p className='font-semibold'>{stage.label}</p>
-                      <p className='text-white/70'>Largada: {new Date(stage.startsAt).toLocaleString('pt-BR')}</p>
-                      <p className='text-white/60'>Fechamento das apostas: {new Date(stage.bookingCloseAt).toLocaleString('pt-BR')}</p>
-                    </button>
-                  ))}
+              {selectedEvent?.marketNames && selectedEvent.marketNames.length > 0 && (
+                <div className='space-y-4'>
+                  <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3'>Modalidades</p>
+                  <div className='flex flex-wrap gap-2'>
+                    {selectedEvent.marketNames.map((name) => (
+                      <span key={name} className='rounded-lg bg-white/5 px-3 py-1.5 text-xs text-white/50 border border-white/5'>
+                        {name}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </article>
+              )}
             </aside>
 
-            <div className='space-y-4'>
-              <article className='rounded-2xl border border-white/10 bg-[#101525] p-5'>
-                <div className='flex flex-wrap items-center justify-between gap-3'>
-                  <div>
-                    <p className='text-xs uppercase tracking-[0.14em] text-white/60'>{snapshot?.stageLabel ?? 'Corrida selecionada'}</p>
-                    <h2 className='text-2xl font-bold'>{snapshot?.eventName ?? 'Selecione uma corrida'}</h2>
-                    <p className='text-sm text-white/70'>Pote total: R$ {snapshot ? formatMoney(snapshot.totalPool) : '--'} • Margem da casa: {snapshot?.marginPercent ?? '--'}%</p>
-                  </div>
-                  <div className='text-right text-sm'>
-                    <p className='rounded-full bg-white/10 px-3 py-1'>Fechamento: {snapshot ? formatCloseWindow(snapshot.closeInSeconds) : '--'}</p>
-                    {snapshot?.locked ? <p className='mt-2 text-amber-300'>{snapshot.lockMessage ?? 'Apostas pausadas no momento'}</p> : null}
-                  </div>
+            <div className='space-y-6'>
+              <div className='flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-white/5 pb-5'>
+                <div>
+                  <p className='text-[10px] font-semibold uppercase tracking-widest text-blue-400/70'>{snapshot?.stageLabel ?? 'Aguarde'}</p>
+                  <h2 className='mt-1 text-2xl font-semibold tracking-tight'>{snapshot?.eventName ?? 'Selecionando...'}</h2>
+                  <p className='mt-2 flex items-center gap-3 text-xs text-white/50'>
+                    <span>Pote total: <strong className='text-white/80'>R$ {snapshot ? formatMoney(snapshot.totalPool) : '--'}</strong></span>
+                    <span className='h-1 w-1 rounded-full bg-white/20'></span>
+                    <span>Margem: <strong className='text-white/80'>{snapshot?.marginPercent ?? '--'}%</strong></span>
+                  </p>
                 </div>
-              </article>
+                <div className='flex flex-col items-start sm:items-end gap-2'>
+                  <p className='inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-sm font-medium border border-white/5'>
+                    <svg className='h-4 w-4 text-emerald-400' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                      <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' />
+                    </svg>
+                    {snapshot ? formatCloseWindow(snapshot.closeInSeconds) : '--'}
+                  </p>
+                  {snapshot?.locked ? <p className='text-xs text-red-400 font-medium px-2'>{snapshot.lockMessage ?? 'Pausado'}</p> : null}
+                </div>
+              </div>
 
-              <article className='rounded-2xl border border-white/10 bg-[#101525] p-5'>
-                <p className='mb-3 text-sm font-bold'>4) Escolha em qual carro você quer apostar</p>
-                <div className='grid gap-4 md:grid-cols-2'>
+              <div className='glass rounded-3xl border border-white/8 p-6 relative overflow-hidden'>
+                <div className='absolute -right-20 -top-20 h-64 w-64 rounded-full bg-blue-500/5 blur-3xl'></div>
+                <div className='absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-emerald-500/5 blur-3xl'></div>
+
+                <p className='text-sm font-medium text-white/60 mb-5 relative z-10'>Em qual carro você vai apostar?</p>
+
+                <div className='grid gap-4 md:grid-cols-2 relative z-10'>
                   <OddCard
-                    title={snapshot?.duel.left.label ?? 'Lado azul'}
+                    title={snapshot?.duel.left.label ?? 'Carro da Esquerda'}
                     odd={snapshot?.duel.left.odd}
                     pool={snapshot?.duel.left.pool}
                     tickets={snapshot?.duel.left.tickets}
@@ -353,7 +378,7 @@ export default function ApostasPage() {
                     tone='blue'
                   />
                   <OddCard
-                    title={snapshot?.duel.right.label ?? 'Lado laranja'}
+                    title={snapshot?.duel.right.label ?? 'Carro da Direita'}
                     odd={snapshot?.duel.right.odd}
                     pool={snapshot?.duel.right.pool}
                     tickets={snapshot?.duel.right.tickets}
@@ -364,102 +389,170 @@ export default function ApostasPage() {
                   />
                 </div>
 
-                <div className='mt-4 rounded-xl border border-white/10 bg-white/5 p-4 text-sm'>
-                  <p className='font-semibold'>Resumo da sua aposta</p>
-                  <p className='mt-2 text-white/80'>Você está apostando em: <span className='font-bold text-white'>{selectedSide?.label ?? 'Selecione um lado'}</span></p>
-                  <p className='text-white/80'>Valor da aposta: <span className='font-bold text-white'>R$ {formatMoney(stake)}</span></p>
-                  <p className='text-white/80'>Retorno potencial: <span className='font-bold text-emerald-300'>R$ {formatMoney(expectedReturn)}</span></p>
-                  <p className='text-white/80'>Saldo atual: <span className='font-bold text-white'>R$ {formatMoney(currentBalance)}</span></p>
-                  <p className='text-white/80'>Saldo após aposta: <span className={`font-bold ${balanceAfterBet < 0 ? 'text-red-300' : 'text-white'}`}>R$ {formatMoney(balanceAfterBet)}</span></p>
-                  {!me ? <p className='mt-2 text-amber-300'>Faça login para apostar com saldo da carteira.</p> : null}
-                  {stake < 5 ? <p className='mt-1 text-amber-300'>Valor mínimo por aposta: R$ 5,00.</p> : null}
-                  {me && currentBalance < stake ? <p className='mt-1 text-red-300'>Seu saldo não é suficiente para esse valor.</p> : null}
-                  {sideBlockedMessage ? <p className='mt-1 text-amber-300'>{sideBlockedMessage}</p> : null}
-                </div>
+                <div className='mt-6 grid gap-6 lg:grid-cols-2 relative z-10'>
+                  <div className='space-y-1 text-sm'>
+                    <p className='text-white/40'>Sua seleção</p>
+                    <p className='text-lg font-medium'>{selectedSide?.label ?? 'Nenhum selecionado'}</p>
+                    <div className='h-2'></div>
+                    <div className='flex justify-between border-b border-white/5 pb-2 text-white/60'>
+                      <span>Saldo Total</span>
+                      <span className='font-medium text-white'>R$ {formatMoney(currentBalance)}</span>
+                    </div>
+                    <div className='flex justify-between border-b border-white/5 py-2 text-white/60'>
+                      <span>Saldo Final Estimado</span>
+                      <span className={`font-medium ${balanceAfterBet < 0 ? 'text-red-400' : 'text-white'}`}>R$ {formatMoney(balanceAfterBet)}</span>
+                    </div>
+                    <div className='flex justify-between py-2 text-white/60'>
+                      <span>Retorno Bruto</span>
+                      <span className='font-semibold text-emerald-400'>R$ {formatMoney(expectedReturn)}</span>
+                    </div>
 
-                <div className='mt-4 grid gap-3 sm:grid-cols-[1fr_auto]'>
-                  <input
-                    className='field'
-                    type='number'
-                    min={5}
-                    step={5}
-                    value={stake}
-                    onChange={(e) => setStake(Number(e.target.value || 0))}
-                  />
-                  <button type='button' className='btn-primary' disabled={!canBet || placingBet} onClick={() => setConfirmOpen(true)}>
-                    {placingBet ? 'Confirmando...' : 'Confirmar aposta'}
-                  </button>
-                </div>
-              </article>
+                    {!me && <p className='mt-3 text-xs text-amber-400'>● Você precisa fazer login para apostar.</p>}
+                    {stake < 5 && <p className='mt-1 text-xs text-amber-400'>● O valor mínimo é de R$ 5,00.</p>}
+                    {me && currentBalance < stake && <p className='mt-1 text-xs text-red-400'>● Saldo insuficiente para este valor.</p>}
+                    {sideBlockedMessage && <p className='mt-1 text-xs text-amber-400'>● {sideBlockedMessage}</p>}
+                  </div>
 
-              <article className='rounded-2xl border border-white/10 bg-[#101525] p-5'>
-                <p className='text-sm font-bold'>Histórico das mudanças de cotações</p>
-                <div className='mt-3 max-h-56 space-y-2 overflow-auto pr-1'>
+                  <div className='flex flex-col justify-end gap-3'>
+                    <div className='relative'>
+                      <span className='absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-medium'>R$</span>
+                      <input
+                        className='w-full rounded-2xl border border-white/10 bg-[#090b11]/50 py-4 pl-12 pr-4 text-2xl font-semibold text-white transition-all focus:border-white/30 focus:outline-none focus:ring-4 focus:ring-white/5'
+                        type='number'
+                        min={5}
+                        step={5}
+                        value={stake}
+                        onChange={(e) => setStake(Number(e.target.value || 0))}
+                      />
+                    </div>
+                    <button
+                      type='button'
+                      className='w-full rounded-2xl bg-white px-4 py-4 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all hover:bg-white/90 hover:scale-[1.02] hover:shadow-[0_0_25px_rgba(255,255,255,0.25)] focus:scale-95 disabled:opacity-50 disabled:pointer-events-none'
+                      disabled={!canBet || placingBet}
+                      onClick={() => setConfirmOpen(true)}
+                    >
+                      {placingBet ? 'Processando envio...' : 'Confirmar Bilhete ->'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <article className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-5'>
+                <div className='flex items-center justify-between mb-4'>
+                  <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30'>Histórico de cotações</p>
+                  <span className='text-[10px] text-white/20'>{(snapshot?.history ?? []).length} registros</span>
+                </div>
+                <div className='max-h-64 space-y-2 overflow-auto pr-1'>
                   {(snapshot?.history ?? []).slice().reverse().map((point) => (
-                    <p key={`${point.at}-${point.leftOdd}-${point.rightOdd}`} className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80'>
-                      {new Date(point.at).toLocaleTimeString('pt-BR')} • Azul {point.leftOdd.toFixed(2)} / Laranja {point.rightOdd.toFixed(2)} • Potes R$ {formatMoney(point.leftPool)} / R$ {formatMoney(point.rightPool)}
-                    </p>
+                    <div key={`${point.at}-${point.leftOdd}-${point.rightOdd}`} className='group rounded-xl border border-white/5 bg-gradient-to-r from-white/[0.02] to-transparent p-3 transition-colors hover:border-white/10'>
+                      <div className='flex items-center justify-between gap-4'>
+                        <div className='flex items-center gap-3'>
+                          <span className='text-[10px] text-white/30 tabular-nums w-14 shrink-0'>{new Date(point.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                          <div className='flex items-center gap-2'>
+                            <div className='flex items-baseline gap-1'>
+                              <span className='text-[10px] text-blue-400'>@</span>
+                              <span className='text-sm font-semibold tabular-nums'>{point.leftOdd.toFixed(2)}</span>
+                            </div>
+                            <span className='text-white/15'>/</span>
+                            <div className='flex items-baseline gap-1'>
+                              <span className='text-[10px] text-orange-400'>@</span>
+                              <span className='text-sm font-semibold tabular-nums'>{point.rightOdd.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className='text-right text-[10px] text-white/25 tabular-nums hidden sm:block'>
+                          R$ {formatMoney(point.leftPool)} / R$ {formatMoney(point.rightPool)}
+                        </div>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </article>
 
-              <article className='rounded-2xl border border-white/10 bg-[#101525] p-5'>
-                <p className='text-sm font-bold'>Minhas apostas nesta conta</p>
-                <p className='mt-1 text-xs text-white/65'>Filtre por evento, etapa e status para localizar rapidamente seus tickets.</p>
+              <div className='space-y-4 pt-8 mt-8 border-t border-white/8'>
+                <p className='text-lg font-semibold tracking-tight'>Meus Bilhetes</p>
 
-                <div className='mt-3 grid gap-2 md:grid-cols-3'>
-                  <select className='field' value={betEventFilter} onChange={(e) => setBetEventFilter(e.target.value)}>
-                    <option value='ALL'>Todos os eventos</option>
+                <div className='flex flex-wrap gap-2'>
+                  <select
+                    className='appearance-none rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-4 py-2 pr-8 text-xs text-white/80 outline-none transition-colors hover:bg-white/10 focus:border-white/20 cursor-pointer bg-[url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2212%22%20height%3D%2212%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M2%204l4%204%204-4%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%221.5%22%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20opacity%3D%220.5%22%2F%3E%3C%2Fsvg%3E")] bg-[length:12px_12px] bg-[right_12px_center] bg-no-repeat'
+                    value={betEventFilter}
+                    onChange={(e) => setBetEventFilter(e.target.value)}
+                  >
+                    <option value='ALL' className='bg-[#101525]'>Todos Eventos</option>
                     {betEventOptions.map((event) => (
-                      <option key={event.id} value={event.id}>
-                        {event.name}
-                      </option>
+                      <option key={event.id} value={event.id} className='bg-[#101525]'>{event.name}</option>
                     ))}
                   </select>
 
-                  <select className='field' value={betStageFilter} onChange={(e) => setBetStageFilter(e.target.value)}>
-                    <option value='ALL'>Todas as etapas</option>
+                  <select
+                    className='appearance-none rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-4 py-2 pr-8 text-xs text-white/80 outline-none transition-colors hover:bg-white/10 focus:border-white/20 cursor-pointer bg-[url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2212%22%20height%3D%2212%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M2%204l4%204%204-4%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%221.5%22%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20opacity%3D%220.5%22%2F%3E%3C%2Fsvg%3E")] bg-[length:12px_12px] bg-[right_12px_center] bg-no-repeat'
+                    value={betStageFilter}
+                    onChange={(e) => setBetStageFilter(e.target.value)}
+                  >
+                    <option value='ALL' className='bg-[#101525]'>Todas as Etapas</option>
                     {betStageOptions.map((stage) => (
-                      <option key={stage} value={stage}>
-                        {stage}
-                      </option>
+                      <option key={stage} value={stage} className='bg-[#101525]'>{stage}</option>
                     ))}
                   </select>
 
-                  <select className='field' value={betStatusFilter} onChange={(e) => setBetStatusFilter(e.target.value)}>
-                    <option value='ALL'>Todos os status</option>
+                  <select
+                    className='appearance-none rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-4 py-2 pr-8 text-xs text-white/80 outline-none transition-colors hover:bg-white/10 focus:border-white/20 cursor-pointer bg-[url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2212%22%20height%3D%2212%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M2%204l4%204%204-4%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%221.5%22%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20opacity%3D%220.5%22%2F%3E%3C%2Fsvg%3E")] bg-[length:12px_12px] bg-[right_12px_center] bg-no-repeat'
+                    value={betStatusFilter}
+                    onChange={(e) => setBetStatusFilter(e.target.value)}
+                  >
+                    <option value='ALL' className='bg-[#101525]'>Qualquer Status</option>
                     {betStatusOptions.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
+                      <option key={status} value={status} className='bg-[#101525]'>{status}</option>
                     ))}
                   </select>
                 </div>
 
-                <div className='mt-3 max-h-72 space-y-2 overflow-auto pr-1'>
+                <div className='mt-5 max-h-96 space-y-3 overflow-auto pr-2'>
                   {filteredBets.length ? (
                     filteredBets.map((bet) => {
                       const item = bet.items[0];
+                      const statusColor = bet.status === 'OPEN' ? 'bg-blue-500/20 text-blue-400' : bet.status === 'WON' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-white/50';
+
                       return (
-                        <div key={bet.id} className='rounded-lg border border-white/10 bg-white/5 p-3 text-sm'>
-                          <p className='font-semibold'>
-                            Ticket {bet.id.slice(0, 8)} • {item?.eventName ?? 'Evento'}
-                          </p>
-                          <p className='text-white/75'>
-                            {item?.stageLabel ?? 'Etapa'} • {item?.marketName ?? '-'} • seleção: {item?.oddLabel ?? '-'}
-                          </p>
-                          <p className='text-white/70'>
-                            Odd na entrada: {item?.oddAtPlacement?.toFixed(2) ?? '--'} • aposta R$ {formatMoney(bet.stake)} • retorno potencial R$ {formatMoney(bet.potentialWin)}
-                          </p>
-                          <p className='text-white/60'>{new Date(bet.createdAt).toLocaleString('pt-BR')} • status {bet.status}</p>
+                        <div key={bet.id} className='group rounded-2xl border border-white/8 bg-gradient-to-br from-white/[0.04] to-transparent p-5 transition-colors hover:border-white/15 hover:bg-white/5'>
+                          <div className='flex justify-between items-start mb-4'>
+                            <div>
+                              <p className='text-sm font-medium text-white/90'>{item?.eventName ?? 'Evento Desconhecido'}</p>
+                              <p className='text-xs text-white/50'>{item?.stageLabel ?? '--'} • {item?.marketName ?? '--'}</p>
+                            </div>
+                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wider ${statusColor}`}>
+                              {bet.status}
+                            </span>
+                          </div>
+
+                          <div className='grid grid-cols-2 gap-4 rounded-xl bg-[#090b11]/50 p-3'>
+                            <div>
+                              <p className='text-[10px] font-medium uppercase tracking-wider text-white/40'>Sua Seleção</p>
+                              <p className='text-sm font-medium text-white/90 mt-0.5'>{item?.oddLabel ?? '-'}</p>
+                            </div>
+                            <div>
+                              <p className='text-[10px] font-medium uppercase tracking-wider text-white/40'>Odd / Valor</p>
+                              <p className='text-sm text-white/70 mt-0.5'>@{item?.oddAtPlacement?.toFixed(2) ?? '--'} <span className='mx-1'>•</span> R$ {formatMoney(bet.stake)}</p>
+                            </div>
+                          </div>
+
+                          <div className='mt-4 flex items-center justify-between text-xs'>
+                            <p className='text-white/40'>#{bet.id.slice(0, 8)} • {new Date(bet.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                            <p className='font-medium text-emerald-400'>+ R$ {formatMoney(bet.potentialWin)}</p>
+                          </div>
                         </div>
                       );
                     })
                   ) : (
-                    <p className='text-sm text-white/60'>Nenhuma aposta encontrada para os filtros selecionados.</p>
+                    <div className='rounded-2xl border border-dashed border-white/10 p-8 text-center'>
+                      <svg className='mx-auto h-8 w-8 text-white/20' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                        <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={1} d='M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' />
+                      </svg>
+                      <p className='mt-2 text-sm text-white/40'>Nenhum bilhete encontrado</p>
+                    </div>
                   )}
                 </div>
-              </article>
+              </div>
             </div>
           </section>
         )}
@@ -467,11 +560,11 @@ export default function ApostasPage() {
 
       {confirmOpen ? (
         <div className='fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4'>
-          <div className='w-full max-w-md rounded-2xl border border-white/15 bg-[#101525] p-5 shadow-2xl'>
-            <p className='text-xs font-bold uppercase tracking-[0.14em] text-amber-300'>Confirmar aposta</p>
+          <div className='w-full max-w-md rounded-2xl border border-white/10 bg-[#101525] p-6 shadow-2xl'>
+            <p className='text-sm font-semibold text-white/80'>Confirmar aposta</p>
             <h3 className='mt-2 text-xl font-bold'>Deseja confirmar esta aposta?</h3>
             <p className='mt-3 text-sm text-white/85'>
-              Deseja apostar <span className='font-bold text-emerald-300'>R$ {formatMoney(stake)}</span> no{' '}
+              Deseja confirmar o bilhete no valor de <span className='font-bold text-emerald-400'>R$ {formatMoney(stake)}</span> no{' '}
               <span className='font-bold text-white'>{selectedSide?.label ?? 'lado selecionado'}</span>?
             </p>
             <p className='mt-1 text-sm text-white/70'>
@@ -525,22 +618,54 @@ function OddCard({
   onClick: () => void;
   tone: 'blue' | 'orange';
 }) {
-  const bg = tone === 'blue' ? 'from-sky-600 to-blue-500' : 'from-orange-500 to-amber-400';
+  const isBlue = tone === 'blue';
 
   return (
     <button
-      className={`w-full rounded-xl border p-4 text-left transition ${active ? 'border-cyan-300/60 bg-cyan-500/10' : 'border-white/10 bg-white/5'} ${locked ? 'opacity-55' : 'hover:border-white/20'}`}
+      className={`group relative w-full overflow-hidden text-left transition-all duration-500 ease-out outline-none ${active
+        ? 'scale-[1.02] shadow-2xl z-10'
+        : 'hover:scale-[1.01] hover:z-0 opacity-90 hover:opacity-100'
+        } ${locked ? 'grayscale opacity-40 hover:scale-100 pointer-events-none' : ''}`}
       type='button'
       onClick={onClick}
       disabled={locked}
     >
-      <div className={`rounded-xl bg-gradient-to-br ${bg} p-4`}>
-        <p className='text-xs uppercase tracking-[0.12em] text-white/80'>Booking 50/50</p>
-        <p className='mt-1 text-base font-bold'>{title}</p>
-        <p className='mt-2 text-3xl font-extrabold'>{odd?.toFixed(2) ?? '--'}</p>
+      <div className={`absolute inset-0 border-2 rounded-3xl transition-colors duration-300 ${active ? (isBlue ? 'border-blue-500' : 'border-orange-500') : 'border-transparent'}`} />
+
+      <div className={`rounded-3xl p-6 h-full flex flex-col justify-between ${isBlue ? 'bg-gradient-to-br from-[#121c2d] to-[#0a101d]' : 'bg-gradient-to-br from-[#2d1c12] to-[#1d100a]'}`}>
+
+        <div className={`absolute -right-12 -top-12 h-32 w-32 rounded-full blur-3xl transition-opacity duration-500 ${active ? 'opacity-30' : 'opacity-0'} ${isBlue ? 'bg-blue-400' : 'bg-orange-400'}`} />
+
+        <div className='relative z-10'>
+          <div className='flex items-center gap-2 mb-2'>
+            <div className={`w-2 h-2 rounded-full shadow-[0_0_10px_currentColor] ${isBlue ? 'text-blue-400 bg-blue-400' : 'text-orange-400 bg-orange-400'}`} />
+            <p className='text-[10px] font-bold uppercase tracking-widest text-white/50'>Opção</p>
+          </div>
+          <p className='text-lg font-medium tracking-tight text-white/90 leading-tight min-h-[50px]'>{title}</p>
+        </div>
+
+        <div className='relative z-10 mt-6 flex items-end justify-between'>
+          <div>
+            <p className='text-xs font-semibold text-white/40 mb-1'>Cotação</p>
+            <div className='flex items-baseline gap-1'>
+              <span className={`text-xl font-medium ${isBlue ? 'text-blue-400' : 'text-orange-400'}`}>@</span>
+              <p className='text-4xl font-bold tracking-tighter text-white'>{odd?.toFixed(2) ?? '--'}</p>
+            </div>
+          </div>
+
+          <div className='text-right'>
+            <p className='text-[10px] font-medium uppercase tracking-widest text-white/30 mb-1'>Volume</p>
+            <p className='text-xs font-medium text-white/60'>R$ {formatMoney(pool ?? 0)}</p>
+            <p className='text-[10px] text-white/40 mt-0.5'>{tickets ?? '--'} APOSTAS</p>
+          </div>
+        </div>
+
+        {locked && (
+          <div className='absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm rounded-3xl z-20'>
+            <p className='text-white/90 font-bold uppercase tracking-widest text-sm bg-black/80 px-4 py-2 rounded-full border border-white/10'>Pausado</p>
+          </div>
+        )}
       </div>
-      <p className='mt-2 text-sm text-white/80'>Pote deste lado: R$ {formatMoney(pool ?? 0)}</p>
-      <p className='text-sm text-white/70'>Total de apostas neste lado: {tickets ?? '--'} {locked ? '• PAUSADO' : ''}</p>
     </button>
   );
 }

@@ -1,13 +1,13 @@
 import type { Metadata } from 'next';
-import { Space_Grotesk, JetBrains_Mono } from 'next/font/google';
+import { Inter, Roboto_Mono } from 'next/font/google';
 import './globals.css';
 
-const fontSans = Space_Grotesk({
+const fontSans = Inter({
   variable: '--font-sans',
   subsets: ['latin'],
 });
 
-const fontMono = JetBrains_Mono({
+const fontMono = Roboto_Mono({
   variable: '--font-mono',
   subsets: ['latin'],
 });

@@ -95,6 +95,7 @@ export default function CarteiraPage() {
   const [activeTab, setActiveTab] = useState<UserTab>('conta');
   const [statusMessage, setStatusMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [tabMenuOpen, setTabMenuOpen] = useState(false);
 
   const [profileForm, setProfileForm] = useState({
     firstName: '',
@@ -250,10 +251,10 @@ export default function CarteiraPage() {
       <main className='min-h-screen bg-[#090b11] text-white'>
         <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
           <MainNav />
-          <section className='mt-8 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-6'>
-            <h1 className='text-2xl font-bold'>Login necessário</h1>
-            <p className='mt-2 text-white/80'>Entre com sua conta para acessar o painel do usuário.</p>
-            <a href='/login' className='mt-4 inline-flex rounded-lg bg-amber-400 px-4 py-2 font-bold text-black'>Ir para login</a>
+          <section className='mt-8 rounded-3xl border border-white/10 bg-amber-500/5 p-6 backdrop-blur-md'>
+            <h1 className='text-2xl font-semibold'>Login necessário</h1>
+            <p className='mt-2 text-white/50'>Entre com sua conta para acessar o painel do usuário.</p>
+            <a href='/login' className='mt-4 inline-flex rounded-2xl bg-white px-5 py-3 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]'>Ir para login</a>
           </section>
         </div>
       </main>
@@ -265,28 +266,60 @@ export default function CarteiraPage() {
       <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
         <MainNav />
 
-        <section className='rounded-2xl border border-white/10 bg-[#101525] p-4'>
+        <section className='rounded-3xl border border-white/10 bg-[#101525] p-5 backdrop-blur-md'>
           <div className='flex flex-wrap items-center gap-4'>
-            <div className='h-14 w-14 overflow-hidden rounded-full border border-white/20 bg-white/10'>
+            <div className='h-14 w-14 overflow-hidden rounded-full border border-white/10 bg-white/5'>
               {profileForm.avatarUrl ? (
                 <img src={profileForm.avatarUrl} alt='Avatar do usuário' className='h-full w-full object-cover' />
               ) : (
-                <div className='flex h-full w-full items-center justify-center text-xl font-extrabold'>{displayName.slice(0, 1).toUpperCase()}</div>
+                <div className='flex h-full w-full items-center justify-center text-xl font-semibold text-white/60'>{displayName.slice(0, 1).toUpperCase()}</div>
               )}
             </div>
             <div>
-              <p className='text-lg font-bold'>{displayName}</p>
-              <p className='text-sm text-white/70'>{user?.email}</p>
+              <p className='text-lg font-medium'>{displayName}</p>
+              <p className='text-sm text-white/40'>{user?.email}</p>
             </div>
           </div>
 
-          <div className='mt-6 flex flex-wrap gap-2 border-t border-white/10 pt-4'>
+          {/* Mobile: Dropdown selector */}
+          <div className='mt-6 border-t border-white/5 pt-4 md:hidden'>
+            <button
+              type='button'
+              onClick={() => setTabMenuOpen((v) => !v)}
+              className='flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium transition-all hover:bg-white/10'
+            >
+              <div className='flex items-center gap-3'>
+                <span className='h-2 w-2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.4)]' />
+                {TAB_LABELS[activeTab]}
+              </div>
+              <svg className={`h-4 w-4 text-white/40 transition-transform duration-300 ${tabMenuOpen ? 'rotate-180' : ''}`} fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+                <path strokeLinecap='round' strokeLinejoin='round' d='M19 9l-7 7-7-7' />
+              </svg>
+            </button>
+            
+            <div className={`mt-2 overflow-hidden rounded-2xl border border-white/10 bg-[#101525] transition-all duration-300 ease-out ${tabMenuOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0 border-transparent'}`}>
+              {(Object.keys(TAB_LABELS) as UserTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  type='button'
+                  onClick={() => { setActiveTab(tab); setTabMenuOpen(false); }}
+                  className={`flex w-full items-center gap-3 px-4 py-3.5 text-sm font-medium transition-colors ${activeTab === tab ? 'bg-white/5 text-white' : 'text-white/40 hover:bg-white/5 hover:text-white/70'}`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full transition-all ${activeTab === tab ? 'bg-white scale-100' : 'bg-transparent scale-0'}`} />
+                  {TAB_LABELS[tab]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Desktop: Pill buttons */}
+          <div className='mt-6 hidden md:flex flex-wrap gap-2 border-t border-white/5 pt-4'>
             {(Object.keys(TAB_LABELS) as UserTab[]).map((tab) => (
               <button
                 key={tab}
                 type='button'
                 onClick={() => setActiveTab(tab)}
-                className={`rounded-lg px-3 py-2 text-sm ${activeTab === tab ? 'bg-cyan-400 font-bold text-black' : 'bg-white/10 text-white/80 hover:bg-white/15'}`}
+                className={`rounded-full px-4 py-2 text-sm font-medium transition-all duration-300 ${activeTab === tab ? 'bg-white text-black shadow-lg' : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'}`}
               >
                 {TAB_LABELS[tab]}
               </button>
@@ -298,17 +331,17 @@ export default function CarteiraPage() {
 
         {activeTab === 'conta' ? (
           <section className='mt-6 grid gap-4 lg:grid-cols-[280px_1fr]'>
-            <aside className='rounded-2xl border border-white/10 bg-[#101525] p-4'>
-              <p className='text-xs font-bold uppercase tracking-[0.18em] text-cyan-300'>Conta</p>
-              <p className='mt-2 text-sm text-white/75'>Informações de perfil e documento.</p>
-              <label className='mt-4 block rounded-lg border border-white/15 bg-white/5 p-3 text-sm'>
-                Trocar foto
-                <input type='file' accept='image/*' className='mt-2 block text-xs' onChange={onAvatarUpload} />
+            <aside className='rounded-3xl border border-white/10 bg-[#101525] p-5 backdrop-blur-md'>
+              <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3'>Conta</p>
+              <p className='mt-2 text-sm text-white/50'>Informações de perfil e documento.</p>
+              <label className='mt-4 block rounded-lg border border-white/15 bg-white/5 p-3 text-sm cursor-pointer'>
+                <span className='block font-medium'>Trocar foto</span>
+                <input type='file' accept='image/*' className='mt-2 block w-full text-xs text-white/50' onChange={onAvatarUpload} />
               </label>
             </aside>
 
-            <article className='rounded-2xl border border-white/10 bg-[#101525] p-4'>
-              <h2 className='text-2xl font-bold'>Informações da Conta</h2>
+            <article className='rounded-3xl border border-white/10 bg-[#101525] p-5 backdrop-blur-md'>
+              <h2 className='text-2xl font-semibold tracking-tight'>Informações da Conta</h2>
               <div className='mt-4 grid gap-3 md:grid-cols-2'>
                 <input className='field' placeholder='Primeiro nome' value={profileForm.firstName} onChange={(e) => setProfileForm((p) => ({ ...p, firstName: e.target.value }))} />
                 <input className='field' placeholder='Último nome' value={profileForm.lastName} onChange={(e) => setProfileForm((p) => ({ ...p, lastName: e.target.value }))} />
@@ -324,7 +357,7 @@ export default function CarteiraPage() {
                 <input className='field bg-white/5 text-white/70' value={`CPF: ${user?.cpf ?? ''}`} readOnly />
                 <input className='field bg-white/5 text-white/70' value={`Nascimento: ${user?.birthDate ? new Date(user.birthDate).toLocaleDateString('pt-BR') : ''}`} readOnly />
               </div>
-              <button type='button' className='btn-primary mt-4' disabled={loading} onClick={saveProfile}>
+              <button type='button' className='w-full sm:w-auto rounded-2xl bg-white px-6 py-3 text-sm font-bold text-black shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-all hover:shadow-[0_0_25px_rgba(255,255,255,0.2)] hover:scale-[1.01] disabled:opacity-50 mt-5' disabled={loading} onClick={saveProfile}>
                 {loading ? 'Salvando...' : 'Salvar'}
               </button>
             </article>
@@ -332,35 +365,37 @@ export default function CarteiraPage() {
         ) : null}
 
         {activeTab === 'saldo' ? (
-          <section className='mt-6 rounded-2xl border border-white/10 bg-[#101525] p-5'>
-            <h2 className='text-3xl font-bold'>Meu saldo</h2>
+          <section className='mt-6 rounded-3xl border border-white/10 bg-[#101525] p-6 backdrop-blur-md'>
+            <h2 className='text-2xl font-semibold tracking-tight'>Meu saldo</h2>
             <div className='mt-6 grid gap-4 md:grid-cols-2'>
-              <div className='rounded-xl border border-white/10 bg-white/5 p-4'>
-                <p className='text-xs uppercase tracking-[0.12em] text-white/60'>Saldo da conta</p>
-                <p className='mt-2 text-3xl font-extrabold'>
+              <div className='rounded-2xl border border-white/10 bg-white/[0.04] p-5'>
+                <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-2'>Saldo da conta</p>
+                <p className='mt-3 text-3xl font-semibold'>
                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: transactions?.wallet.currency ?? 'BRL' }).format(transactions?.wallet.balance ?? user?.wallet?.balance ?? 0)}
                 </p>
               </div>
-              <div className='rounded-xl border border-amber-300/30 bg-amber-500/10 p-4'>
-                <p className='text-sm font-bold'>Depósito e saque</p>
-                <p className='mt-2 text-sm text-white/75'>Em manutenção até integração de gateway (PIX / cartão).</p>
+              <div className='rounded-2xl border border-white/10 bg-white/[0.04] p-5'>
+                <p className='text-sm font-medium'>Depósito e saque</p>
+                <p className='mt-2 text-sm text-white/50'>Em manutenção até integração de gateway (PIX / cartão).</p>
               </div>
             </div>
           </section>
         ) : null}
 
         {activeTab === 'historico' ? (
-          <section className='mt-6 rounded-2xl border border-white/10 bg-[#101525] p-5'>
-            <h2 className='text-3xl font-bold'>Histórico de apostas</h2>
+          <section className='mt-6 rounded-3xl border border-white/10 bg-[#101525] p-6 backdrop-blur-md'>
+            <h2 className='text-2xl font-semibold tracking-tight'>Histórico de apostas</h2>
             {!bets.length ? (
-              <p className='mt-10 text-center text-white/70'>Você ainda não tem apostas registradas.</p>
+              <div className='mt-10 rounded-2xl border border-dashed border-white/10 p-8 text-center'>
+                <p className='text-white/40'>Você ainda não tem apostas registradas.</p>
+              </div>
             ) : (
               <div className='mt-5 space-y-3'>
                 {bets.map((bet) => (
-                  <article key={bet.id} className='rounded-xl border border-white/10 bg-white/5 p-4'>
-                    <p className='text-sm text-white/70'>{new Date(bet.createdAt).toLocaleString('pt-BR')}</p>
-                    <p className='mt-1 font-bold'>Stake: R$ {bet.stake.toFixed(2)} • Retorno potencial: R$ {bet.potentialWin.toFixed(2)}</p>
-                    <p className='text-sm text-cyan-200'>Status: {traduzirStatusAposta(bet.status)}</p>
+                  <article key={bet.id} className='rounded-2xl border border-white/8 bg-gradient-to-br from-white/[0.04] to-transparent p-5 transition-colors hover:border-white/15'>
+                    <p className='text-xs text-white/40'>{new Date(bet.createdAt).toLocaleString('pt-BR')}</p>
+                    <p className='mt-1 font-medium'>R$ {bet.stake.toFixed(2)} <span className='text-white/40 mx-1'>•</span> Retorno: <span className='text-emerald-400'>R$ {bet.potentialWin.toFixed(2)}</span></p>
+                    <p className='text-sm text-white/50'>Status: {traduzirStatusAposta(bet.status)}</p>
                   </article>
                 ))}
               </div>
@@ -369,48 +404,92 @@ export default function CarteiraPage() {
         ) : null}
 
         {activeTab === 'transacoes' ? (
-          <section className='mt-6 grid gap-4 lg:grid-cols-[260px_1fr]'>
-            <aside className='rounded-2xl border border-white/10 bg-[#101525] p-4'>
-              <p className='text-sm font-bold'>Transações</p>
-              <p className='mt-2 text-xs text-white/60'>Depósitos e saques</p>
-              <div className='mt-4 space-y-2'>
-                <div className='rounded-lg border border-amber-300/30 bg-amber-500/10 p-2 text-xs'>Depósito: Em manutenção</div>
-                <div className='rounded-lg border border-amber-300/30 bg-amber-500/10 p-2 text-xs'>Saque: Em manutenção</div>
+          <section className='mt-6 space-y-6'>
+            {/* Actions Panel */}
+            <div className='rounded-2xl border border-white/10 bg-[#101525] p-5'>
+              <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3'>Ações financeiras</p>
+              <div className='grid gap-3 sm:grid-cols-2'>
+                <div className='rounded-xl border border-white/10 bg-white/[0.03] p-4 flex items-center gap-4'>
+                  <div className='h-10 w-10 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0'>
+                    <svg className='h-5 w-5 text-emerald-400' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+                      <path strokeLinecap='round' strokeLinejoin='round' d='M12 4v16m8-8H4' />
+                    </svg>
+                  </div>
+                  <div className='min-w-0'>
+                    <p className='font-medium text-sm'>Depósito</p>
+                    <p className='text-xs text-amber-400/80'>Em manutenção</p>
+                  </div>
+                </div>
+                <div className='rounded-xl border border-white/10 bg-white/[0.03] p-4 flex items-center gap-4'>
+                  <div className='h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0'>
+                    <svg className='h-5 w-5 text-blue-400' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+                      <path strokeLinecap='round' strokeLinejoin='round' d='M19 14l-7 7m0 0l-7-7m7 7V3' />
+                    </svg>
+                  </div>
+                  <div className='min-w-0'>
+                    <p className='font-medium text-sm'>Saque</p>
+                    <p className='text-xs text-amber-400/80'>Em manutenção</p>
+                  </div>
+                </div>
               </div>
-            </aside>
-            <article className='rounded-2xl border border-white/10 bg-[#101525] p-4'>
-              <h2 className='text-2xl font-bold'>Extrato</h2>
-              <div className='mt-4 grid gap-4 md:grid-cols-2'>
-                <div>
-                  <p className='text-sm font-bold'>Lançamentos da carteira</p>
-                  <div className='mt-2 max-h-80 space-y-2 overflow-auto pr-1'>
+            </div>
+
+            {/* Ledger & Payments */}
+            <div className='rounded-3xl border border-white/10 bg-[#101525] overflow-hidden'>
+              <div className='p-6'>
+                <h2 className='text-xl font-semibold tracking-tight'>Extrato</h2>
+              </div>
+              
+              <div className='grid gap-0 md:grid-cols-2'>
+                {/* Ledger */}
+                <div className='border-t border-white/5 md:border-r md:border-t-0 p-6'>
+                  <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-4'>Lançamentos</p>
+                  <div className='max-h-80 space-y-2 overflow-auto pr-1'>
                     {transactions?.ledger.length ? (
                       transactions.ledger.map((entry) => (
-                        <p key={entry.id} className='rounded-lg border border-white/10 bg-white/5 p-2 text-sm'>
-                          {traduzirTipoLedger(entry.type)} • R$ {entry.amount.toFixed(2)} • {new Date(entry.createdAt).toLocaleString('pt-BR')}
-                        </p>
+                        <div key={entry.id} className='rounded-xl border border-white/10 bg-gradient-to-br from-white/[0.03] to-transparent p-3 flex items-center justify-between gap-3'>
+                          <div className='min-w-0'>
+                            <p className='text-sm font-medium truncate'>{traduzirTipoLedger(entry.type)}</p>
+                            <p className='text-[10px] text-white/30 mt-0.5'>{new Date(entry.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                          </div>
+                          <span className={`shrink-0 text-sm font-semibold ${entry.amount >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {entry.amount >= 0 ? '+' : ''}R$ {entry.amount.toFixed(2)}
+                          </span>
+                        </div>
                       ))
                     ) : (
-                      <p className='text-sm text-white/60'>Sem lançamentos.</p>
+                      <p className='text-sm text-white/30 text-center py-6'>Sem lançamentos.</p>
                     )}
                   </div>
                 </div>
-                <div>
-                  <p className='text-sm font-bold'>Pagamentos</p>
-                  <div className='mt-2 max-h-80 space-y-2 overflow-auto pr-1'>
+
+                {/* Payments */}
+                <div className='border-t border-white/5 p-6'>
+                  <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-4'>Pagamentos</p>
+                  <div className='max-h-80 space-y-2 overflow-auto pr-1'>
                     {transactions?.payments.length ? (
                       transactions.payments.map((entry) => (
-                        <p key={entry.id} className='rounded-lg border border-white/10 bg-white/5 p-2 text-sm'>
-                          {traduzirTipoPagamento(entry.type)} • R$ {entry.amount.toFixed(2)} • {traduzirStatusPagamento(entry.status)}
-                        </p>
+                        <div key={entry.id} className='rounded-xl border border-white/10 bg-gradient-to-br from-white/[0.03] to-transparent p-3 flex items-center justify-between gap-3'>
+                          <div className='min-w-0'>
+                            <p className='text-sm font-medium truncate'>{traduzirTipoPagamento(entry.type)}</p>
+                            <p className='text-[10px] text-white/30 mt-0.5'>R$ {entry.amount.toFixed(2)}</p>
+                          </div>
+                          <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wider ${
+                            entry.status === 'APPROVED' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'
+                            : entry.status === 'PENDING' ? 'bg-amber-500/15 text-amber-400 border-amber-500/20'
+                            : 'bg-white/10 text-white/50 border-white/10'
+                          }`}>
+                            {traduzirStatusPagamento(entry.status)}
+                          </span>
+                        </div>
                       ))
                     ) : (
-                      <p className='text-sm text-white/60'>Sem pagamentos registrados.</p>
+                      <p className='text-sm text-white/30 text-center py-6'>Sem pagamentos registrados.</p>
                     )}
                   </div>
                 </div>
               </div>
-            </article>
+            </div>
           </section>
         ) : null}
       </div>

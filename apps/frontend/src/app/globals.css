@@ -6,8 +6,8 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-mono);
+  --font-sans: var(--font-sans, "Inter", sans-serif);
+  --font-mono: var(--font-mono, "Roboto Mono", monospace);
 }
 
 * {
@@ -23,20 +23,44 @@ body {
   margin: 0;
   color: var(--ink);
   background: var(--bg);
-  font-family: var(--font-sans), sans-serif;
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar for sleek UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 .field {
   width: 100%;
   border-radius: 0.625rem;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
   padding: 0.625rem 0.75rem;
   color: #fff;
+  transition: all 0.2s ease;
+}
+
+.field:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .field::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .btn-primary {
@@ -45,9 +69,17 @@ body {
   color: #04111d;
   padding: 0.625rem 0.875rem;
   font-weight: 800;
+  transition: all 0.2s ease;
 }
 
 .btn-primary:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+}
+
+.glass {
+  background: rgba(9, 11, 17, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }

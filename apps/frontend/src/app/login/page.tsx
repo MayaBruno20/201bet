@@ -142,20 +142,20 @@ export default function LoginPage() {
 
       <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
         <MainNav />
-        <section className='mx-auto mt-12 max-w-md rounded-2xl border border-white/10 bg-[#101525] p-6'>
-          <h1 className='text-2xl font-bold'>Entrar na plataforma</h1>
-          <p className='mt-2 text-sm text-white/70'>Acesse para ver seus tickets, saldo e histórico.</p>
+        <section className='mx-auto mt-12 max-w-md rounded-3xl border border-white/10 bg-[#101525] p-8 backdrop-blur-md'>
+          <h1 className='text-2xl font-semibold tracking-tight'>Entrar na plataforma</h1>
+          <p className='mt-2 text-sm text-white/50'>Acesse para ver seus tickets, saldo e histórico.</p>
 
-          <div className='mt-4 flex gap-2'>
+          <div className='mt-5 flex gap-2'>
             <button
-              className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${mode === 'login' ? 'bg-cyan-400 text-black' : 'bg-white/10 text-white'}`}
+              className={`flex-1 rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-300 ${mode === 'login' ? 'bg-white text-black shadow-lg' : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'}`}
               onClick={() => setMode('login')}
               type='button'
             >
               Login
             </button>
             <button
-              className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${mode === 'register' ? 'bg-cyan-400 text-black' : 'bg-white/10 text-white'}`}
+              className={`flex-1 rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-300 ${mode === 'register' ? 'bg-white text-black shadow-lg' : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'}`}
               onClick={() => setMode('register')}
               type='button'
             >
@@ -166,7 +166,7 @@ export default function LoginPage() {
           <form className='mt-5 space-y-3' onSubmit={handleSubmit}>
             {mode === 'register' ? (
               <input
-                className='w-full rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm'
+                className='w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm text-white placeholder:text-white/30 outline-none transition-all focus:border-white/20 focus:ring-4 focus:ring-white/5'
                 type='text'
                 placeholder='Nome'
                 value={name}
@@ -194,7 +194,7 @@ export default function LoginPage() {
             {mode === 'register' ? (
               <>
                 <input
-                  className='w-full rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm'
+                  className='w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm text-white placeholder:text-white/30 outline-none transition-all focus:border-white/20 focus:ring-4 focus:ring-white/5'
                   type='password'
                   placeholder='Confirmar senha'
                   value={confirmPassword}
@@ -202,7 +202,7 @@ export default function LoginPage() {
                   required
                 />
                 <input
-                  className='w-full rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm'
+                  className='w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm text-white placeholder:text-white/30 outline-none transition-all focus:border-white/20 focus:ring-4 focus:ring-white/5'
                   type='text'
                   inputMode='numeric'
                   placeholder='CPF (somente números)'
@@ -211,7 +211,7 @@ export default function LoginPage() {
                   required
                 />
                 <input
-                  className='w-full rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm'
+                  className='w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm text-white placeholder:text-white/30 outline-none transition-all focus:border-white/20 focus:ring-4 focus:ring-white/5'
                   type='date'
                   value={birthDate}
                   onChange={(e) => setBirthDate(e.target.value)}
@@ -219,7 +219,7 @@ export default function LoginPage() {
                 />
               </>
             ) : null}
-            <button disabled={loading} className='w-full rounded-xl bg-amber-400 px-4 py-3 text-sm font-extrabold text-black disabled:opacity-70'>
+            <button disabled={loading} className='w-full rounded-2xl bg-white px-4 py-3.5 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] hover:scale-[1.01] disabled:opacity-50 disabled:pointer-events-none'>
               {loading ? 'Processando...' : mode === 'login' ? 'Entrar' : 'Cadastrar'}
             </button>
           </form>
@@ -235,11 +235,11 @@ export default function LoginPage() {
             <p className='mt-2 text-center text-xs text-amber-200'>Configure `NEXT_PUBLIC_GOOGLE_CLIENT_ID` para habilitar Google Login.</p>
           ) : null}
 
-          {error ? <p className='mt-3 rounded-lg border border-red-400/30 bg-red-500/10 p-2 text-sm text-red-100'>{error}</p> : null}
+          {error ? <p className='mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200'>{error}</p> : null}
 
-          <p className='mt-4 text-sm text-white/70'>
+          <p className='mt-5 text-sm text-white/40'>
             Precisa de suporte?{' '}
-            <Link href='/' className='text-amber-300'>
+            <Link href='/' className='text-white/70 hover:text-white transition-colors'>
               Atendimento por e-mail e WhatsApp
             </Link>
           </p>

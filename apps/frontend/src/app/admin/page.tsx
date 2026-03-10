@@ -92,6 +92,7 @@ export default function AdminPage() {
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState<AdminSection>('user');
+  const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
 
   const [dashboard, setDashboard] = useState<AdminDashboard | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -288,10 +289,10 @@ export default function AdminPage() {
       <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
         <MainNav />
 
-        <section className='mt-6 rounded-2xl border border-white/10 bg-[#101525] p-6'>
-          <p className='text-xs font-bold uppercase tracking-[0.18em] text-amber-300'>Painel administrativo</p>
-          <h1 className='mt-2 text-3xl font-bold'>Gestão completa, segura e auditável</h1>
-          {statusMessage ? <p className='mt-3 rounded-lg border border-cyan-400/30 bg-cyan-500/10 p-2 text-sm'>{statusMessage}</p> : null}
+        <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-5 sm:p-6'>
+          <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30'>Painel administrativo</p>
+          <h1 className='mt-2 text-2xl font-semibold sm:text-3xl tracking-tight'>Gestão completa, segura e auditável</h1>
+          {statusMessage ? <p className='mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white/70'>{statusMessage}</p> : null}
 
           {dashboard ? (
             <div className='mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
@@ -306,23 +307,56 @@ export default function AdminPage() {
           ) : null}
         </section>
 
-        <section className='mt-6'>
-          <h2 className='text-xl font-bold'>Cards de gestão</h2>
-          <p className='mt-1 text-sm text-white/70'>Clique em um card para abrir a área correspondente.</p>
-          <div className='mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4'>
+        {/* Mobile: Dropdown section selector */}
+        <div className='mt-6 md:hidden'>
+          <button
+            type='button'
+            onClick={() => setSectionMenuOpen((v) => !v)}
+            className='flex w-full items-center justify-between rounded-2xl border border-white/10 bg-[#101525] px-4 py-3.5 text-sm font-medium transition-all hover:bg-[#141a2e]'
+          >
+            <div className='flex items-center gap-3'>
+              <span className='h-2 w-2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.4)]' />
+              {ADMIN_SECTIONS.find((s) => s.id === activeSection)?.title}
+            </div>
+            <svg className={`h-4 w-4 text-white/40 transition-transform duration-300 ${sectionMenuOpen ? 'rotate-180' : ''}`} fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+              <path strokeLinecap='round' strokeLinejoin='round' d='M19 9l-7 7-7-7' />
+            </svg>
+          </button>
+          
+          <div className={`mt-2 overflow-hidden rounded-2xl border bg-[#101525] transition-all duration-300 ease-out ${sectionMenuOpen ? 'max-h-[500px] opacity-100 border-white/10' : 'max-h-0 opacity-0 border-transparent'}`}>
             {ADMIN_SECTIONS.map((section) => (
               <button
                 key={section.id}
-                className={`rounded-2xl border p-4 text-left transition ${
+                type='button'
+                onClick={() => { setActiveSection(section.id); setSectionMenuOpen(false); }}
+                className={`flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm transition-colors ${activeSection === section.id ? 'bg-white/5 text-white' : 'text-white/40 hover:bg-white/5 hover:text-white/70'}`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full transition-all ${activeSection === section.id ? 'bg-white scale-100' : 'bg-transparent scale-0'}`} />
+                <div className='min-w-0'>
+                  <p className='font-medium'>{section.title}</p>
+                  <p className='text-[10px] text-white/30 mt-0.5'>{section.description}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Desktop: Card grid */}
+        <section className='mt-6 hidden md:block'>
+          <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-4'>
+            {ADMIN_SECTIONS.map((section) => (
+              <button
+                key={section.id}
+                className={`rounded-2xl border p-4 text-left transition-all duration-300 ${
                   activeSection === section.id
-                    ? 'border-cyan-300/60 bg-cyan-500/10'
-                    : 'border-white/10 bg-[#101525] hover:border-white/25 hover:bg-[#141a2e]'
+                    ? 'border-white/20 bg-white/5 shadow-[0_0_15px_rgba(255,255,255,0.03)]'
+                    : 'border-white/10 bg-[#101525] hover:border-white/15 hover:bg-[#141a2e]'
                 }`}
                 type='button'
                 onClick={() => setActiveSection(section.id)}
               >
-                <p className='text-base font-bold'>{section.title}</p>
-                <p className='mt-2 text-xs text-white/70'>{section.description}</p>
+                <p className='text-sm font-medium'>{section.title}</p>
+                <p className='mt-1.5 text-xs text-white/40'>{section.description}</p>
               </button>
             ))}
           </div>
