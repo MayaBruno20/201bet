@@ -4,6 +4,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
+import { CacheModule } from './cache/cache.module';
 import { PrismaModule } from './database/prisma.module';
 import { EventsModule } from './events/events.module';
 import { MarketGateway } from './market.gateway';
@@ -12,6 +13,7 @@ import { MarketService } from './market.service';
 @Module({
   imports: [
     PrismaModule,
+    CacheModule,
     AuthModule,
     EventsModule,
     AdminModule,
