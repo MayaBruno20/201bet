@@ -10,6 +10,7 @@ module "upstash" {
   source = "../../modules/upstash"
   name   = "201bet-prod"
   region = "global"
+  primary_region = "us-east-1"
 }
 
 module "vercel" {
@@ -23,8 +24,9 @@ module "vercel" {
 }
 
 module "gha" {
-  source = "../../modules/github_actions"
-  repo   = var.github_repo
+  source  = "../../modules/github_actions"
+  count   = var.enable_github_secrets ? 1 : 0
+  repo    = var.github_repo
   secrets = {
     FLY_API_TOKEN_PROD = var.fly_api_token
     FLY_APP_NAME_PROD  = var.fly_app_name

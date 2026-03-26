@@ -8,6 +8,7 @@ vercel_api_token  = ""
 github_token      = ""
 github_owner      = ""
 github_repo       = ""
+enable_github_secrets = true
 
 jwt_secret        = ""
 cors_origin       = "https://<frontend>.vercel.app"

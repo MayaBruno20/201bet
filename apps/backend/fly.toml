@@ -2,11 +2,14 @@ app = "201bet-backend"
 primary_region = "gru"
 
 [build]
-  dockerfile = "apps/backend/Dockerfile.fly"
+  dockerfile = "Dockerfile.fly"
 
 [env]
   PORT = "3502"
   NODE_ENV = "production"
+
+[deploy]
+  release_command = "npx prisma migrate deploy --schema prisma/schema.prisma"
 
 [http_service]
   internal_port = 3502

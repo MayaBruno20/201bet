@@ -14,3 +14,7 @@ variable "block_public_connections" {
   type    = string
   default = "no"
 }
+variable "history_retention_seconds" {
+  type    = number
+  default = 21600
+}

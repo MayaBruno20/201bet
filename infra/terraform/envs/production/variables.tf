@@ -8,6 +8,10 @@ variable "vercel_api_token" { type = string }
 variable "github_token" { type = string }
 variable "github_owner" { type = string }
 variable "github_repo" { type = string }
+variable "enable_github_secrets" {
+  type    = bool
+  default = true
+}
 
 variable "jwt_secret" { type = string }
 variable "cors_origin" { type = string }
