@@ -10,3 +10,8 @@ apps/frontend/.next
 apps/frontend/node_modules
 
 .DS_Store
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+infra/terraform/envs/*/terraform.tfvars
