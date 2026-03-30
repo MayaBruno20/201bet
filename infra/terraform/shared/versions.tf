@@ -3,7 +3,7 @@ terraform {
   required_providers {
     neon = {
       source  = "kislerdm/neon"
-      version = "~> 0.5"
+      version = ">= 0.13.0"
     }
     upstash = {
       source  = "upstash/upstash"
@@ -11,7 +11,7 @@ terraform {
     }
     fly = {
       source  = "fly-apps/fly"
-      version = "~> 0.0.24"
+      version = "~> 0.0.23"
     }
     vercel = {
       source  = "vercel/vercel"
