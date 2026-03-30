@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { getPublicWsUrl } from '@/lib/env-public';
 import { MarketSnapshot } from '@/types/market';
 
-const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'http://localhost:3502/realtime';
+const wsUrl = getPublicWsUrl();
 
 export function LiveMarketSection() {
   const [market, setMarket] = useState<MarketSnapshot | null>(null);

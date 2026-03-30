@@ -30,5 +30,10 @@ module "gha" {
   secrets = {
     FLY_API_TOKEN_PROD = var.fly_api_token
     FLY_APP_NAME_PROD  = var.fly_app_name
+    DATABASE_URL_PROD = module.neon.connection_uri
+    UPSTASH_REDIS_REST_URL_PROD   = module.upstash.rest_url
+    UPSTASH_REDIS_REST_TOKEN_PROD = module.upstash.rest_token
+    JWT_SECRET_PROD   = var.jwt_secret
+    CORS_ORIGIN_PROD  = var.cors_origin
   }
 }

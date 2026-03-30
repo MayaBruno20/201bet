@@ -15,3 +15,4 @@ apps/frontend/node_modules
 *.tfstate
 *.tfstate.*
 infra/terraform/envs/*/terraform.tfvars
+infra/terraform/shared/terraform.tfvars

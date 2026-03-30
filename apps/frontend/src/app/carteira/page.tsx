@@ -4,7 +4,9 @@ import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
 import { clearAuthToken, getAuthToken, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3502/api';
+import { getPublicApiUrl } from '@/lib/env-public';
+
+const apiUrl = getPublicApiUrl();
 type UserTab = 'conta' | 'saldo' | 'historico' | 'transacoes';
 
 type MeResponse = SessionUser & {

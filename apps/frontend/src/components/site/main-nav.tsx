@@ -6,7 +6,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { clearAuthToken, getAuthToken, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3502/api';
+import { getPublicApiUrl } from '@/lib/env-public';
+
+const apiUrl = getPublicApiUrl();
 
 type NavLink = { href: string; label: string; requiresAuth?: boolean };
 
