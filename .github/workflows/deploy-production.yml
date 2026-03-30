@@ -1,0 +1,101 @@
+name: Deploy Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/backend/package-lock.json
+            apps/frontend/package-lock.json
+
+      - name: Install Root Deps
+        run: npm ci
+
+      - name: Install Backend Deps
+        run: npm ci --prefix apps/backend
+
+      - name: Install Frontend Deps
+        run: npm ci --prefix apps/frontend
+
+      - name: Lint Backend
+        run: npm --prefix apps/backend run lint
+
+      - name: Lint Frontend
+        run: npm --prefix apps/frontend run lint
+
+      - name: Test Backend
+        run: npm --prefix apps/backend run test
+
+      - name: Build Backend
+        run: npm --prefix apps/backend run build
+
+      - name: Build Frontend
+        run: npm --prefix apps/frontend run build
+
+      - name: Apply Prisma Migrations (Production)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+        run: npx --prefix apps/backend prisma migrate deploy --schema apps/backend/prisma/schema.prisma
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+
+      - name: Vercel Pull (Production)
+        working-directory: apps/frontend
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel pull --yes --environment=production --token $VERCEL_TOKEN
+
+      - name: Vercel Build (Production)
+        working-directory: apps/frontend
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel build --token $VERCEL_TOKEN
+
+      - name: Vercel Deploy (Production)
+        working-directory: apps/frontend
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel deploy --prebuilt --prod --token $VERCEL_TOKEN
+
+      - name: Setup Flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy Backend (Production)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_PROD }}
+        run: flyctl deploy --config apps/backend/fly.toml --app ${{ secrets.FLY_APP_NAME_PROD }}
+
+      - name: Backend Health Check + Auto Rollback (Production)
+        if: ${{ secrets.BACKEND_PROD_HEALTH_URL != '' }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_PROD }}
+          BACKEND_PROD_HEALTH_URL: ${{ secrets.BACKEND_PROD_HEALTH_URL }}
+          FLY_APP_NAME_PROD: ${{ secrets.FLY_APP_NAME_PROD }}
+        run: |
+          set +e
+          curl --fail --retry 6 --retry-delay 5 "$BACKEND_PROD_HEALTH_URL"
+          status=$?
+          if [ $status -ne 0 ]; then
+            echo "Health check falhou. Acionando rollback..."
+            flyctl releases rollback -a "$FLY_APP_NAME_PROD" || true
+            exit 1
+          fi
