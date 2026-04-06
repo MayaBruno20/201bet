@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { CacheModule } from './cache/cache.module';
 import { PrismaModule } from './database/prisma.module';
 import { EventsModule } from './events/events.module';
+import { PaymentsModule } from './payments/payments.module';
 import { MarketGateway } from './market.gateway';
 import { MarketService } from './market.service';
 
@@ -17,6 +18,7 @@ import { MarketService } from './market.service';
     AuthModule,
     EventsModule,
     AdminModule,
+    PaymentsModule,
     ThrottlerModule.forRoot({
       throttlers: [{ ttl: 60_000, limit: 120 }],
     }),

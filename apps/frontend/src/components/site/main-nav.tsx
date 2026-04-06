@@ -28,7 +28,9 @@ export function MainNav() {
   const router = useRouter();
   const [user, setUser] = useState<NavUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [walletOpen, setWalletOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const walletRef = useRef<HTMLDivElement | null>(null);
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -70,14 +72,17 @@ export function MainNav() {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpen(false);
       }
+      if (walletRef.current && !walletRef.current.contains(event.target as Node)) {
+        setWalletOpen(false);
+      }
     }
 
-    if (menuOpen) {
+    if (menuOpen || walletOpen) {
       window.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => window.removeEventListener('mousedown', handleClickOutside);
-  }, [menuOpen]);
+  }, [menuOpen, walletOpen]);
 
   // Bloqueia o scroll quando o menu mobile está aberto
   useEffect(() => {
@@ -146,51 +151,96 @@ export function MainNav() {
             </nav>
           </div>
 
-          <div className='flex items-center gap-4'>
-            {/* User Dropdown (Desktop & Mobile) */}
-            <div className='relative' ref={menuRef}>
-              {!user ? (
-                <Link 
-                  href='/login' 
-                  className='rounded-full bg-white/10 px-5 py-2 text-sm font-semibold transition hover:bg-white/20'
-                >
-                  Entrar
-                </Link>
-              ) : (
-                <>
+          <div className='flex items-center gap-2'>
+            {!user ? (
+              <Link
+                href='/login'
+                className='rounded-full bg-white/10 px-5 py-2 text-sm font-semibold transition hover:bg-white/20'
+              >
+                Entrar
+              </Link>
+            ) : (
+              <>
+                {/* Saldo Dropdown */}
+                <div className='relative' ref={walletRef}>
                   <button
                     type='button'
-                    onClick={() => setMenuOpen((v) => !v)}
-                    className='flex items-center gap-2 rounded-full border border-white/10 bg-white/5 py-1 pl-1 pr-3 transition hover:bg-white/10'
+                    onClick={() => { setWalletOpen((v) => !v); setMenuOpen(false); }}
+                    className='flex items-center gap-2 rounded-full border border-[#d4a843]/30 bg-[#d4a843]/10 py-1.5 pl-3 pr-3 transition hover:bg-[#d4a843]/20'
+                  >
+                    <svg className='h-4 w-4 text-[#d4a843]' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+                      <path strokeLinecap='round' strokeLinejoin='round' d='M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 110-6h5.25A2.25 2.25 0 0121 6v0m0 6v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18V6a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 6v6z' />
+                    </svg>
+                    <span className='text-xs font-bold text-[#d4a843]'>
+                      {user.wallet ? `R$ ${Number(user.wallet.balance).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00'}
+                    </span>
+                    <svg className={`h-3 w-3 text-[#d4a843]/60 transition-transform duration-200 ${walletOpen ? 'rotate-180' : ''}`} fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2.5}>
+                      <path strokeLinecap='round' strokeLinejoin='round' d='M19 9l-7 7-7-7' />
+                    </svg>
+                  </button>
+
+                  <div className={`absolute right-0 top-11 z-50 w-60 transform rounded-2xl border border-white/15 bg-[#101525]/95 p-3 shadow-2xl backdrop-blur-md transition-all duration-200 ${walletOpen ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-2 opacity-0'}`}>
+                    <div className='rounded-xl border border-white/10 bg-white/[0.03] p-4 mb-3'>
+                      <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-1'>Saldo total</p>
+                      <p className='text-2xl font-bold text-[#d4a843]'>
+                        {user.wallet ? Number(user.wallet.balance).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00'}
+                      </p>
+                    </div>
+
+                    <div className='flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 mb-3'>
+                      <span className='text-xs text-white/40'>Saldo</span>
+                      <span className='text-sm font-semibold'>
+                        {user.wallet ? Number(user.wallet.balance).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00'}
+                      </span>
+                    </div>
+
+                    <div className='grid grid-cols-2 gap-2'>
+                      <Link
+                        href='/deposito'
+                        onClick={() => setWalletOpen(false)}
+                        className='rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2.5 text-center text-xs font-bold text-emerald-400 transition-all hover:bg-emerald-500/20'
+                      >
+                        Depositar
+                      </Link>
+                      <Link
+                        href='/saque'
+                        onClick={() => setWalletOpen(false)}
+                        className='rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-center text-xs font-bold text-white/80 transition-all hover:bg-white/10'
+                      >
+                        Sacar
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Conta Dropdown */}
+                <div className='relative' ref={menuRef}>
+                  <button
+                    type='button'
+                    onClick={() => { setMenuOpen((v) => !v); setWalletOpen(false); }}
+                    className='flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 transition hover:bg-white/10'
                   >
                     <span className='inline-flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-emerald-500/20 text-xs font-bold text-emerald-300'>
                       {user.avatarUrl ? <img src={user.avatarUrl} alt='Avatar' className='h-full w-full object-cover' /> : user.name.slice(0, 1).toUpperCase()}
                     </span>
-                    <span className='max-w-[7rem] truncate text-xs font-semibold md:max-w-xs'>
-                      {user.wallet ? `R$ ${Number(user.wallet.balance).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : user.name}
-                    </span>
                   </button>
 
-                  <div 
-                    className={`absolute right-0 top-11 z-50 w-56 transform rounded-2xl border border-white/15 bg-[#101525]/95 p-2 shadow-2xl backdrop-blur-md transition-all duration-200 ${menuOpen ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-2 opacity-0'}`}
-                  >
+                  <div className={`absolute right-0 top-11 z-50 w-52 transform rounded-2xl border border-white/15 bg-[#101525]/95 p-2 shadow-2xl backdrop-blur-md transition-all duration-200 ${menuOpen ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-2 opacity-0'}`}>
                     <div className='mb-2 px-3 py-2'>
                       <p className='truncate text-sm font-bold'>{user.name}</p>
                       <p className='truncate text-xs text-white/50'>{user.email}</p>
                     </div>
-                    <div className='h-px bg-white/10 mb-2' />
-                    
+                    <div className='h-px bg-white/10 mb-1' />
                     <Link className='block rounded-xl px-3 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-white' href='/carteira' onClick={() => setMenuOpen(false)}>Minha Conta</Link>
                     <Link className='block rounded-xl px-3 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-white' href='/carteira?tab=transacoes' onClick={() => setMenuOpen(false)}>Transações</Link>
-                    
-                    <div className='my-2 h-px bg-white/10' />
+                    <div className='my-1 h-px bg-white/10' />
                     <button type='button' className='w-full rounded-xl px-3 py-2 text-left text-sm text-red-400 transition hover:bg-red-500/15' onClick={logout}>
                       Sair
                     </button>
                   </div>
-                </>
-              )}
-            </div>
+                </div>
+              </>
+            )}
 
             {/* Hamburger Button (Mobile) */}
             <button

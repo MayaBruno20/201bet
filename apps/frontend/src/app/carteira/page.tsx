@@ -377,8 +377,11 @@ export default function CarteiraPage() {
                 </p>
               </div>
               <div className='rounded-2xl border border-white/10 bg-white/[0.04] p-5'>
-                <p className='text-sm font-medium'>Depósito e saque</p>
-                <p className='mt-2 text-sm text-white/50'>Em manutenção até integração de gateway (PIX / cartão).</p>
+                <p className='text-sm font-medium mb-3'>Ações rápidas</p>
+                <div className='flex gap-2'>
+                  <a href='/deposito' className='flex-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-2.5 text-center text-sm font-semibold text-emerald-400 transition-all hover:bg-emerald-500/20'>Depositar</a>
+                  <a href='/saque' className='flex-1 rounded-xl bg-blue-500/10 border border-blue-500/20 px-4 py-2.5 text-center text-sm font-semibold text-blue-400 transition-all hover:bg-blue-500/20'>Sacar</a>
+                </div>
               </div>
             </div>
           </section>
@@ -411,7 +414,7 @@ export default function CarteiraPage() {
             <div className='rounded-2xl border border-white/10 bg-[#101525] p-5'>
               <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3'>Ações financeiras</p>
               <div className='grid gap-3 sm:grid-cols-2'>
-                <div className='rounded-xl border border-white/10 bg-white/[0.03] p-4 flex items-center gap-4'>
+                <a href='/deposito' className='rounded-xl border border-white/10 bg-white/[0.03] p-4 flex items-center gap-4 transition-all hover:border-emerald-500/30 hover:bg-emerald-500/5'>
                   <div className='h-10 w-10 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0'>
                     <svg className='h-5 w-5 text-emerald-400' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
                       <path strokeLinecap='round' strokeLinejoin='round' d='M12 4v16m8-8H4' />
@@ -419,10 +422,10 @@ export default function CarteiraPage() {
                   </div>
                   <div className='min-w-0'>
                     <p className='font-medium text-sm'>Depósito</p>
-                    <p className='text-xs text-amber-400/80'>Em manutenção</p>
+                    <p className='text-xs text-emerald-400/80'>Depositar via PIX</p>
                   </div>
-                </div>
-                <div className='rounded-xl border border-white/10 bg-white/[0.03] p-4 flex items-center gap-4'>
+                </a>
+                <a href='/saque' className='rounded-xl border border-white/10 bg-white/[0.03] p-4 flex items-center gap-4 transition-all hover:border-blue-500/30 hover:bg-blue-500/5'>
                   <div className='h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0'>
                     <svg className='h-5 w-5 text-blue-400' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
                       <path strokeLinecap='round' strokeLinejoin='round' d='M19 14l-7 7m0 0l-7-7m7 7V3' />
@@ -430,9 +433,9 @@ export default function CarteiraPage() {
                   </div>
                   <div className='min-w-0'>
                     <p className='font-medium text-sm'>Saque</p>
-                    <p className='text-xs text-amber-400/80'>Em manutenção</p>
+                    <p className='text-xs text-blue-400/80'>Solicitar saque</p>
                   </div>
-                </div>
+                </a>
               </div>
             </div>
 
