@@ -4,10 +4,11 @@ provider "neon" {
 
 provider "upstash" {
   api_key = var.upstash_api_key
+  email   = var.upstash_email
 }
 
 provider "fly" {
-  api_token = var.fly_api_token
+  fly_api_token = var.fly_api_token
 }
 
 provider "vercel" {

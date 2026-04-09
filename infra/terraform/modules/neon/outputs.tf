@@ -4,6 +4,15 @@ output "db_name" { value = neon_project.this.database_name }
 output "role_name" { value = neon_project.this.database_user }
 output "database_host" { value = neon_project.this.database_host }
 output "database_user" { value = neon_project.this.database_user }
-output "database_password" { value = neon_project.this.database_password }
-output "connection_uri" { value = neon_project.this.connection_uri }
-output "connection_uri_pooler" { value = neon_project.this.connection_uri_pooler }
+output "database_password" {
+  value     = neon_project.this.database_password
+  sensitive = true
+}
+output "connection_uri" {
+  value     = neon_project.this.connection_uri
+  sensitive = true
+}
+output "connection_uri_pooler" {
+  value     = neon_project.this.connection_uri_pooler
+  sensitive = true
+}

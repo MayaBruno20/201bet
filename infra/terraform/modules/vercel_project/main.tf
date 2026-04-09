@@ -7,8 +7,9 @@ terraform {
 }
 
 resource "vercel_project" "this" {
-  name      = var.name
-  framework = var.framework
+  name             = var.name
+  framework        = var.framework
+  root_directory   = var.root_directory
 }
 
 resource "vercel_project_environment_variable" "env" {

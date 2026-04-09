@@ -30,5 +30,12 @@ module "gha" {
   secrets = {
     FLY_API_TOKEN_STAGING = var.fly_api_token
     FLY_APP_NAME_STAGING  = var.fly_app_name
+    # CI (prisma migrate) e referência para configurar Fly secrets
+    DATABASE_URL_STAGING = module.neon.connection_uri
+    # Upstash por ambiente (evita sobrescrever no mesmo repo)
+    UPSTASH_REDIS_REST_URL_STAGING   = module.upstash.rest_url
+    UPSTASH_REDIS_REST_TOKEN_STAGING = module.upstash.rest_token
+    JWT_SECRET_STAGING   = var.jwt_secret
+    CORS_ORIGIN_STAGING  = var.cors_origin
   }
 }

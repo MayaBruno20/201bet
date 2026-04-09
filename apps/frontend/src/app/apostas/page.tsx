@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { MainNav } from '@/components/site/main-nav';
 import { getAuthToken } from '@/lib/auth';
+import { getPublicApiUrl, getPublicWsUrl } from '@/lib/env-public';
 import { BettingBoard, MarketSnapshot } from '@/types/market';
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3502/api';
-const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'http://localhost:3502/realtime';
+const apiUrl = getPublicApiUrl();
+const wsUrl = getPublicWsUrl();
 
 type MeResponse = {
   id: string;
