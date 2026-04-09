@@ -1,11 +1,21 @@
 import { Injectable } from '@nestjs/common';
+import { CacheService } from '../cache/cache.service';
 import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class EventsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
+  ) {}
 
   async listEvents() {
+    const cacheKey = 'events:public:v1';
+    const cached = await this.cache.get<unknown>(cacheKey);
+    if (cached) {
+      return cached as any;
+    }
+
     const events = await this.prisma.event.findMany({
       orderBy: { startAt: 'asc' },
       include: {
@@ -27,7 +37,7 @@ export class EventsService {
       },
     });
 
-    return events.map((event) => ({
+    const payload = events.map((event) => ({
       id: event.id,
       sport: event.sport,
       name: event.name,
@@ -64,5 +74,8 @@ export class EventsService {
         },
       })),
     }));
+
+    await this.cache.set(cacheKey, payload, 15);
+    return payload;
   }
 }

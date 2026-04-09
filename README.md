@@ -260,6 +260,11 @@ Se aparecer warning de múltiplos lockfiles, confirme que você está executando
 - `JWT_EXPIRES_IN`
 - `CORS_ORIGIN`
 - `GOOGLE_CLIENT_ID` (opcional)
+- `UPSTASH_REDIS_REST_URL` (cache, opcional)
+- `UPSTASH_REDIS_REST_TOKEN` (cache, opcional)
+- `MARKET_MARGIN_PERCENT` (opcional)
+- `BOOKING_LOCK_PERCENT` (opcional)
+- `HOUSE_EXPOSURE_BUFFER` (opcional)
 
 ### Frontend
 

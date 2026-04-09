@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
+import { CacheModule } from '../cache/cache.module';
 import { EventsController } from './events.controller';
 import { EventsService } from './events.service';
 
 @Module({
+  imports: [CacheModule],
   controllers: [EventsController],
   providers: [EventsService],
 })

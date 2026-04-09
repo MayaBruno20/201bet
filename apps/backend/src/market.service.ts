@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { DuelStatus, MarketStatus, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from './database/prisma.service';
 
 type Side = 'LEFT' | 'RIGHT';
@@ -97,6 +98,7 @@ const REFRESH_FROM_DB_MS = 30_000;
 
 @Injectable()
 export class MarketService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(MarketService.name);
   private ticker?: NodeJS.Timeout;
   private refreshTicker?: NodeJS.Timeout;
   private states = new Map<string, EngineState>();
@@ -104,14 +106,14 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
-    await this.refreshStatesFromDatabase();
+    await this.safeRefreshStatesFromDatabase();
 
     this.ticker = setInterval(() => {
       this.tick();
     }, TICK_MS);
 
     this.refreshTicker = setInterval(() => {
-      void this.refreshStatesFromDatabase();
+      void this.safeRefreshStatesFromDatabase();
     }, REFRESH_FROM_DB_MS);
   }
 
@@ -340,6 +342,21 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.states = next;
+  }
+
+  /** Evita crash loop na Fly se `prisma migrate deploy` ainda não foi aplicado nesta base. */
+  private async safeRefreshStatesFromDatabase() {
+    try {
+      await this.refreshStatesFromDatabase();
+    } catch (e) {
+      if (e instanceof PrismaClientKnownRequestError && e.code === 'P2021') {
+        this.logger.error(
+          `Tabela em falta no Postgres (${JSON.stringify(e.meta)}). Corra na mesma DATABASE_URL: npx prisma migrate deploy --schema prisma/schema.prisma`,
+        );
+        return;
+      }
+      throw e;
+    }
   }
 
   private tick() {

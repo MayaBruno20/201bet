@@ -29,7 +29,7 @@ async function bootstrap() {
   );
   await prismaService.enableShutdownHooks(app);
 
-  await app.listen(process.env.PORT ?? 3502);
+  await app.listen(process.env.PORT ?? 3502, "0.0.0.0");
 }
 
 bootstrap();
