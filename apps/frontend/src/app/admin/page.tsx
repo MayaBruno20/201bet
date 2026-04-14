@@ -75,17 +75,43 @@ type EventPerformanceRow = {
   totalStake: number;
 };
 
-type AdminSection = 'user' | 'event' | 'driver' | 'car' | 'duel' | 'setting' | 'analytics' | 'audit';
+type MarketConfig = { marginPercent: number; minBetAmount: number };
+type LiveProfit = { totalVolume: number; totalRake: number; markets: Array<{ name: string; type: string; pool: number; rake: number }> };
+
+type AdminSection = 'config' | 'user' | 'event' | 'driver' | 'car' | 'duel' | 'market' | 'affiliate' | 'profit' | 'setting' | 'analytics' | 'audit';
+
+type AdminMarket = {
+  id: string; name: string; type: string; status: string;
+  rakePercent?: string | number | null; bookingCloseAt?: string | null; settledAt?: string | null; winnerOddId?: string | null;
+  event: { id: string; name: string };
+  odds: Array<{ id: string; label: string; value: string | number; status: string }>;
+};
+type AdminAffiliate = {
+  id: string; name: string; code: string; commissionPct: string | number; active: boolean;
+  _count: { referredUsers: number; commissions: number };
+  commissions: Array<{ amount: string | number }>;
+};
+type ProfitByMarket = {
+  marketId: string; marketName: string; marketType: string; eventName: string; winnerLabel: string;
+  totalPool: number; rakePercent: number; rakeCollected: number; affiliatePayouts: number; netProfit: number; settledAt: string | null;
+};
+type ProfitSummary = {
+  settledMarkets: number; totalPool: number; totalRake: number; totalAffiliatePayouts: number; totalNetProfit: number; averageRakePercent: number;
+};
 
 const ADMIN_SECTIONS: { id: AdminSection; title: string; description: string }[] = [
-  { id: 'user', title: 'Cadastro de usuário', description: 'CRUD de contas, roles e ajuste de saldo.' },
+  { id: 'config', title: 'Config Motor', description: 'Comissao da casa, aposta minima e lucro em tempo real.' },
+  { id: 'user', title: 'Cadastro de usuario', description: 'CRUD de contas, roles e ajuste de saldo.' },
   { id: 'event', title: 'Cadastro de evento', description: 'CRUD de eventos e controle de status.' },
   { id: 'driver', title: 'Cadastro de piloto', description: 'CRUD completo de pilotos.' },
   { id: 'car', title: 'Cadastro de carro', description: 'CRUD completo de carros.' },
   { id: 'duel', title: 'Cadastro de embate', description: 'CRUD completo de embates.' },
-  { id: 'setting', title: 'Configurações globais', description: 'CRUD de parâmetros globais.' },
-  { id: 'analytics', title: 'Relatórios e Analytics', description: 'Métricas de negócio, lucratividade e exportação.' },
-  { id: 'audit', title: 'Auditoria', description: 'Rastro completo de operações administrativas.' },
+  { id: 'market', title: 'Mercados Multi-Runner', description: 'Criar, liquidar e gerenciar mercados especiais.' },
+  { id: 'affiliate', title: 'Afiliados', description: 'Gestao de afiliados e comissoes.' },
+  { id: 'profit', title: 'Lucro & Dashboard', description: 'Lucro por mercado e resumo financeiro.' },
+  { id: 'setting', title: 'Configuracoes globais', description: 'CRUD de parametros globais.' },
+  { id: 'analytics', title: 'Relatorios e Analytics', description: 'Metricas de negocio, lucratividade e exportacao.' },
+  { id: 'audit', title: 'Auditoria', description: 'Rastro completo de operacoes administrativas.' },
 ];
 
 export default function AdminPage() {
@@ -107,6 +133,12 @@ export default function AdminPage() {
 
   const [analyticsOverview, setAnalyticsOverview] = useState<AnalyticsOverview | null>(null);
   const [analyticsEvents, setAnalyticsEvents] = useState<EventPerformanceRow[]>([]);
+  const [markets, setMarkets] = useState<AdminMarket[]>([]);
+  const [affiliates, setAffiliates] = useState<AdminAffiliate[]>([]);
+  const [profitByMarket, setProfitByMarket] = useState<ProfitByMarket[]>([]);
+  const [profitSummary, setProfitSummary] = useState<ProfitSummary | null>(null);
+  const [marketConfig, setMarketConfig] = useState<MarketConfig>({ marginPercent: 20, minBetAmount: 10 });
+  const [liveProfit, setLiveProfit] = useState<LiveProfit | null>(null);
 
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', cpf: '', birthDate: '', role: 'OPERATOR' });
   const [newEvent, setNewEvent] = useState({
@@ -187,7 +219,7 @@ export default function AdminPage() {
     setStatusMessage('');
     try {
       const headers = { Authorization: `Bearer ${authToken}` };
-      const [dashboardRes, usersRes, driversRes, carsRes, eventsRes, duelsRes, settingsRes, auditRes, overviewRes, perfRes] = await Promise.all([
+      const [dashboardRes, usersRes, driversRes, carsRes, eventsRes, duelsRes, settingsRes, auditRes, overviewRes, perfRes, marketsRes, affiliatesRes, profitRes, profitSumRes, configRes, liveProfitRes] = await Promise.all([
         fetch(`${apiUrl}/admin/dashboard`, { headers }),
         fetch(`${apiUrl}/admin/users`, { headers }),
         fetch(`${apiUrl}/admin/drivers`, { headers }),
@@ -198,6 +230,12 @@ export default function AdminPage() {
         fetch(`${apiUrl}/admin/audit-logs?limit=40`, { headers }),
         fetch(`${apiUrl}/admin/analytics/overview`, { headers }),
         fetch(`${apiUrl}/admin/analytics/events?limit=20`, { headers }),
+        fetch(`${apiUrl}/admin/markets`, { headers }),
+        fetch(`${apiUrl}/admin/affiliates`, { headers }),
+        fetch(`${apiUrl}/admin/analytics/profit-by-market`, { headers }),
+        fetch(`${apiUrl}/admin/analytics/profit-summary`, { headers }),
+        fetch(`${apiUrl}/market/config`),
+        fetch(`${apiUrl}/market/profit-live`),
       ]);
 
       for (const res of [dashboardRes, usersRes, driversRes, carsRes, eventsRes, duelsRes, settingsRes, overviewRes, perfRes]) {
@@ -214,9 +252,13 @@ export default function AdminPage() {
       setAnalyticsOverview((await overviewRes.json()) as AnalyticsOverview);
       setAnalyticsEvents((await perfRes.json()) as EventPerformanceRow[]);
 
-      if (auditRes.ok) {
-        setAuditLogs((await auditRes.json()) as AuditLog[]);
-      }
+      if (auditRes.ok) setAuditLogs((await auditRes.json()) as AuditLog[]);
+      if (marketsRes.ok) setMarkets((await marketsRes.json()) as AdminMarket[]);
+      if (affiliatesRes.ok) setAffiliates((await affiliatesRes.json()) as AdminAffiliate[]);
+      if (profitRes.ok) setProfitByMarket((await profitRes.json()) as ProfitByMarket[]);
+      if (profitSumRes.ok) setProfitSummary((await profitSumRes.json()) as ProfitSummary);
+      if (configRes.ok) setMarketConfig((await configRes.json()) as MarketConfig);
+      if (liveProfitRes.ok) setLiveProfit((await liveProfitRes.json()) as LiveProfit);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : 'Erro ao carregar painel');
     } finally {
@@ -363,6 +405,89 @@ export default function AdminPage() {
             ))}
           </div>
         </section>
+
+        {/* ── Config do Motor ── */}
+        {activeSection === 'config' ? (
+          <Panel title='Configurações do Motor de Odds'>
+            <div className='grid grid-cols-1 gap-6 sm:grid-cols-2'>
+              {/* Comissão da Casa */}
+              <div className='rounded-xl border border-white/10 bg-white/5 p-5'>
+                <p className='text-xs uppercase tracking-widest text-white/50 mb-3'>Comissão da Casa %</p>
+                <div className='flex gap-2'>
+                  <input
+                    id='cfgMargin'
+                    type='number'
+                    min={0}
+                    max={50}
+                    defaultValue={marketConfig.marginPercent}
+                    className='flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-2xl font-bold text-white outline-none'
+                  />
+                  <button
+                    className='rounded-lg bg-emerald-500 px-6 py-3 text-sm font-bold text-black'
+                    onClick={() => {
+                      const val = Number((document.getElementById('cfgMargin') as HTMLInputElement).value);
+                      void submit('Atualizar comissão', () => apiFetch('/admin/config/margin', { method: 'POST', body: JSON.stringify({ value: val }) }));
+                    }}
+                  >
+                    Salvar
+                  </button>
+                </div>
+                <p className='mt-2 text-xs text-white/30'>Porcentagem retida pela casa sobre cada pote. Atual: {marketConfig.marginPercent}%</p>
+              </div>
+
+              {/* Aposta Mínima */}
+              <div className='rounded-xl border border-white/10 bg-white/5 p-5'>
+                <p className='text-xs uppercase tracking-widest text-white/50 mb-3'>Aposta Mínima R$</p>
+                <div className='flex gap-2'>
+                  <input
+                    id='cfgMinBet'
+                    type='number'
+                    min={0}
+                    defaultValue={marketConfig.minBetAmount}
+                    className='flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-2xl font-bold text-white outline-none'
+                  />
+                  <button
+                    className='rounded-lg bg-emerald-500 px-6 py-3 text-sm font-bold text-black'
+                    onClick={() => {
+                      const val = Number((document.getElementById('cfgMinBet') as HTMLInputElement).value);
+                      void submit('Atualizar aposta mínima', () => apiFetch('/admin/config/min-bet', { method: 'POST', body: JSON.stringify({ value: val }) }));
+                    }}
+                  >
+                    Salvar
+                  </button>
+                </div>
+                <p className='mt-2 text-xs text-white/30'>Valor mínimo aceito por aposta. Atual: R$ {marketConfig.minBetAmount.toFixed(2)}</p>
+              </div>
+            </div>
+
+            {/* Lucro em Tempo Real */}
+            {liveProfit && (
+              <div className='mt-6'>
+                <p className='text-xs uppercase tracking-widest text-white/50 mb-3'>Lucro em Tempo Real (antes de liquidar)</p>
+                <div className='grid grid-cols-2 gap-3 sm:grid-cols-3 mb-4'>
+                  <Metric label='Volume Total' value={`R$ ${liveProfit.totalVolume.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                  <Metric label='Rake Total (estimado)' value={`R$ ${liveProfit.totalRake.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                  <Metric label='Mercados Ativos' value={liveProfit.markets.length} />
+                </div>
+                <div className='space-y-2 max-h-64 overflow-auto'>
+                  {liveProfit.markets.map((m, i) => (
+                    <div key={`${m.name}-${i}`} className='flex items-center justify-between rounded-lg border border-white/10 bg-white/5 p-3 text-sm'>
+                      <div>
+                        <span className='font-medium'>{m.name}</span>
+                        <span className='ml-2 text-xs text-white/30'>{m.type}</span>
+                      </div>
+                      <div className='text-right'>
+                        <span className='text-white/50'>Pool: R$ {m.pool.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                        <span className='ml-3 font-bold text-emerald-400'>Rake: R$ {m.rake.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {!liveProfit.markets.length && <p className='text-sm text-white/40'>Nenhum mercado ativo.</p>}
+                </div>
+              </div>
+            )}
+          </Panel>
+        ) : null}
 
         {activeSection === 'user' ? (
           <Panel title='Cadastro e gestão de usuários'>
@@ -810,6 +935,179 @@ export default function AdminPage() {
             ) : (
               <p className='text-sm text-white/70'>Carregando analytics...</p>
             )}
+          </Panel>
+        ) : null}
+
+        {/* ── Mercados Multi-Runner ── */}
+        {activeSection === 'market' ? (
+          <Panel title='Mercados Multi-Runner'>
+            <div className='mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4'>
+              <input id='mrName' placeholder='Nome do mercado' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+              <select id='mrType' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none'>
+                <option value='WINNER'>Vencedor Geral</option>
+                <option value='BEST_REACTION'>Melhor Reacao</option>
+                <option value='FALSE_START'>Queimada</option>
+              </select>
+              <select id='mrEvent' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none'>
+                {events.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+              <input id='mrRunners' placeholder='Opcoes (separar por virgula)' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+            </div>
+            <div className='mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3'>
+              <input id='mrRake' type='number' placeholder='Rake % (padrao 6)' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+              <input id='mrClose' type='datetime-local' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+              <button
+                className='rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black'
+                onClick={() => {
+                  const name = (document.getElementById('mrName') as HTMLInputElement).value;
+                  const type = (document.getElementById('mrType') as HTMLSelectElement).value;
+                  const eventId = (document.getElementById('mrEvent') as HTMLSelectElement).value;
+                  const runners = (document.getElementById('mrRunners') as HTMLInputElement).value.split(',').map((s) => s.trim()).filter(Boolean);
+                  const rakePercent = Number((document.getElementById('mrRake') as HTMLInputElement).value) || undefined;
+                  const bookingCloseAt = (document.getElementById('mrClose') as HTMLInputElement).value || undefined;
+                  if (!name || !eventId || runners.length < 2) { setStatusMessage('Informe nome, evento e pelo menos 2 opcoes'); return; }
+                  void submit('Criar mercado', () => apiFetch('/admin/markets', { method: 'POST', body: JSON.stringify({ name, type, eventId, runners, rakePercent, bookingCloseAt }) }));
+                }}
+              >
+                + Criar Mercado
+              </button>
+            </div>
+            <div className='space-y-3 max-h-96 overflow-auto'>
+              {markets.map((m) => (
+                <div key={m.id} className='rounded-xl border border-white/10 bg-white/5 p-4'>
+                  <div className='flex items-start justify-between mb-2'>
+                    <div>
+                      <p className='font-semibold'>{m.name}</p>
+                      <p className='text-xs text-white/40'>{m.type} - {m.event.name} - Status: {m.status}</p>
+                    </div>
+                    <div className='flex gap-2'>
+                      {m.status !== 'SETTLED' && (
+                        <>
+                          <select
+                            id={`settle-${m.id}`}
+                            className='rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white outline-none'
+                          >
+                            {m.odds.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                          </select>
+                          <button
+                            className='rounded-lg bg-emerald-500/80 px-3 py-1 text-xs font-bold text-black'
+                            onClick={() => {
+                              const winnerOddId = (document.getElementById(`settle-${m.id}`) as HTMLSelectElement).value;
+                              if (!winnerOddId) return;
+                              void submit('Liquidar mercado', () => apiFetch(`/admin/markets/${m.id}/settle`, { method: 'POST', body: JSON.stringify({ winnerOddId }) }));
+                            }}
+                          >
+                            Liquidar
+                          </button>
+                          <button
+                            className='rounded-lg bg-red-500/80 px-3 py-1 text-xs font-bold text-white'
+                            onClick={() => void submit('Anular mercado', () => apiFetch(`/admin/markets/${m.id}/void`, { method: 'POST' }))}
+                          >
+                            Anular
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className='flex flex-wrap gap-2'>
+                    {m.odds.map((o) => (
+                      <span key={o.id} className={`rounded-full px-3 py-1 text-xs border ${o.id === m.winnerOddId ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-white/5 border-white/10 text-white/60'}`}>
+                        {o.label} {o.id === m.winnerOddId && '(Vencedor)'}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {!markets.length && <p className='text-sm text-white/40'>Nenhum mercado multi-runner criado.</p>}
+            </div>
+          </Panel>
+        ) : null}
+
+        {/* ── Afiliados ── */}
+        {activeSection === 'affiliate' ? (
+          <Panel title='Gestao de Afiliados'>
+            <div className='mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4'>
+              <input id='afName' placeholder='Nome' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+              <input id='afCode' placeholder='Codigo' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+              <input id='afPct' type='number' placeholder='Comissao %' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+              <button
+                className='rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black'
+                onClick={() => {
+                  const name = (document.getElementById('afName') as HTMLInputElement).value;
+                  const code = (document.getElementById('afCode') as HTMLInputElement).value;
+                  const commissionPct = Number((document.getElementById('afPct') as HTMLInputElement).value);
+                  if (!name || !code || !commissionPct) { setStatusMessage('Preencha todos os campos'); return; }
+                  void submit('Criar afiliado', () => apiFetch('/admin/affiliates', { method: 'POST', body: JSON.stringify({ name, code, commissionPct }) }));
+                }}
+              >
+                + Criar Afiliado
+              </button>
+            </div>
+            <div className='space-y-3 max-h-96 overflow-auto'>
+              {affiliates.map((af) => {
+                const totalCommission = af.commissions.reduce((s, c) => s + Number(c.amount), 0);
+                return (
+                  <div key={af.id} className='rounded-xl border border-white/10 bg-white/5 p-4 flex items-center justify-between'>
+                    <div>
+                      <p className='font-semibold'>{af.name} <span className='text-xs text-white/40'>({af.code})</span></p>
+                      <p className='text-xs text-white/40'>
+                        Comissao: {Number(af.commissionPct)}% - Usuarios: {af._count.referredUsers} - Pagamentos: {af._count.commissions}
+                      </p>
+                      <p className='text-xs text-yellow-400'>Total comissoes: R$ {totalCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className='flex gap-2'>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${af.active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                        {af.active ? 'ATIVO' : 'INATIVO'}
+                      </span>
+                      {af.active && (
+                        <button
+                          className='rounded-lg bg-red-500/60 px-3 py-1 text-xs font-bold text-white'
+                          onClick={() => void submit('Desativar afiliado', () => apiFetch(`/admin/affiliates/${af.id}`, { method: 'DELETE' }))}
+                        >
+                          Desativar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {!affiliates.length && <p className='text-sm text-white/40'>Nenhum afiliado cadastrado.</p>}
+            </div>
+          </Panel>
+        ) : null}
+
+        {/* ── Lucro & Dashboard ── */}
+        {activeSection === 'profit' ? (
+          <Panel title='Lucro & Dashboard'>
+            {profitSummary && (
+              <div className='mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6'>
+                <Metric label='Mercados Liquidados' value={profitSummary.settledMarkets} />
+                <Metric label='Volume Total' value={`R$ ${profitSummary.totalPool.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                <Metric label='Rake Total' value={`R$ ${profitSummary.totalRake.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                <Metric label='Comissoes Afiliados' value={`R$ ${profitSummary.totalAffiliatePayouts.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                <Metric label='Lucro Liquido' value={`R$ ${profitSummary.totalNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                <Metric label='Margem Media' value={`${profitSummary.averageRakePercent.toFixed(1)}%`} />
+              </div>
+            )}
+            <div className='space-y-3 max-h-96 overflow-auto'>
+              {profitByMarket.map((m) => (
+                <div key={m.marketId} className='rounded-xl border border-white/10 bg-white/5 p-4'>
+                  <div className='flex items-start justify-between'>
+                    <div>
+                      <p className='font-semibold'>{m.marketName}</p>
+                      <p className='text-xs text-white/40'>{m.marketType} - {m.eventName} - Vencedor: {m.winnerLabel}</p>
+                    </div>
+                    <p className='text-sm font-bold text-emerald-400'>R$ {m.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                  <div className='mt-2 flex gap-4 text-xs text-white/50'>
+                    <span>Pool: R$ {m.totalPool.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    <span>Rake ({m.rakePercent}%): R$ {m.rakeCollected.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    <span>Afiliados: R$ {m.affiliatePayouts.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+              ))}
+              {!profitByMarket.length && <p className='text-sm text-white/40'>Nenhum mercado liquidado ainda.</p>}
+            </div>
           </Panel>
         ) : null}
 

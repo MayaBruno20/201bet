@@ -131,6 +131,10 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     return this.toSnapshot(state);
   }
 
+  removeDuel(duelId: string) {
+    this.states.delete(duelId);
+  }
+
   getAllSnapshots(): MarketSnapshot[] {
     return [...this.states.values()].map((state) => this.toSnapshot(state));
   }
@@ -175,18 +179,26 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException('Não encontramos esta corrida para apostar');
     }
 
+    if (state.status !== DuelStatus.BOOKING_OPEN) {
+      throw new Error('Apostas não estão abertas para esta corrida');
+    }
+
+    if (Date.now() >= state.bookingCloseAt.getTime()) {
+      throw new Error('O período de apostas desta corrida já encerrou');
+    }
+
     const amount = Number(input.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new Error('Informe um valor de aposta válido');
     }
 
-    if (amount < 5) {
-      throw new Error('A aposta mínima é de R$ 5,00');
+    const minBet = this.getMinBet();
+    if (amount < minBet) {
+      throw new Error(`A aposta mínima é de R$ ${minBet.toFixed(2).replace('.', ',')}`);
     }
 
-    const lock = this.evaluateLock(state);
-    if (lock.locked && (lock.lockedSide === 'BOTH' || lock.lockedSide === input.side)) {
-      throw new Error(lock.message ?? 'As apostas estão temporariamente bloqueadas');
+    if (input.side !== 'LEFT' && input.side !== 'RIGHT') {
+      throw new Error('Lado inválido. Escolha LEFT ou RIGHT');
     }
 
     const oddAtPlacement = input.side === 'LEFT' ? state.left.odd : state.right.odd;
@@ -194,12 +206,15 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     const potentialWin = amountDecimal.mul(new Prisma.Decimal(oddAtPlacement.toFixed(4)));
 
     const placed = await this.prisma.$transaction(async (tx) => {
-      const wallet = await tx.wallet.findUnique({ where: { userId: input.userId } });
+      // SELECT FOR UPDATE to prevent double-spend race condition
+      const wallet = await tx.$queryRaw<Array<{ id: string; balance: Prisma.Decimal }>>`
+        SELECT id, balance FROM "Wallet" WHERE "userId" = ${input.userId} FOR UPDATE
+      `.then((rows) => rows[0] ?? null);
       if (!wallet) {
         throw new Error('Carteira do usuário não encontrada');
       }
 
-      if (wallet.balance.lt(amountDecimal)) {
+      if (new Prisma.Decimal(String(wallet.balance)).lt(amountDecimal)) {
         throw new Error('Saldo insuficiente para realizar essa aposta');
       }
 
@@ -243,8 +258,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
 
     this.applyPoolIncrement(state, input.side, amount);
     this.recalculateOdds(state);
-    const nextLock = this.evaluateLock(state);
-    this.captureHistory(state, nextLock.lockedSide, nextLock.reason);
+    this.captureHistory(state, 'NONE');
 
     return {
       snapshot: this.toSnapshot(state),
@@ -299,8 +313,6 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
 
     for (const duel of duels) {
       const existing = this.states.get(duel.id);
-      const seedLeft = 800 + this.randomInt(0, 1800);
-      const seedRight = 800 + this.randomInt(0, 1800);
 
       const state: EngineState = {
         duelId: duel.id,
@@ -317,9 +329,9 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
               carId: duel.leftCarId,
               carName: duel.leftCar.name,
               driverName: duel.leftCar.driver.name,
-              pool: seedLeft,
-              tickets: Math.max(1, Math.floor(seedLeft / 80)),
-              odd: 1.9,
+              pool: 0,
+              tickets: 0,
+              odd: 0,
               locked: false,
             },
         right: existing
@@ -328,9 +340,9 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
               carId: duel.rightCarId,
               carName: duel.rightCar.name,
               driverName: duel.rightCar.driver.name,
-              pool: seedRight,
-              tickets: Math.max(1, Math.floor(seedRight / 80)),
-              odd: 1.9,
+              pool: 0,
+              tickets: 0,
+              odd: 0,
               locked: false,
             },
         history: existing?.history ?? [],
@@ -361,21 +373,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
 
   private tick() {
     for (const state of this.states.values()) {
-      const lock = this.evaluateLock(state);
-
-      if (!lock.locked && state.status === DuelStatus.BOOKING_OPEN) {
-        // simula entrada orgânica de tickets em tempo real por lado
-        const side = Math.random() > 0.5 ? 'LEFT' : 'RIGHT';
-        const addAmount = this.randomInt(35, 280);
-        this.applyPoolIncrement(state, side, addAmount);
-      }
-
-      this.normalizePoolsIfNeeded(state);
       this.recalculateOdds(state);
-      const nextLock = this.evaluateLock(state);
-      state.left.locked = nextLock.locked && (nextLock.lockedSide === 'LEFT' || nextLock.lockedSide === 'BOTH');
-      state.right.locked = nextLock.locked && (nextLock.lockedSide === 'RIGHT' || nextLock.lockedSide === 'BOTH');
-      this.captureHistory(state, nextLock.lockedSide, nextLock.reason);
+      this.captureHistory(state, 'NONE');
     }
   }
 
@@ -383,86 +382,16 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     const totalPool = state.left.pool + state.right.pool;
     const margin = this.getMarginPercent() / 100;
 
-    const leftOdd = this.clamp((totalPool * (1 - margin)) / Math.max(state.left.pool, 1), 1.1, 8);
-    const rightOdd = this.clamp((totalPool * (1 - margin)) / Math.max(state.right.pool, 1), 1.1, 8);
+    const leftOdd = state.left.pool > 0 ? Math.max(1.01, (totalPool * (1 - margin)) / state.left.pool) : 0;
+    const rightOdd = state.right.pool > 0 ? Math.max(1.01, (totalPool * (1 - margin)) / state.right.pool) : 0;
 
     state.left.odd = Number(leftOdd.toFixed(2));
     state.right.odd = Number(rightOdd.toFixed(2));
   }
 
-  private evaluateLock(state: EngineState): { locked: boolean; lockedSide: Side | 'BOTH' | 'NONE'; reason?: string; message?: string } {
-    const now = Date.now();
-    if (state.status === DuelStatus.SCHEDULED) {
-      return { locked: true, lockedSide: 'BOTH', reason: 'BOOKING_NOT_OPEN', message: 'Apostas ainda não foram abertas para esta corrida' };
-    }
-
-    if (now >= state.bookingCloseAt.getTime() || state.status === DuelStatus.BOOKING_CLOSED) {
-      return {
-        locked: true,
-        lockedSide: 'BOTH',
-        reason: 'BOOKING_CLOSED_BY_TIME',
-        message: 'Apostas encerradas para esta corrida. Aguarde o resultado.',
-      };
-    }
-
-    if (state.status === DuelStatus.FINISHED || state.status === DuelStatus.CANCELED) {
-      return {
-        locked: true,
-        lockedSide: 'BOTH',
-        reason: 'DUEL_NOT_OPEN',
-        message: 'Corrida finalizada ou cancelada. Não é possível apostar.',
-      };
-    }
-
-    const totalPool = state.left.pool + state.right.pool;
-    if (totalPool <= 0) {
-      return { locked: false, lockedSide: 'NONE' };
-    }
-
-    const biggerSide: Side = state.left.pool >= state.right.pool ? 'LEFT' : 'RIGHT';
-    const biggerPool = biggerSide === 'LEFT' ? state.left.pool : state.right.pool;
-    const dominance = (biggerPool / totalPool) * 100;
-    const threshold = this.getLockThresholdPercent();
-
-    if (dominance >= threshold) {
-      return {
-        locked: true,
-        lockedSide: biggerSide,
-        reason: 'IMBALANCE_LOCK',
-        message: biggerSide === 'LEFT'
-          ? 'Apostas no lado azul foram pausadas para equilibrar o mercado'
-          : 'Apostas no lado laranja foram pausadas para equilibrar o mercado',
-      };
-    }
-
-    const houseBuffer = this.getHouseExposureBuffer();
-    const leftLiability = state.left.pool * state.left.odd;
-    const rightLiability = state.right.pool * state.right.odd;
-
-    if (leftLiability > totalPool + houseBuffer) {
-      return {
-        locked: true,
-        lockedSide: 'LEFT',
-        reason: 'HOUSE_EXPOSURE_LIMIT',
-        message: 'Apostas no lado azul pausadas por limite de segurança operacional',
-      };
-    }
-
-    if (rightLiability > totalPool + houseBuffer) {
-      return {
-        locked: true,
-        lockedSide: 'RIGHT',
-        reason: 'HOUSE_EXPOSURE_LIMIT',
-        message: 'Apostas no lado laranja pausadas por limite de segurança operacional',
-      };
-    }
-
-    return { locked: false, lockedSide: 'NONE' };
-  }
 
   private toSnapshot(state: EngineState): MarketSnapshot {
     const totalPool = state.left.pool + state.right.pool;
-    const lock = this.evaluateLock(state);
 
     return {
       duelId: state.duelId,
@@ -475,11 +404,9 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       totalPool: Number(totalPool.toFixed(2)),
       closeInSeconds: Math.max(0, Math.floor((state.bookingCloseAt.getTime() - Date.now()) / 1000)),
       marginPercent: this.getMarginPercent(),
-      lockThresholdPercent: this.getLockThresholdPercent(),
-      locked: lock.locked,
-      lockedSide: lock.lockedSide,
-      lockReason: lock.reason,
-      lockMessage: lock.message,
+      lockThresholdPercent: 100,
+      locked: false,
+      lockedSide: 'NONE',
       duel: {
         left: {
           id: state.left.carId,
@@ -487,7 +414,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           odd: state.left.odd,
           tickets: state.left.tickets,
           pool: Number(state.left.pool.toFixed(2)),
-          locked: lock.locked && (lock.lockedSide === 'LEFT' || lock.lockedSide === 'BOTH'),
+          locked: false,
         },
         right: {
           id: state.right.carId,
@@ -495,7 +422,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           odd: state.right.odd,
           tickets: state.right.tickets,
           pool: Number(state.right.pool.toFixed(2)),
-          locked: lock.locked && (lock.lockedSide === 'RIGHT' || lock.lockedSide === 'BOTH'),
+          locked: false,
         },
       },
       history: state.history.slice(-20),
@@ -552,18 +479,6 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     state.right.tickets += 1;
   }
 
-  private normalizePoolsIfNeeded(state: EngineState) {
-    const total = state.left.pool + state.right.pool;
-    const maxPool = 500_000;
-    if (total <= maxPool) {
-      return;
-    }
-
-    const factor = maxPool / total;
-    state.left.pool *= factor;
-    state.right.pool *= factor;
-  }
-
   private async resolveOddIdForSide(tx: Prisma.TransactionClient, duelId: string, side: Side) {
     const duel = await tx.duel.findUnique({
       where: { id: duelId },
@@ -603,18 +518,13 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
   }
 
   private getMarginPercent() {
-    const env = Number(process.env.MARKET_MARGIN_PERCENT ?? '6');
-    return Number.isFinite(env) ? this.clamp(env, 0, 20) : 6;
+    const env = Number(process.env.MARKET_MARGIN_PERCENT ?? '20');
+    return Number.isFinite(env) ? Math.min(50, Math.max(0, env)) : 20;
   }
 
-  private getLockThresholdPercent() {
-    const env = Number(process.env.BOOKING_LOCK_PERCENT ?? '67');
-    return Number.isFinite(env) ? this.clamp(env, 51, 95) : 67;
-  }
-
-  private getHouseExposureBuffer() {
-    const env = Number(process.env.HOUSE_EXPOSURE_BUFFER ?? '25000');
-    return Number.isFinite(env) ? Math.max(0, env) : 25_000;
+  private getMinBet() {
+    const env = Number(process.env.MIN_BET_AMOUNT ?? '10');
+    return Number.isFinite(env) ? Math.max(0, env) : 10;
   }
 
   private clamp(value: number, min: number, max: number) {

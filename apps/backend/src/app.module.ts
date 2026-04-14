@@ -10,6 +10,8 @@ import { EventsModule } from './events/events.module';
 import { PaymentsModule } from './payments/payments.module';
 import { MarketGateway } from './market.gateway';
 import { MarketService } from './market.service';
+import { MultiRunnerMarketService } from './multi-runner-market.service';
+import { SettlementService } from './settlement.service';
 
 @Module({
   imports: [
@@ -26,6 +28,8 @@ import { MarketService } from './market.service';
   controllers: [AppController],
   providers: [
     MarketService,
+    MultiRunnerMarketService,
+    SettlementService,
     MarketGateway,
     {
       provide: APP_GUARD,
