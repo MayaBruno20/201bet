@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -n backend,frontend -c cyan,magenta \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:full": "npm run infra:up && npm run dev",
-    "dev:backend": "dotenv -- npm --prefix apps/backend run start:dev",
+    "dev:backend": "dotenv -e .env -- npm --prefix apps/backend run start:dev",
     "dev:frontend": "npm --prefix apps/frontend run dev",
     "build": "npm run build:backend && npm run build:frontend",
     "build:backend": "npm --prefix apps/backend run build",
@@ -16,11 +16,11 @@
     "lint": "npm run lint:backend && npm run lint:frontend",
     "lint:backend": "npm --prefix apps/backend run lint",
     "lint:frontend": "npm --prefix apps/frontend run lint",
-    "db:generate": "dotenv -- npm --prefix apps/backend run prisma:generate",
-    "db:push": "dotenv -- npm --prefix apps/backend run prisma:push",
-    "db:migrate": "dotenv -- npm --prefix apps/backend run prisma:migrate",
-    "db:seed": "dotenv -- npm --prefix apps/backend run prisma:seed",
-    "infra:up": "docker compose up -d postgres redis",
+    "db:generate": "dotenv -e .env -- npm --prefix apps/backend run prisma:generate",
+    "db:push": "dotenv -e .env -- npm --prefix apps/backend run prisma:push",
+    "db:migrate": "dotenv -e .env -- npm --prefix apps/backend run prisma:migrate",
+    "db:seed": "dotenv -e .env -- npm --prefix apps/backend run prisma:seed",
+    "infra:up": "docker compose up -d --no-recreate postgres redis",
     "infra:down": "docker compose stop postgres redis",
     "infra:logs": "docker compose logs -f postgres redis"
   },
@@ -34,6 +34,7 @@
   "license": "MIT",
   "devDependencies": {
     "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
     "dotenv-cli": "^11.0.0"
   }
 }
