@@ -1,6 +1,6 @@
 /**
  * NEXT_PUBLIC_* é embutido em build time. Após mudar na Vercel, é preciso novo deploy.
- * Aceita só a origem (https://app.fly.dev) ou já com sufixo (/api).
+ * Aceita só a origem (ex.: https://api.onrender.com) ou já com sufixo (/api).
  */
 export function getPublicApiUrl(): string {
   const raw = process.env.NEXT_PUBLIC_API_URL?.trim();

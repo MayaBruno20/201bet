@@ -4,7 +4,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { clearAuthToken, getAuthToken, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
+import { apiFetch } from '@/lib/api-request';
+import { clearClientSession, getStoredUser, logoutSession, SessionUser, setStoredUser } from '@/lib/auth';
 
 import { getPublicApiUrl } from '@/lib/env-public';
 
@@ -39,21 +40,12 @@ export function MainNav() {
   }, [pathname]);
 
   useEffect(() => {
-    const token = getAuthToken();
-    if (!token) {
-      setUser(null);
-      return;
-    }
-
     void (async () => {
       try {
-        const res = await fetch(`${apiUrl}/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: 'no-store',
-        });
+        const res = await apiFetch(`${apiUrl}/auth/me`, { cache: 'no-store' });
 
         if (!res.ok) {
-          clearAuthToken();
+          clearClientSession();
           setUser(null);
           return;
         }
@@ -101,8 +93,8 @@ export function MainNav() {
     return visible;
   }, [user]);
 
-  function logout() {
-    clearAuthToken();
+  async function logout() {
+    await logoutSession();
     setUser(null);
     setMenuOpen(false);
     setMobileMenuOpen(false);

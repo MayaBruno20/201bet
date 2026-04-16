@@ -1,7 +1,11 @@
 neon_api_key      = ""
 upstash_api_key   = ""
 upstash_email     = ""
-fly_api_token     = ""
+
+# Free tier Upstash: limite de 1 Redis — use Redis já criado no console em vez de resource Terraform.
+# create_upstash_redis  = false
+# upstash_rest_url      = "https://<id>.upstash.io"
+# upstash_rest_token    = "<REST token no console>"
 vercel_api_token  = ""
 github_token      = ""
 github_owner      = ""
@@ -9,6 +13,25 @@ github_repo       = ""
 enable_github_secrets = true
 
 jwt_secret        = ""
+jwt_expires_in    = "8h"
 cors_origin       = "https://<frontend>.vercel.app"
 vercel_project_name = "201bet-frontend"
-fly_app_name        = "201bet-backend-prod"
+
+# URL pública do backend (Render, etc.), sem /api — obrigatória se enable_render_web_service = false
+backend_public_url = "https://<backend>.onrender.com"
+
+# --- Render via Terraform (opcional): no apply, exporte RENDER_API_KEY e RENDER_OWNER_ID
+enable_render_web_service = false
+render_api_key            = ""
+render_owner_id           = ""
+render_git_repo_url       = "https://github.com/<org>/201bet"
+render_git_branch         = "main"
+render_service_name       = "201bet-backend-prod"
+render_plan               = "starter"
+render_region             = "oregon"
+
+# Segredos extras no Web Service (Valut, webhook, etc.)
+# render_additional_env = {
+#   VALUT_API_KEY           = ""
+#   VALUT_WEBHOOK_SECRET = ""
+# }

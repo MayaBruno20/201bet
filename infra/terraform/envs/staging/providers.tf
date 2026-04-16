@@ -17,6 +17,10 @@ terraform {
       source  = "integrations/github"
       version = "~> 6.4"
     }
+    render = {
+      source  = "render-oss/render"
+      version = "~> 1.8"
+    }
   }
 }
 
@@ -38,3 +42,6 @@ provider "github" {
   token = var.github_token
   owner = var.github_owner
 }
+
+# Credenciais via ambiente: RENDER_API_KEY e RENDER_OWNER_ID (obrigatórias só se enable_render_web_service = true no apply).
+provider "render" {}

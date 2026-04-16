@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
-import { getAuthToken, clearAuthToken } from '@/lib/auth';
+import { apiFetch } from '@/lib/api-request';
+import { clearClientSession } from '@/lib/auth';
 import { getPublicApiUrl } from '@/lib/env-public';
 
 const apiUrl = getPublicApiUrl();
@@ -31,7 +32,7 @@ function statusClass(status: string) {
 }
 
 export default function SaquePage() {
-  const [token, setToken] = useState<string | null>(null);
+  const [sessionOk, setSessionOk] = useState(false);
   const [balance, setBalance] = useState(0);
   const [confirmedDeposits, setConfirmedDeposits] = useState(0);
   const [amount, setAmount] = useState('');
@@ -42,18 +43,22 @@ export default function SaquePage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  useEffect(() => { setToken(getAuthToken()); }, []);
-  useEffect(() => { if (token) void loadData(); }, [token]);
+  useEffect(() => {
+    void loadData();
+  }, []);
 
   async function loadData() {
-    if (!token) return;
     try {
-      const headers = { Authorization: `Bearer ${token}` };
       const [summaryRes, withdrawRes] = await Promise.all([
-        fetch(`${apiUrl}/payments/summary`, { headers, cache: 'no-store' }),
-        fetch(`${apiUrl}/payments/withdrawals`, { headers, cache: 'no-store' }),
+        apiFetch(`${apiUrl}/payments/summary`, { cache: 'no-store' }),
+        apiFetch(`${apiUrl}/payments/withdrawals`, { cache: 'no-store' }),
       ]);
-      if (!summaryRes.ok) { clearAuthToken(); setToken(null); return; }
+      if (!summaryRes.ok) {
+        clearClientSession();
+        setSessionOk(false);
+        return;
+      }
+      setSessionOk(true);
       const summary = await summaryRes.json();
       setBalance(summary.balance);
       setConfirmedDeposits(summary.confirmedDeposits);
@@ -79,16 +84,16 @@ export default function SaquePage() {
   }
 
   async function handleWithdraw() {
-    if (!token) return;
+    if (!sessionOk) return;
     if (numericAmount < 20) { setError('Saque mínimo de R$ 20,00'); return; }
     if (numericAmount > balance) { setError('Saldo insuficiente'); return; }
     if (!pixKey.trim()) { setError('Informe sua chave PIX'); return; }
 
     setLoading(true); setError(''); setSuccess('');
     try {
-      const res = await fetch(`${apiUrl}/payments/withdraw`, {
+      const res = await apiFetch(`${apiUrl}/payments/withdraw`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: numericAmount, pixKeyType, pixKey: pixKey.trim() }),
       });
       if (!res.ok) {
@@ -107,7 +112,7 @@ export default function SaquePage() {
     }
   }
 
-  if (!token) {
+  if (!sessionOk) {
     return (
       <main className='min-h-screen bg-[#090b11] text-white'>
         <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>

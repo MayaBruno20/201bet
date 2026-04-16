@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { MainNav } from '@/components/site/main-nav';
-import { getAuthToken } from '@/lib/auth';
+import { apiFetch } from '@/lib/api-request';
 import { getPublicApiUrl, getPublicWsUrl } from '@/lib/env-public';
 import { BettingBoard, MarketSnapshot } from '@/types/market';
 
@@ -138,31 +138,22 @@ export default function ApostasPage() {
   }, [myBets]);
 
   async function loadSession() {
-    const token = getAuthToken();
-    if (!token) return;
-
     try {
-      const response = await fetch(`${apiUrl}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      });
+      const response = await apiFetch(`${apiUrl}/auth/me`, { cache: 'no-store' });
 
-      if (!response.ok) return;
+      if (!response.ok) {
+        setMe(null);
+        return;
+      }
       setMe((await response.json()) as MeResponse);
     } catch {
-      // ignore session fetch errors here
+      setMe(null);
     }
   }
 
   async function loadMyBets() {
-    const token = getAuthToken();
-    if (!token) return;
-
     try {
-      const response = await fetch(`${apiUrl}/auth/my-bets`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      });
+      const response = await apiFetch(`${apiUrl}/auth/my-bets`, { cache: 'no-store' });
 
       if (!response.ok) return;
       setMyBets((await response.json()) as MyBet[]);
@@ -204,24 +195,22 @@ export default function ApostasPage() {
   async function placeBet() {
     if (!snapshot || !currentDuelId) return;
 
-    const token = getAuthToken();
-    if (!token) {
-      setMessage('Faça login para confirmar apostas com saldo da carteira.');
-      return;
-    }
-
     setPlacingBet(true);
     setMessage('');
 
     try {
-      const response = await fetch(`${apiUrl}/market/bet`, {
+      const response = await apiFetch(`${apiUrl}/market/bet`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ duelId: currentDuelId, side, amount: stake }),
       });
+
+      if (response.status === 401) {
+        setMessage('Faça login para confirmar apostas com saldo da carteira.');
+        return;
+      }
 
       if (!response.ok) {
         const data = await response.json().catch(() => null as unknown);

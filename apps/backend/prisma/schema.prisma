@@ -210,9 +210,22 @@ model Duel {
   event          Event       @relation(fields: [eventId], references: [id], onDelete: Restrict)
   leftCar        Car         @relation("leftCar", fields: [leftCarId], references: [id], onDelete: Restrict)
   rightCar       Car         @relation("rightCar", fields: [rightCarId], references: [id], onDelete: Restrict)
+  poolState      DuelPoolState?
 
   @@index([eventId, startsAt])
   @@index([status])
+}
+
+model DuelPoolState {
+  duelId       String   @id
+  leftPool     Decimal  @default(0) @db.Decimal(20, 4)
+  rightPool    Decimal  @default(0) @db.Decimal(20, 4)
+  leftTickets  Int      @default(0)
+  rightTickets Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  duel Duel @relation(fields: [duelId], references: [id], onDelete: Cascade)
 }
 
 model Market {

@@ -1,0 +1,84 @@
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { UserRole, UserStatus } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import { PrismaService } from '../database/prisma.service';
+import { AuthService } from './auth.service';
+
+describe('AuthService', () => {
+  let service: AuthService;
+  let prisma: jest.Mocked<Pick<PrismaService, 'user' | '$transaction'>>;
+  let jwtService: { signAsync: jest.Mock };
+
+  beforeEach(() => {
+    prisma = {
+      user: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      } as never,
+      $transaction: jest.fn(),
+    };
+    jwtService = { signAsync: jest.fn().mockResolvedValue('signed-jwt') };
+    service = new AuthService(prisma as unknown as PrismaService, jwtService as unknown as JwtService);
+  });
+
+  describe('login', () => {
+    it('throws when user not found', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      await expect(
+        service.login({ email: 'a@b.com', password: 'x' } as never),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('throws when password invalid', async () => {
+      const hash = await bcrypt.hash('right', 4);
+      prisma.user.findUnique.mockResolvedValue({
+        id: '1',
+        email: 'a@b.com',
+        password: hash,
+        name: 'T',
+        role: UserRole.USER,
+        status: UserStatus.ACTIVE,
+        wallet: { balance: 0 },
+      } as never);
+      await expect(
+        service.login({ email: 'a@b.com', password: 'wrong' } as never),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('returns accessToken and user on success', async () => {
+      const hash = await bcrypt.hash('secret', 4);
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        email: 'a@b.com',
+        password: hash,
+        name: 'Tester',
+        role: UserRole.USER,
+        status: UserStatus.ACTIVE,
+        wallet: { balance: { toNumber: () => 10 } },
+      } as never);
+
+      const out = await service.login({ email: 'a@b.com', password: 'secret' } as never);
+      expect(out.accessToken).toBe('signed-jwt');
+      expect(out.user.email).toBe('a@b.com');
+      expect(jwtService.signAsync).toHaveBeenCalled();
+    });
+  });
+
+  describe('register', () => {
+    it('throws when passwords differ', async () => {
+      await expect(
+        service.register({
+          email: 'a@b.com',
+          password: 'a',
+          confirmPassword: 'b',
+          name: 'N',
+          cpf: '12345678901',
+          birthDate: '1990-01-01',
+        } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+});

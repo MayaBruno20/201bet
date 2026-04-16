@@ -76,26 +76,6 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: vercel deploy --prebuilt --token $VERCEL_TOKEN
 
-      - name: Setup Flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Deploy Backend (Staging)
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_STAGING }}
-        run: flyctl deploy --config apps/backend/fly.toml --app ${{ secrets.FLY_APP_NAME_STAGING }}
-
-      - name: Backend Health Check + Auto Rollback (Staging)
+      - name: Backend health (opcional)
         if: ${{ secrets.BACKEND_STAGING_HEALTH_URL != '' }}
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_STAGING }}
-          BACKEND_STAGING_HEALTH_URL: ${{ secrets.BACKEND_STAGING_HEALTH_URL }}
-          FLY_APP_NAME_STAGING: ${{ secrets.FLY_APP_NAME_STAGING }}
-        run: |
-          set +e
-          curl --fail --retry 6 --retry-delay 5 "$BACKEND_STAGING_HEALTH_URL"
-          status=$?
-          if [ $status -ne 0 ]; then
-            echo "Health check falhou. Acionando rollback..."
-            flyctl releases rollback -a "$FLY_APP_NAME_STAGING" || true
-            exit 1
-          fi
+        run: curl --fail --retry 6 --retry-delay 5 "${{ secrets.BACKEND_STAGING_HEALTH_URL }}"

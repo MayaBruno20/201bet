@@ -9,10 +9,6 @@ terraform {
       source  = "upstash/upstash"
       version = "~> 1.2"
     }
-    fly = {
-      source  = "fly-apps/fly"
-      version = "~> 0.0.23"
-    }
     vercel = {
       source  = "vercel/vercel"
       version = "~> 1.10"
@@ -20,6 +16,10 @@ terraform {
     github = {
       source  = "integrations/github"
       version = "~> 6.4"
+    }
+    render = {
+      source  = "render-oss/render"
+      version = "~> 1.8"
     }
   }
 }

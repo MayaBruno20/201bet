@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
-import { getAuthToken, clearAuthToken } from '@/lib/auth';
+import { apiFetch } from '@/lib/api-request';
+import { clearClientSession } from '@/lib/auth';
 import { getPublicApiUrl } from '@/lib/env-public';
 
 const apiUrl = getPublicApiUrl();
@@ -11,7 +12,7 @@ const QUICK_VALUES = [20, 50, 100, 200, 500, 1000];
 type Step = 'valor' | 'pix' | 'confirmado';
 
 export default function DepositoPage() {
-  const [token, setToken] = useState<string | null>(null);
+  const [sessionOk, setSessionOk] = useState(false);
   const [balance, setBalance] = useState(0);
   const [amount, setAmount] = useState('');
   const [step, setStep] = useState<Step>('valor');
@@ -27,23 +28,22 @@ export default function DepositoPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    setToken(getAuthToken());
-  }, []);
-
-  useEffect(() => {
-    if (!token) return;
     void (async () => {
       try {
-        const res = await fetch(`${apiUrl}/payments/summary`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: 'no-store',
-        });
-        if (!res.ok) { clearAuthToken(); setToken(null); return; }
+        const res = await apiFetch(`${apiUrl}/payments/summary`, { cache: 'no-store' });
+        if (!res.ok) {
+          clearClientSession();
+          setSessionOk(false);
+          return;
+        }
+        setSessionOk(true);
         const data = await res.json();
         setBalance(data.balance);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     })();
-  }, [token]);
+  }, []);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -65,10 +65,8 @@ export default function DepositoPage() {
   const startPolling = useCallback((pId: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
-      if (!token) return;
       try {
-        const res = await fetch(`${apiUrl}/payments/deposit/${pId}/status`, {
-          headers: { Authorization: `Bearer ${token}` },
+        const res = await apiFetch(`${apiUrl}/payments/deposit/${pId}/status`, {
           cache: 'no-store',
         });
         if (!res.ok) return;
@@ -80,21 +78,20 @@ export default function DepositoPage() {
         }
       } catch { /* ignore */ }
     }, 5000); // Poll every 5 seconds
-  }, [token]);
+  }, []);
 
   async function handleGeneratePix() {
     if (numericAmount < 20) { setError('Depósito mínimo de R$ 20,00'); return; }
     if (numericAmount > 1000) { setError('Depósito máximo de R$ 1.000,00 por operação'); return; }
-    if (!token) return;
+    if (!sessionOk) return;
 
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${apiUrl}/payments/deposit`, {
+      const res = await apiFetch(`${apiUrl}/payments/deposit`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ amount: numericAmount }),
       });
@@ -123,7 +120,7 @@ export default function DepositoPage() {
     } catch { /* ignore */ }
   }
 
-  if (!token) {
+  if (!sessionOk) {
     return (
       <main className='min-h-screen bg-[#090b11] text-white'>
         <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>

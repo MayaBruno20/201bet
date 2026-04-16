@@ -1,4 +1,13 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { CurrentUser } from './common/decorators/current-user.decorator';
 import { MarketService } from './market.service';
@@ -27,10 +36,12 @@ export class AppController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('market/bet')
   placeBet(
     @CurrentUser() user: { userId: string },
-    @Body() payload: { duelId?: string; side?: 'LEFT' | 'RIGHT'; amount?: number },
+    @Body()
+    payload: { duelId?: string; side?: 'LEFT' | 'RIGHT'; amount?: number },
   ) {
     if (!payload.duelId || !payload.side || !payload.amount) {
       throw new BadRequestException('duelId, side e amount são obrigatórios');
@@ -44,7 +55,9 @@ export class AppController {
         amount: payload.amount,
       });
     } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : 'Falha ao registrar aposta');
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Falha ao registrar aposta',
+      );
     }
   }
 }

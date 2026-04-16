@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   DuelStatus,
   EventStatus,
@@ -12,8 +18,15 @@ import {
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../database/prisma.service';
-import { AnalyticsExportFormat, AnalyticsExportQueryDto, AnalyticsExportType } from './dto/analytics-query.dto';
-import { WalletAdjustOperation, type AdjustUserWalletDto } from './dto/adjust-user-wallet.dto';
+import {
+  AnalyticsExportFormat,
+  AnalyticsExportQueryDto,
+  AnalyticsExportType,
+} from './dto/analytics-query.dto';
+import {
+  WalletAdjustOperation,
+  type AdjustUserWalletDto,
+} from './dto/adjust-user-wallet.dto';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { CreateCarDto } from './dto/create-car.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
@@ -28,16 +41,31 @@ import { UpsertSettingDto } from './dto/upsert-setting.dto';
 
 type AuditContext = {
   actorUserId?: string;
+  actorRole?: UserRole;
   ipAddress?: string;
   userAgent?: string;
 };
+
+const PRIVILEGED_ROLES: UserRole[] = [
+  UserRole.ADMIN,
+  UserRole.OPERATOR,
+  UserRole.AUDITOR,
+];
 
 @Injectable()
 export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getDashboardSummary() {
-    const [usersTotal, activeUsers, eventsTotal, duelsTotal, openMarkets, pendingPayments, ledgerVolume] = await Promise.all([
+    const [
+      usersTotal,
+      activeUsers,
+      eventsTotal,
+      duelsTotal,
+      openMarkets,
+      pendingPayments,
+      ledgerVolume,
+    ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { status: 'ACTIVE' } }),
       this.prisma.event.count(),
@@ -89,10 +117,25 @@ export class AdminService {
       throw new BadRequestException('CPF inválido');
     }
 
-    const existing = await this.prisma.user.findUnique({ where: { email: normalizedEmail } });
-    const existingCpf = await this.prisma.user.findUnique({ where: { cpf: normalizedCpf } });
+    if (
+      PRIVILEGED_ROLES.includes(payload.role) &&
+      audit.actorRole !== UserRole.ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Apenas administradores podem criar usuários com este perfil',
+      );
+    }
+
+    const existing = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+    const existingCpf = await this.prisma.user.findUnique({
+      where: { cpf: normalizedCpf },
+    });
     if (existing || existingCpf) {
-      throw new ConflictException(existing ? 'E-mail já cadastrado' : 'CPF já cadastrado');
+      throw new ConflictException(
+        existing ? 'E-mail já cadastrado' : 'CPF já cadastrado',
+      );
     }
 
     const passwordHash = await bcrypt.hash(payload.password, 12);
@@ -133,12 +176,23 @@ export class AdminService {
         },
       });
 
-      await this.logAction(tx, 'ADMIN_CREATE_USER', 'User', created.id, { email: created.email, role: created.role, status: created.status }, audit);
+      await this.logAction(
+        tx,
+        'ADMIN_CREATE_USER',
+        'User',
+        created.id,
+        { email: created.email, role: created.role, status: created.status },
+        audit,
+      );
       return created;
     });
   }
 
-  async updateUser(id: string, payload: UpdateAdminUserDto, audit: AuditContext = {}) {
+  async updateUser(
+    id: string,
+    payload: UpdateAdminUserDto,
+    audit: AuditContext = {},
+  ) {
     const current = await this.prisma.user.findUnique({ where: { id } });
     if (!current) throw new NotFoundException('Usuário não encontrado');
 
@@ -170,7 +224,17 @@ export class AdminService {
     }
     if (payload.name) data.name = payload.name.trim();
     if (payload.birthDate) data.birthDate = new Date(payload.birthDate);
-    if (payload.role) data.role = payload.role;
+    if (payload.role) {
+      if (
+        PRIVILEGED_ROLES.includes(payload.role) &&
+        audit.actorRole !== UserRole.ADMIN
+      ) {
+        throw new ForbiddenException(
+          'Apenas administradores podem atribuir este perfil',
+        );
+      }
+      data.role = payload.role;
+    }
     if (payload.status) data.status = payload.status;
 
     return this.prisma.$transaction(async (tx) => {
@@ -195,41 +259,78 @@ export class AdminService {
   }
 
   async deleteUser(id: string, audit: AuditContext = {}) {
-    const user = await this.prisma.user.findUnique({ where: { id }, select: { id: true, status: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.user.update({ where: { id }, data: { status: UserStatus.BANNED } });
-      await this.logAction(tx, 'ADMIN_DEACTIVATE_USER', 'User', id, { previousStatus: user.status, nextStatus: 'BANNED' }, audit);
+      const updated = await tx.user.update({
+        where: { id },
+        data: { status: UserStatus.BANNED },
+      });
+      await this.logAction(
+        tx,
+        'ADMIN_DEACTIVATE_USER',
+        'User',
+        id,
+        { previousStatus: user.status, nextStatus: 'BANNED' },
+        audit,
+      );
       return { id: updated.id, status: updated.status };
     });
   }
 
-  async adjustUserWallet(id: string, payload: AdjustUserWalletDto, audit: AuditContext = {}) {
-    const user = await this.prisma.user.findUnique({ where: { id }, include: { wallet: true } });
-    if (!user?.wallet) throw new NotFoundException('Carteira do usuário não encontrada');
+  async adjustUserWallet(
+    id: string,
+    payload: AdjustUserWalletDto,
+    audit: AuditContext = {},
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { wallet: true },
+    });
+    if (!user?.wallet)
+      throw new NotFoundException('Carteira do usuário não encontrada');
 
     const amount = new Prisma.Decimal(payload.amount);
-    if (amount.lte(0)) throw new BadRequestException('Valor inválido para ajuste');
+    if (amount.lte(0))
+      throw new BadRequestException('Valor inválido para ajuste');
 
-    const signedAmount = payload.operation === WalletAdjustOperation.ADD ? amount : amount.neg();
-
-    if (payload.operation === WalletAdjustOperation.REMOVE && user.wallet.balance.lt(amount)) {
-      throw new BadRequestException('Saldo insuficiente para remoção');
-    }
+    const signedAmount =
+      payload.operation === WalletAdjustOperation.ADD ? amount : amount.neg();
 
     return this.prisma.$transaction(async (tx) => {
-      const wallet = await tx.wallet.update({
+      if (payload.operation === WalletAdjustOperation.REMOVE) {
+        const dec = await tx.wallet.updateMany({
+          where: { id: user.wallet!.id, balance: { gte: amount } },
+          data: { balance: { decrement: amount } },
+        });
+        if (dec.count === 0) {
+          throw new BadRequestException('Saldo insuficiente para remoção');
+        }
+      } else {
+        await tx.wallet.update({
+          where: { id: user.wallet!.id },
+          data: { balance: { increment: amount } },
+        });
+      }
+
+      const wallet = await tx.wallet.findUnique({
         where: { id: user.wallet!.id },
-        data: { balance: { increment: signedAmount } },
       });
+      if (!wallet)
+        throw new NotFoundException('Carteira do usuário não encontrada');
 
       const ledger = await tx.walletTransaction.create({
         data: {
           walletId: user.wallet!.id,
           type: WalletTransactionType.ADJUSTMENT,
           amount: signedAmount,
-          reference: payload.reason?.trim() || `admin-adjust-${payload.operation.toLowerCase()}`,
+          reference:
+            payload.reason?.trim() ||
+            `admin-adjust-${payload.operation.toLowerCase()}`,
         },
       });
 
@@ -238,7 +339,12 @@ export class AdminService {
         'ADMIN_WALLET_ADJUST',
         'Wallet',
         user.wallet!.id,
-        { userId: id, operation: payload.operation, amount: payload.amount, reason: payload.reason },
+        {
+          userId: id,
+          operation: payload.operation,
+          amount: payload.amount,
+          reason: payload.reason,
+        },
         audit,
       );
 
@@ -297,12 +403,23 @@ export class AdminService {
         },
       });
 
-      await this.logAction(tx, 'ADMIN_CREATE_EVENT', 'Event', created.id, { name: created.name, sport: created.sport }, audit);
+      await this.logAction(
+        tx,
+        'ADMIN_CREATE_EVENT',
+        'Event',
+        created.id,
+        { name: created.name, sport: created.sport },
+        audit,
+      );
       return created;
     });
   }
 
-  async updateEvent(id: string, payload: UpdateEventDto, audit: AuditContext = {}) {
+  async updateEvent(
+    id: string,
+    payload: UpdateEventDto,
+    audit: AuditContext = {},
+  ) {
     const existing = await this.prisma.event.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Evento não encontrado');
 
@@ -317,7 +434,14 @@ export class AdminService {
         },
       });
 
-      await this.logAction(tx, 'ADMIN_UPDATE_EVENT', 'Event', id, payload, audit);
+      await this.logAction(
+        tx,
+        'ADMIN_UPDATE_EVENT',
+        'Event',
+        id,
+        payload,
+        audit,
+      );
       return updated;
     });
   }
@@ -327,8 +451,14 @@ export class AdminService {
     if (!existing) throw new NotFoundException('Evento não encontrado');
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.event.update({ where: { id }, data: { status: EventStatus.CANCELED } });
-      await tx.market.updateMany({ where: { eventId: id }, data: { status: MarketStatus.CLOSED } });
+      await tx.event.update({
+        where: { id },
+        data: { status: EventStatus.CANCELED },
+      });
+      await tx.market.updateMany({
+        where: { eventId: id },
+        data: { status: MarketStatus.CLOSED },
+      });
       await tx.odd.updateMany({
         where: { market: { eventId: id } },
         data: { status: OddStatus.CLOSED },
@@ -336,12 +466,25 @@ export class AdminService {
       await tx.duel.updateMany({
         where: {
           eventId: id,
-          status: { in: [DuelStatus.SCHEDULED, DuelStatus.BOOKING_OPEN, DuelStatus.BOOKING_CLOSED] },
+          status: {
+            in: [
+              DuelStatus.SCHEDULED,
+              DuelStatus.BOOKING_OPEN,
+              DuelStatus.BOOKING_CLOSED,
+            ],
+          },
         },
         data: { status: DuelStatus.CANCELED },
       });
 
-      await this.logAction(tx, 'ADMIN_CANCEL_EVENT', 'Event', id, { previousStatus: existing.status, nextStatus: EventStatus.CANCELED }, audit);
+      await this.logAction(
+        tx,
+        'ADMIN_CANCEL_EVENT',
+        'Event',
+        id,
+        { previousStatus: existing.status, nextStatus: EventStatus.CANCELED },
+        audit,
+      );
       return { id, status: EventStatus.CANCELED };
     });
   }
@@ -364,12 +507,23 @@ export class AdminService {
         },
       });
 
-      await this.logAction(tx, 'ADMIN_CREATE_DRIVER', 'Driver', created.id, { name: created.name, nickname: created.nickname }, audit);
+      await this.logAction(
+        tx,
+        'ADMIN_CREATE_DRIVER',
+        'Driver',
+        created.id,
+        { name: created.name, nickname: created.nickname },
+        audit,
+      );
       return created;
     });
   }
 
-  async updateDriver(id: string, payload: UpdateDriverDto, audit: AuditContext = {}) {
+  async updateDriver(
+    id: string,
+    payload: UpdateDriverDto,
+    audit: AuditContext = {},
+  ) {
     const existing = await this.prisma.driver.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Piloto não encontrado');
 
@@ -383,7 +537,14 @@ export class AdminService {
         },
       });
 
-      await this.logAction(tx, 'ADMIN_UPDATE_DRIVER', 'Driver', id, payload, audit);
+      await this.logAction(
+        tx,
+        'ADMIN_UPDATE_DRIVER',
+        'Driver',
+        id,
+        payload,
+        audit,
+      );
       return updated;
     });
   }
@@ -394,7 +555,14 @@ export class AdminService {
 
     return this.prisma.$transaction(async (tx) => {
       await tx.driver.update({ where: { id }, data: { active: false } });
-      await this.logAction(tx, 'ADMIN_DEACTIVATE_DRIVER', 'Driver', id, { active: false }, audit);
+      await this.logAction(
+        tx,
+        'ADMIN_DEACTIVATE_DRIVER',
+        'Driver',
+        id,
+        { active: false },
+        audit,
+      );
       return { id, active: false };
     });
   }
@@ -409,7 +577,9 @@ export class AdminService {
   }
 
   async createCar(payload: CreateCarDto, audit: AuditContext = {}) {
-    const driver = await this.prisma.driver.findUnique({ where: { id: payload.driverId } });
+    const driver = await this.prisma.driver.findUnique({
+      where: { id: payload.driverId },
+    });
     if (!driver) {
       throw new BadRequestException('Piloto não encontrado');
     }
@@ -425,7 +595,18 @@ export class AdminService {
         include: { driver: true },
       });
 
-      await this.logAction(tx, 'ADMIN_CREATE_CAR', 'Car', created.id, { name: created.name, driver: created.driver.name, category: created.category }, audit);
+      await this.logAction(
+        tx,
+        'ADMIN_CREATE_CAR',
+        'Car',
+        created.id,
+        {
+          name: created.name,
+          driver: created.driver.name,
+          category: created.category,
+        },
+        audit,
+      );
       return created;
     });
   }
@@ -435,7 +616,9 @@ export class AdminService {
     if (!existing) throw new NotFoundException('Carro não encontrado');
 
     if (payload.driverId) {
-      const driver = await this.prisma.driver.findUnique({ where: { id: payload.driverId } });
+      const driver = await this.prisma.driver.findUnique({
+        where: { id: payload.driverId },
+      });
       if (!driver) {
         throw new BadRequestException('Piloto não encontrado');
       }
@@ -468,12 +651,25 @@ export class AdminService {
       await tx.duel.updateMany({
         where: {
           OR: [{ leftCarId: id }, { rightCarId: id }],
-          status: { in: [DuelStatus.SCHEDULED, DuelStatus.BOOKING_OPEN, DuelStatus.BOOKING_CLOSED] },
+          status: {
+            in: [
+              DuelStatus.SCHEDULED,
+              DuelStatus.BOOKING_OPEN,
+              DuelStatus.BOOKING_CLOSED,
+            ],
+          },
         },
         data: { status: DuelStatus.CANCELED },
       });
 
-      await this.logAction(tx, 'ADMIN_DEACTIVATE_CAR', 'Car', id, { active: false }, audit);
+      await this.logAction(
+        tx,
+        'ADMIN_DEACTIVATE_CAR',
+        'Car',
+        id,
+        { active: false },
+        audit,
+      );
       return { id, active: false };
     });
   }
@@ -527,7 +723,12 @@ export class AdminService {
         'ADMIN_CREATE_DUEL',
         'Duel',
         created.id,
-        { event: created.event.name, leftCar: created.leftCar.name, rightCar: created.rightCar.name, status: created.status },
+        {
+          event: created.event.name,
+          leftCar: created.leftCar.name,
+          rightCar: created.rightCar.name,
+          status: created.status,
+        },
         audit,
       );
 
@@ -535,11 +736,19 @@ export class AdminService {
     });
   }
 
-  async updateDuel(id: string, payload: UpdateDuelDto, audit: AuditContext = {}) {
+  async updateDuel(
+    id: string,
+    payload: UpdateDuelDto,
+    audit: AuditContext = {},
+  ) {
     const existing = await this.prisma.duel.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Embate não encontrado');
 
-    if (payload.leftCarId && payload.rightCarId && payload.leftCarId === payload.rightCarId) {
+    if (
+      payload.leftCarId &&
+      payload.rightCarId &&
+      payload.leftCarId === payload.rightCarId
+    ) {
       throw new BadRequestException('Carros do embate devem ser diferentes');
     }
 
@@ -551,7 +760,9 @@ export class AdminService {
           leftCarId: payload.leftCarId,
           rightCarId: payload.rightCarId,
           startsAt: payload.startsAt ? new Date(payload.startsAt) : undefined,
-          bookingCloseAt: payload.bookingCloseAt ? new Date(payload.bookingCloseAt) : undefined,
+          bookingCloseAt: payload.bookingCloseAt
+            ? new Date(payload.bookingCloseAt)
+            : undefined,
           status: payload.status,
           notes: payload.notes,
         },
@@ -572,8 +783,18 @@ export class AdminService {
     if (!existing) throw new NotFoundException('Embate não encontrado');
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.duel.update({ where: { id }, data: { status: DuelStatus.CANCELED } });
-      await this.logAction(tx, 'ADMIN_CANCEL_DUEL', 'Duel', id, { previousStatus: existing.status, nextStatus: DuelStatus.CANCELED }, audit);
+      const updated = await tx.duel.update({
+        where: { id },
+        data: { status: DuelStatus.CANCELED },
+      });
+      await this.logAction(
+        tx,
+        'ADMIN_CANCEL_DUEL',
+        'Duel',
+        id,
+        { previousStatus: existing.status, nextStatus: DuelStatus.CANCELED },
+        audit,
+      );
       return { id: updated.id, status: updated.status };
     });
   }
@@ -610,18 +831,34 @@ export class AdminService {
         },
       });
 
-      await this.logAction(tx, 'ADMIN_UPSERT_SETTING', 'GlobalSetting', saved.id, { key: saved.key, value: saved.value }, audit);
+      await this.logAction(
+        tx,
+        'ADMIN_UPSERT_SETTING',
+        'GlobalSetting',
+        saved.id,
+        { key: saved.key, value: saved.value },
+        audit,
+      );
       return saved;
     });
   }
 
   async deleteSetting(id: string, audit: AuditContext = {}) {
-    const existing = await this.prisma.globalSetting.findUnique({ where: { id } });
+    const existing = await this.prisma.globalSetting.findUnique({
+      where: { id },
+    });
     if (!existing) throw new NotFoundException('Configuração não encontrada');
 
     return this.prisma.$transaction(async (tx) => {
       await tx.globalSetting.delete({ where: { id } });
-      await this.logAction(tx, 'ADMIN_DELETE_SETTING', 'GlobalSetting', id, { key: existing.key }, audit);
+      await this.logAction(
+        tx,
+        'ADMIN_DELETE_SETTING',
+        'GlobalSetting',
+        id,
+        { key: existing.key },
+        audit,
+      );
       return { id };
     });
   }
@@ -643,10 +880,23 @@ export class AdminService {
 
   async getProfitabilityReport() {
     const [allBets, wonBets, refundedLedger, wonLedger] = await Promise.all([
-      this.prisma.bet.aggregate({ _sum: { stake: true }, _count: { _all: true } }),
-      this.prisma.bet.aggregate({ where: { status: 'WON' }, _sum: { potentialWin: true }, _count: { _all: true } }),
-      this.prisma.walletTransaction.aggregate({ where: { type: WalletTransactionType.BET_REFUND }, _sum: { amount: true } }),
-      this.prisma.walletTransaction.aggregate({ where: { type: WalletTransactionType.BET_WON }, _sum: { amount: true } }),
+      this.prisma.bet.aggregate({
+        _sum: { stake: true },
+        _count: { _all: true },
+      }),
+      this.prisma.bet.aggregate({
+        where: { status: 'WON' },
+        _sum: { potentialWin: true },
+        _count: { _all: true },
+      }),
+      this.prisma.walletTransaction.aggregate({
+        where: { type: WalletTransactionType.BET_REFUND },
+        _sum: { amount: true },
+      }),
+      this.prisma.walletTransaction.aggregate({
+        where: { type: WalletTransactionType.BET_WON },
+        _sum: { amount: true },
+      }),
     ]);
 
     const grossStake = Number(allBets._sum.stake ?? 0);
@@ -672,7 +922,13 @@ export class AdminService {
     const normalizedLimit = Math.min(Math.max(limit, 1), 100);
 
     const rows = await this.prisma.$queryRaw<
-      Array<{ eventId: string; eventName: string; startsAt: Date; betsCount: bigint; totalStake: Prisma.Decimal }>
+      Array<{
+        eventId: string;
+        eventName: string;
+        startsAt: Date;
+        betsCount: bigint;
+        totalStake: Prisma.Decimal;
+      }>
     >`
       SELECT
         e.id AS "eventId",
@@ -704,12 +960,26 @@ export class AdminService {
     const d7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const [newUsers7d, newUsers30d, bets30d, activeBettors30d, activeDepositors30d] = await Promise.all([
+    const [
+      newUsers7d,
+      newUsers30d,
+      bets30d,
+      activeBettors30d,
+      activeDepositors30d,
+    ] = await Promise.all([
       this.prisma.user.count({ where: { createdAt: { gte: d7 } } }),
       this.prisma.user.count({ where: { createdAt: { gte: d30 } } }),
       this.prisma.bet.count({ where: { createdAt: { gte: d30 } } }),
-      this.prisma.bet.findMany({ where: { createdAt: { gte: d30 } }, select: { userId: true }, distinct: ['userId'] }),
-      this.prisma.payment.findMany({ where: { createdAt: { gte: d30 }, type: PaymentType.DEPOSIT }, select: { userId: true }, distinct: ['userId'] }),
+      this.prisma.bet.findMany({
+        where: { createdAt: { gte: d30 } },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      this.prisma.payment.findMany({
+        where: { createdAt: { gte: d30 }, type: PaymentType.DEPOSIT },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
     ]);
 
     const activeBettors = activeBettors30d.length;
@@ -873,7 +1143,8 @@ export class AdminService {
     const headers = Object.keys(rows[0]);
     const escape = (value: unknown) => {
       if (value === null || value === undefined) return '';
-      const raw = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      const raw =
+        typeof value === 'object' ? JSON.stringify(value) : String(value);
       const escaped = raw.replace(/"/g, '""');
       return `"${escaped}"`;
     };

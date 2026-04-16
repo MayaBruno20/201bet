@@ -5,7 +5,8 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 
-const jwtExpiresIn = (process.env.JWT_EXPIRES_IN ?? '8h') as `${number}${'ms' | 's' | 'm' | 'h' | 'd' | 'w' | 'y'}`;
+const jwtExpiresIn = (process.env.JWT_EXPIRES_IN ??
+  '8h') as `${number}${'ms' | 's' | 'm' | 'h' | 'd' | 'w' | 'y'}`;
 
 @Module({
   imports: [

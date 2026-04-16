@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
-import { clearAuthToken, getAuthToken, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
+import { apiFetch as fetchWithCredentials } from '@/lib/api-request';
+import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
 
 import { getPublicApiUrl } from '@/lib/env-public';
 
@@ -89,7 +90,7 @@ const ADMIN_SECTIONS: { id: AdminSection; title: string; description: string }[]
 ];
 
 export default function AdminPage() {
-  const [token, setToken] = useState<string | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -127,19 +128,15 @@ export default function AdminPage() {
   const isAllowed = useMemo(() => !!sessionUser && ['ADMIN', 'OPERATOR'].includes(sessionUser.role), [sessionUser]);
 
   useEffect(() => {
-    setToken(getAuthToken());
     setSessionUser(getStoredUser());
   }, []);
 
   useEffect(() => {
-    if (!token) return;
-
     void (async () => {
       try {
-        const res = await fetch(`${apiUrl}/auth/me`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+        const res = await fetchWithCredentials(`${apiUrl}/auth/me`, { cache: 'no-store' });
         if (!res.ok) {
-          clearAuthToken();
-          setToken(null);
+          clearClientSession();
           setSessionUser(null);
           return;
         }
@@ -147,31 +144,30 @@ export default function AdminPage() {
         setSessionUser(me);
         setStoredUser(me);
       } catch {
-        // keep current local state
+        setSessionUser(null);
+      } finally {
+        setSessionReady(true);
       }
     })();
-  }, [token]);
+  }, []);
 
   useEffect(() => {
-    if (!token || !isAllowed) return;
-    void loadData(token);
-  }, [token, isAllowed]);
+    if (!sessionReady || !isAllowed) return;
+    void loadData();
+  }, [sessionReady, isAllowed]);
 
-  async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
-    if (!token) throw new Error('Sem token de autenticação');
-
-    const response = await fetch(`${apiUrl}${url}`, {
+  async function adminJson<T>(path: string, init?: RequestInit): Promise<T> {
+    const response = await fetchWithCredentials(`${apiUrl}${path}`, {
       ...init,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
         ...(init?.headers ?? {}),
       },
     });
 
     if (response.status === 401 || response.status === 403) {
-      clearAuthToken();
-      setToken(null);
+      clearClientSession();
+      setSessionUser(null);
       throw new Error('Sessão expirada ou sem permissão. Faça login novamente.');
     }
 
@@ -182,26 +178,31 @@ export default function AdminPage() {
     return (await response.json()) as T;
   }
 
-  async function loadData(authToken: string) {
+  async function loadData() {
     setLoading(true);
     setStatusMessage('');
     try {
-      const headers = { Authorization: `Bearer ${authToken}` };
       const [dashboardRes, usersRes, driversRes, carsRes, eventsRes, duelsRes, settingsRes, auditRes, overviewRes, perfRes] = await Promise.all([
-        fetch(`${apiUrl}/admin/dashboard`, { headers }),
-        fetch(`${apiUrl}/admin/users`, { headers }),
-        fetch(`${apiUrl}/admin/drivers`, { headers }),
-        fetch(`${apiUrl}/admin/cars`, { headers }),
-        fetch(`${apiUrl}/admin/events`, { headers }),
-        fetch(`${apiUrl}/admin/duels`, { headers }),
-        fetch(`${apiUrl}/admin/settings`, { headers }),
-        fetch(`${apiUrl}/admin/audit-logs?limit=40`, { headers }),
-        fetch(`${apiUrl}/admin/analytics/overview`, { headers }),
-        fetch(`${apiUrl}/admin/analytics/events?limit=20`, { headers }),
+        fetchWithCredentials(`${apiUrl}/admin/dashboard`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/users`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/drivers`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/cars`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/events`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/duels`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/settings`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/audit-logs?limit=40`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/analytics/overview`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/analytics/events?limit=20`, {}),
       ]);
 
       for (const res of [dashboardRes, usersRes, driversRes, carsRes, eventsRes, duelsRes, settingsRes, overviewRes, perfRes]) {
-        if (!res.ok) throw new Error('Falha ao carregar painel administrativo');
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            clearClientSession();
+            setSessionUser(null);
+          }
+          throw new Error('Falha ao carregar painel administrativo');
+        }
       }
 
       setDashboard((await dashboardRes.json()) as AdminDashboard);
@@ -229,7 +230,7 @@ export default function AdminPage() {
     setStatusMessage('');
     try {
       await action();
-      if (token) await loadData(token);
+      if (isAllowed) await loadData();
       setStatusMessage(`${label} realizado com sucesso.`);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : `Falha em ${label}`);
@@ -240,7 +241,7 @@ export default function AdminPage() {
 
   async function exportAnalytics(type: 'users' | 'events' | 'bets' | 'transactions', format: 'json' | 'csv') {
     await submit(`Exportação ${type}`, async () => {
-      const result = await apiFetch<{ filename: string; data: unknown; format: 'json' | 'csv' }>(
+      const result = await adminJson<{ filename: string; data: unknown; format: 'json' | 'csv' }>(
         `/admin/analytics/export?type=${type}&format=${format}&limit=500`,
       );
 
@@ -257,7 +258,18 @@ export default function AdminPage() {
     });
   }
 
-  if (!token || !sessionUser) {
+  if (!sessionReady) {
+    return (
+      <main className='min-h-screen bg-[#090b11] text-white'>
+        <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+          <MainNav />
+          <p className='mt-10 text-center text-white/50'>Carregando…</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!sessionUser) {
     return (
       <main className='min-h-screen bg-[#090b11] text-white'>
         <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
@@ -371,7 +383,7 @@ export default function AdminPage() {
               onSubmit={(e) => {
                 e.preventDefault();
                 void submit('Cadastro de usuário', () =>
-                  apiFetch('/admin/users', {
+                  adminJson('/admin/users', {
                     method: 'POST',
                     body: JSON.stringify({ ...newUser, cpf: newUser.cpf.replace(/\D/g, ''), status: 'ACTIVE' }),
                   }),
@@ -405,7 +417,7 @@ export default function AdminPage() {
                         const role = prompt('Nova role (USER/ADMIN/OPERATOR/AUDITOR):', u.role);
                         if (!role) return;
                         void submit('Atualização de usuário', () =>
-                          apiFetch(`/admin/users/${u.id}`, {
+                          adminJson(`/admin/users/${u.id}`, {
                             method: 'PATCH',
                             body: JSON.stringify({ role }),
                           }),
@@ -421,7 +433,7 @@ export default function AdminPage() {
                         const amount = prompt('Valor para adicionar no saldo:');
                         if (!amount) return;
                         void submit('Adicionar saldo', () =>
-                          apiFetch(`/admin/users/${u.id}/wallet-adjust`, {
+                          adminJson(`/admin/users/${u.id}/wallet-adjust`, {
                             method: 'POST',
                             body: JSON.stringify({ operation: 'ADD', amount: Number(amount), reason: 'admin-credit' }),
                           }),
@@ -437,7 +449,7 @@ export default function AdminPage() {
                         const amount = prompt('Valor para remover do saldo:');
                         if (!amount) return;
                         void submit('Remover saldo', () =>
-                          apiFetch(`/admin/users/${u.id}/wallet-adjust`, {
+                          adminJson(`/admin/users/${u.id}/wallet-adjust`, {
                             method: 'POST',
                             body: JSON.stringify({ operation: 'REMOVE', amount: Number(amount), reason: 'admin-debit' }),
                           }),
@@ -451,7 +463,7 @@ export default function AdminPage() {
                       type='button'
                       onClick={() => {
                         if (!confirm(`Desativar usuário ${u.email}?`)) return;
-                        void submit('Desativação de usuário', () => apiFetch(`/admin/users/${u.id}`, { method: 'DELETE' }));
+                        void submit('Desativação de usuário', () => adminJson(`/admin/users/${u.id}`, { method: 'DELETE' }));
                       }}
                     >
                       Desativar
@@ -470,7 +482,7 @@ export default function AdminPage() {
               onSubmit={(e) => {
                 e.preventDefault();
                 void submit('Cadastro de evento', () =>
-                  apiFetch('/admin/events', {
+                  adminJson('/admin/events', {
                     method: 'POST',
                     body: JSON.stringify({
                       sport: newEvent.sport,
@@ -519,7 +531,7 @@ export default function AdminPage() {
                       onClick={() => {
                         const name = prompt('Novo nome do evento:', event.name);
                         if (!name) return;
-                        void submit('Atualização de evento', () => apiFetch(`/admin/events/${event.id}`, { method: 'PATCH', body: JSON.stringify({ name }) }));
+                        void submit('Atualização de evento', () => adminJson(`/admin/events/${event.id}`, { method: 'PATCH', body: JSON.stringify({ name }) }));
                       }}
                     >
                       Editar
@@ -529,7 +541,7 @@ export default function AdminPage() {
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
                       onClick={() => {
                         if (!confirm(`Cancelar evento ${event.name}?`)) return;
-                        void submit('Cancelamento de evento', () => apiFetch(`/admin/events/${event.id}`, { method: 'DELETE' }));
+                        void submit('Cancelamento de evento', () => adminJson(`/admin/events/${event.id}`, { method: 'DELETE' }));
                       }}
                     >
                       Cancelar
@@ -547,7 +559,7 @@ export default function AdminPage() {
               className='space-y-2'
               onSubmit={(e) => {
                 e.preventDefault();
-                void submit('Cadastro de piloto', () => apiFetch('/admin/drivers', { method: 'POST', body: JSON.stringify(newDriver) }));
+                void submit('Cadastro de piloto', () => adminJson('/admin/drivers', { method: 'POST', body: JSON.stringify(newDriver) }));
               }}
             >
               <input className='field' placeholder='Nome do piloto' value={newDriver.name} onChange={(e) => setNewDriver((p) => ({ ...p, name: e.target.value }))} required />
@@ -567,7 +579,7 @@ export default function AdminPage() {
                       onClick={() => {
                         const name = prompt('Novo nome:', driver.name);
                         if (!name) return;
-                        void submit('Atualização de piloto', () => apiFetch(`/admin/drivers/${driver.id}`, { method: 'PATCH', body: JSON.stringify({ name }) }));
+                        void submit('Atualização de piloto', () => adminJson(`/admin/drivers/${driver.id}`, { method: 'PATCH', body: JSON.stringify({ name }) }));
                       }}
                     >
                       Editar
@@ -577,7 +589,7 @@ export default function AdminPage() {
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
                       onClick={() => {
                         if (!confirm(`Desativar piloto ${driver.name}?`)) return;
-                        void submit('Desativação de piloto', () => apiFetch(`/admin/drivers/${driver.id}`, { method: 'DELETE' }));
+                        void submit('Desativação de piloto', () => adminJson(`/admin/drivers/${driver.id}`, { method: 'DELETE' }));
                       }}
                     >
                       Desativar
@@ -595,7 +607,7 @@ export default function AdminPage() {
               className='space-y-2'
               onSubmit={(e) => {
                 e.preventDefault();
-                void submit('Cadastro de carro', () => apiFetch('/admin/cars', { method: 'POST', body: JSON.stringify(newCar) }));
+                void submit('Cadastro de carro', () => adminJson('/admin/cars', { method: 'POST', body: JSON.stringify(newCar) }));
               }}
             >
               <select className='field' value={newCar.driverId} onChange={(e) => setNewCar((p) => ({ ...p, driverId: e.target.value }))} required>
@@ -622,7 +634,7 @@ export default function AdminPage() {
                       onClick={() => {
                         const category = prompt('Nova categoria:', car.category);
                         if (!category) return;
-                        void submit('Atualização de carro', () => apiFetch(`/admin/cars/${car.id}`, { method: 'PATCH', body: JSON.stringify({ category }) }));
+                        void submit('Atualização de carro', () => adminJson(`/admin/cars/${car.id}`, { method: 'PATCH', body: JSON.stringify({ category }) }));
                       }}
                     >
                       Editar
@@ -632,7 +644,7 @@ export default function AdminPage() {
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
                       onClick={() => {
                         if (!confirm(`Desativar carro ${car.name}?`)) return;
-                        void submit('Desativação de carro', () => apiFetch(`/admin/cars/${car.id}`, { method: 'DELETE' }));
+                        void submit('Desativação de carro', () => adminJson(`/admin/cars/${car.id}`, { method: 'DELETE' }));
                       }}
                     >
                       Desativar
@@ -651,7 +663,7 @@ export default function AdminPage() {
               onSubmit={(e) => {
                 e.preventDefault();
                 void submit('Cadastro de embate', () =>
-                  apiFetch('/admin/duels', {
+                  adminJson('/admin/duels', {
                     method: 'POST',
                     body: JSON.stringify({
                       ...newDuel,
@@ -697,7 +709,7 @@ export default function AdminPage() {
                       onClick={() => {
                         const status = prompt('Novo status (SCHEDULED/BOOKING_OPEN/BOOKING_CLOSED/FINISHED/CANCELED):', duel.status);
                         if (!status) return;
-                        void submit('Atualização de embate', () => apiFetch(`/admin/duels/${duel.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }));
+                        void submit('Atualização de embate', () => adminJson(`/admin/duels/${duel.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }));
                       }}
                     >
                       Editar
@@ -707,7 +719,7 @@ export default function AdminPage() {
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
                       onClick={() => {
                         if (!confirm('Cancelar este embate?')) return;
-                        void submit('Cancelamento de embate', () => apiFetch(`/admin/duels/${duel.id}`, { method: 'DELETE' }));
+                        void submit('Cancelamento de embate', () => adminJson(`/admin/duels/${duel.id}`, { method: 'DELETE' }));
                       }}
                     >
                       Cancelar
@@ -725,7 +737,7 @@ export default function AdminPage() {
               className='space-y-2'
               onSubmit={(e) => {
                 e.preventDefault();
-                void submit('Configuração global', () => apiFetch('/admin/settings', { method: 'POST', body: JSON.stringify(newSetting) }));
+                void submit('Configuração global', () => adminJson('/admin/settings', { method: 'POST', body: JSON.stringify(newSetting) }));
               }}
             >
               <input className='field' placeholder='KEY_EXEMPLO' value={newSetting.key} onChange={(e) => setNewSetting((p) => ({ ...p, key: e.target.value }))} required />
@@ -747,7 +759,7 @@ export default function AdminPage() {
                         const value = prompt('Novo valor:', setting.value);
                         if (!value) return;
                         void submit('Atualização de configuração', () =>
-                          apiFetch('/admin/settings', {
+                          adminJson('/admin/settings', {
                             method: 'POST',
                             body: JSON.stringify({ key: setting.key, value, description: setting.description }),
                           }),
@@ -761,7 +773,7 @@ export default function AdminPage() {
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
                       onClick={() => {
                         if (!confirm(`Excluir configuração ${setting.key}?`)) return;
-                        void submit('Exclusão de configuração', () => apiFetch(`/admin/settings/${setting.id}`, { method: 'DELETE' }));
+                        void submit('Exclusão de configuração', () => adminJson(`/admin/settings/${setting.id}`, { method: 'DELETE' }));
                       }}
                     >
                       Excluir

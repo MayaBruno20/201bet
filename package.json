@@ -22,7 +22,12 @@
     "db:seed": "dotenv -e .env -- npm --prefix apps/backend run prisma:seed",
     "infra:up": "docker compose up -d --no-recreate postgres redis",
     "infra:down": "docker compose stop postgres redis",
-    "infra:logs": "docker compose logs -f postgres redis"
+    "infra:logs": "docker compose logs -f postgres redis",
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "npm --prefix apps/backend run test:all",
+    "test:frontend": "npm --prefix apps/frontend run test",
+    "test:e2e:frontend": "npm --prefix apps/frontend run test:e2e",
+    "test:all": "npm run test && npm run test:e2e:frontend"
   },
   "keywords": [
     "nestjs",

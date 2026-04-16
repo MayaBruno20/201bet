@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Res, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import type { Response } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { attachAccessTokenCookie, clearAccessTokenCookie } from './auth-cookie';
 import { AuthService } from './auth.service';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { LoginDto } from './dto/login.dto';
@@ -14,20 +16,32 @@ export class AuthController {
 
   @Post('login')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  login(@Body() payload: LoginDto) {
-    return this.authService.login(payload);
+  async login(@Body() payload: LoginDto, @Res({ passthrough: true }) res: Response) {
+    const { accessToken, user } = await this.authService.login(payload);
+    attachAccessTokenCookie(res, accessToken);
+    return { user };
   }
 
   @Post('register')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  register(@Body() payload: RegisterDto) {
-    return this.authService.register(payload);
+  async register(@Body() payload: RegisterDto, @Res({ passthrough: true }) res: Response) {
+    const { accessToken, user } = await this.authService.register(payload);
+    attachAccessTokenCookie(res, accessToken);
+    return { user };
   }
 
   @Post('google')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  google(@Body() payload: GoogleLoginDto) {
-    return this.authService.googleLogin(payload);
+  async google(@Body() payload: GoogleLoginDto, @Res({ passthrough: true }) res: Response) {
+    const { accessToken, user } = await this.authService.googleLogin(payload);
+    attachAccessTokenCookie(res, accessToken);
+    return { user };
+  }
+
+  @Post('logout')
+  logout(@Res({ passthrough: true }) res: Response) {
+    clearAccessTokenCookie(res);
+    return { ok: true };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -38,7 +52,10 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Patch('me')
-  updateMe(@CurrentUser() user: { userId: string }, @Body() payload: UpdateProfileDto) {
+  updateMe(
+    @CurrentUser() user: { userId: string },
+    @Body() payload: UpdateProfileDto,
+  ) {
     return this.authService.updateMe(user.userId, payload);
   }
 

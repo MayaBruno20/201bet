@@ -1,4 +1,8 @@
-import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  InternalServerErrorException,
+} from '@nestjs/common';
 
 const VALUT_BASE_URL = 'https://api.valut.app/openbanking';
 
@@ -8,31 +12,50 @@ export class ValutService {
   private accessToken: string | null = null;
   private tokenExpiresAt: Date | null = null;
 
-  private get apiKey() { return process.env.VALUT_API_KEY ?? ''; }
-  private get apiSecret() { return process.env.VALUT_API_SECRET ?? ''; }
-  private get username() { return process.env.VALUT_USERNAME ?? ''; }
-  private get password() { return process.env.VALUT_PASSWORD ?? ''; }
+  private get apiKey() {
+    return process.env.VALUT_API_KEY ?? '';
+  }
+  private get apiSecret() {
+    return process.env.VALUT_API_SECRET ?? '';
+  }
+  private get username() {
+    return process.env.VALUT_USERNAME ?? '';
+  }
+  private get password() {
+    return process.env.VALUT_PASSWORD ?? '';
+  }
 
   private async authenticate(): Promise<string> {
-    if (this.accessToken && this.tokenExpiresAt && new Date() < this.tokenExpiresAt) {
+    if (
+      this.accessToken &&
+      this.tokenExpiresAt &&
+      new Date() < this.tokenExpiresAt
+    ) {
       return this.accessToken;
     }
 
-    const basicAuth = Buffer.from(`${this.apiKey}:${this.apiSecret}`).toString('base64');
+    const basicAuth = Buffer.from(`${this.apiKey}:${this.apiSecret}`).toString(
+      'base64',
+    );
 
     const res = await fetch(`${VALUT_BASE_URL}/auth`, {
       method: 'POST',
       headers: {
-        'Authorization': `Basic ${basicAuth}`,
+        Authorization: `Basic ${basicAuth}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ username: this.username, password: this.password }),
+      body: JSON.stringify({
+        username: this.username,
+        password: this.password,
+      }),
     });
 
     if (!res.ok) {
       const text = await res.text();
       this.logger.error(`Valut auth failed: ${res.status} ${text}`);
-      throw new InternalServerErrorException('Falha na autenticação com gateway de pagamento');
+      throw new InternalServerErrorException(
+        'Falha na autenticação com gateway de pagamento',
+      );
     }
 
     const data = await res.json();
@@ -42,13 +65,21 @@ export class ValutService {
     // Refresh 5 minutes before expiry
     const expiresMs = this.tokenExpiresAt.getTime() - Date.now() - 5 * 60_000;
     if (expiresMs > 0) {
-      setTimeout(() => { this.accessToken = null; this.tokenExpiresAt = null; }, expiresMs);
+      setTimeout(() => {
+        this.accessToken = null;
+        this.tokenExpiresAt = null;
+      }, expiresMs);
     }
 
     return this.accessToken!;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown, query?: Record<string, string>): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    query?: Record<string, string>,
+  ): Promise<T> {
     const token = await this.authenticate();
     const url = new URL(`${VALUT_BASE_URL}${path}`);
     if (query) {
@@ -60,7 +91,7 @@ export class ValutService {
     const res = await fetch(url.toString(), {
       method,
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -68,8 +99,12 @@ export class ValutService {
 
     if (!res.ok) {
       const text = await res.text();
-      this.logger.error(`Valut ${method} ${path} failed: ${res.status} ${text}`);
-      throw new InternalServerErrorException(`Falha no gateway de pagamento: ${res.status}`);
+      this.logger.error(
+        `Valut ${method} ${path} failed: ${res.status} ${text}`,
+      );
+      throw new InternalServerErrorException(
+        `Falha no gateway de pagamento: ${res.status}`,
+      );
     }
 
     return res.json() as Promise<T>;
@@ -94,14 +129,19 @@ export class ValutService {
       amount: number;
       expiration_date: string;
       created_at: string;
-    }>('POST', '/pix/qrcode', {
-      amount: params.amountCents,
-      type: 'dynamic',
-      external_id: params.externalId,
-      expiration_date: new Date(Date.now() + 30 * 60_000).toISOString(), // 30 min
-      document_validation: params.documentValidation,
-      Idempotency: params.idempotencyKey,
-    }, { withImage: 'true' });
+    }>(
+      'POST',
+      '/pix/qrcode',
+      {
+        amount: params.amountCents,
+        type: 'dynamic',
+        external_id: params.externalId,
+        expiration_date: new Date(Date.now() + 30 * 60_000).toISOString(), // 30 min
+        document_validation: params.documentValidation,
+        Idempotency: params.idempotencyKey,
+      },
+      { withImage: 'true' },
+    );
   }
 
   /**

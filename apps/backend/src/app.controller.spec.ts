@@ -4,16 +4,19 @@ import { MarketService } from './market.service';
 
 describe('AppController', () => {
   let appController: AppController;
-  let marketService: MarketService;
+  const marketServiceMock = {
+    getMarketSnapshot: jest.fn().mockReturnValue(null),
+    getBettingBoard: jest.fn(),
+    placeBet: jest.fn(),
+  };
 
   beforeEach(async () => {
     const app: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
-      providers: [MarketService],
+      providers: [{ provide: MarketService, useValue: marketServiceMock }],
     }).compile();
 
     appController = app.get<AppController>(AppController);
-    marketService = app.get<MarketService>(MarketService);
   });
 
   describe('health', () => {
@@ -27,7 +30,7 @@ describe('AppController', () => {
   describe('market', () => {
     it('should return market snapshot', () => {
       const snapshot = appController.getSnapshot();
-      expect(snapshot).toEqual(marketService.getMarketSnapshot());
+      expect(snapshot).toEqual(marketServiceMock.getMarketSnapshot());
     });
   });
 });
