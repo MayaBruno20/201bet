@@ -5,7 +5,7 @@ import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
-import { setStoredUser, type SessionUser } from '@/lib/auth';
+import { getPostAuthPath, setStoredUser, type SessionUser } from '@/lib/auth';
 import { apiFetch } from '@/lib/api-request';
 import { getPublicApiUrl } from '@/lib/env-public';
 
@@ -58,7 +58,7 @@ export default function LoginPage() {
 
     const data = (await response.json()) as { user: SessionUser };
     setStoredUser(data.user);
-    router.push(data.user.role === 'USER' ? '/carteira' : '/admin');
+    router.push(getPostAuthPath(data.user));
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -70,15 +70,20 @@ export default function LoginPage() {
       if (mode === 'login') {
         await authenticate('login', { email, password });
       } else {
-        if (password !== confirmPassword) {
-          throw new Error('Senha e confirmação não conferem.');
+        const cpfDigits = cpf.replace(/\D/g, '');
+        const regErr = validateRegisterClient(name, password, confirmPassword, cpfDigits, birthDate);
+        if (regErr) {
+          throw new Error(regErr);
         }
 
-        if (!isAdult(birthDate)) {
-          throw new Error('Cadastro permitido apenas para maiores de 18 anos.');
-        }
-
-        await authenticate('register', { email, password, confirmPassword, name, cpf: cpf.replace(/\D/g, ''), birthDate });
+        await authenticate('register', {
+          email: email.trim(),
+          password,
+          confirmPassword,
+          name: name.trim(),
+          cpf: cpfDigits,
+          birthDate,
+        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro inesperado na autenticação.');
@@ -117,7 +122,7 @@ export default function LoginPage() {
 
           const data = (await response.json()) as { user: SessionUser };
           setStoredUser(data.user);
-          router.push(data.user.role === 'USER' ? '/carteira' : '/admin');
+          router.push(getPostAuthPath(data.user));
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Erro no login Google.');
         } finally {
@@ -171,6 +176,7 @@ export default function LoginPage() {
                 placeholder='Nome'
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                minLength={2}
                 required
               />
             ) : null}
@@ -189,6 +195,7 @@ export default function LoginPage() {
               placeholder='Senha'
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              minLength={8}
               required
             />
             {mode === 'register' ? (
@@ -199,15 +206,18 @@ export default function LoginPage() {
                   placeholder='Confirmar senha'
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
+                  minLength={8}
                   required
                 />
                 <input
                   className='w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm text-white placeholder:text-white/30 outline-none transition-all focus:border-white/20 focus:ring-4 focus:ring-white/5'
                   type='text'
                   inputMode='numeric'
-                  placeholder='CPF (somente números)'
+                  placeholder='CPF (11 dígitos)'
                   value={cpf}
                   onChange={(e) => setCpf(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  minLength={11}
+                  maxLength={11}
                   required
                 />
                 <input
@@ -262,4 +272,30 @@ function isAdult(isoDate: string) {
     age--;
   }
   return age >= 18;
+}
+
+/** Espelha regras de `RegisterDto` / `AuthService.register` para erro amigável antes do POST. */
+function validateRegisterClient(
+  name: string,
+  password: string,
+  confirmPassword: string,
+  cpfDigits: string,
+  birthDate: string,
+): string | null {
+  if (name.trim().length < 2) {
+    return 'Informe o nome com pelo menos 2 caracteres.';
+  }
+  if (password.length < 8) {
+    return 'A senha deve ter pelo menos 8 caracteres.';
+  }
+  if (password !== confirmPassword) {
+    return 'Senha e confirmação não conferem.';
+  }
+  if (cpfDigits.length !== 11) {
+    return 'CPF deve conter exatamente 11 dígitos.';
+  }
+  if (!isAdult(birthDate)) {
+    return 'Cadastro permitido apenas para maiores de 18 anos.';
+  }
+  return null;
 }

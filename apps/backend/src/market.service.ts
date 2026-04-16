@@ -508,7 +508,9 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     } catch (e) {
       if (e instanceof PrismaClientKnownRequestError && e.code === 'P2021') {
         this.logger.error(
-          `Tabela em falta no Postgres (${JSON.stringify(e.meta)}). Corra na mesma DATABASE_URL: npx prisma migrate deploy --schema prisma/schema.prisma`,
+          `Tabela em falta no Postgres (${JSON.stringify(
+            e.meta,
+          )}). Na mesma DATABASE_URL: na raiz do monorepo com .env, \`npm run db:migrate:deploy\`; ou em apps/backend: \`DATABASE_URL=... npx prisma migrate deploy\`.`,
         );
         return;
       }
