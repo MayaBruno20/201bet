@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { MainNav } from '@/components/site/main-nav';
 import { getAuthToken } from '@/lib/auth';
+import { getPublicApiUrl, getPublicWsUrl } from '@/lib/env-public';
 import { BettingBoard, MarketSnapshot } from '@/types/market';
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3502/api';
-const wsUrl = process.env.NEXT_PUBLIC_WS_URL ?? 'http://localhost:3502/realtime';
+const apiUrl = getPublicApiUrl();
+const wsUrl = getPublicWsUrl();
 
 type MeResponse = {
   id: string;
@@ -256,16 +257,12 @@ export default function ApostasPage() {
       <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
         <MainNav />
 
-        <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-5 sm:p-6'>
-          <h1 className='text-2xl font-semibold sm:text-3xl'>Apostas 50/50 em tempo real</h1>
-          <p className='mt-2 text-sm text-white/60'>Escolha o evento, a etapa e o carro para apostar.</p>
-          <div className='mt-4 flex flex-wrap items-center gap-3 text-xs'>
-            <span className={`inline-flex items-center rounded-full px-3 py-1.5 font-medium ${connected ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-              <span className={`mr-2 h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`}></span>
-              {connected ? 'Ao vivo' : 'Reconectando...'}
-            </span>
-          </div>
-        </section>
+        <div className='mt-2 flex items-center gap-3'>
+          <span className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-medium ${connected ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+            <span className={`mr-2 h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`}></span>
+            {connected ? 'Ao vivo' : 'Reconectando...'}
+          </span>
+        </div>
 
         {message ? <p className='mt-4 rounded-lg border border-white/20 bg-white/5 p-3 text-sm'>{message}</p> : null}
 
@@ -305,7 +302,7 @@ export default function ApostasPage() {
 
               {selectedEvent && (
                 <div className='space-y-4'>
-                  <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3'>Etapas da Corrida</p>
+                  <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3'>Rodadas</p>
                   <div className='flex flex-wrap gap-2'>
                     {(selectedEvent.stages ?? []).map((stage) => (
                       <button
@@ -489,7 +486,7 @@ export default function ApostasPage() {
                     value={betStageFilter}
                     onChange={(e) => setBetStageFilter(e.target.value)}
                   >
-                    <option value='ALL' className='bg-[#101525]'>Todas as Etapas</option>
+                    <option value='ALL' className='bg-[#101525]'>Todas as Rodadas</option>
                     {betStageOptions.map((stage) => (
                       <option key={stage} value={stage} className='bg-[#101525]'>{stage}</option>
                     ))}

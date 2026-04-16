@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
 import { setAuthToken, setStoredUser, type SessionUser } from '@/lib/auth';
+import { getPublicApiUrl } from '@/lib/env-public';
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3502/api';
+const apiUrl = getPublicApiUrl();
 const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
 type AuthMode = 'login' | 'register';

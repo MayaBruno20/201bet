@@ -14,7 +14,7 @@ const fontMono = Roboto_Mono({
 
 export const metadata: Metadata = {
   title: '201Bet | Front MVP',
-  description: 'MVP de apostas 50/50 em tempo real com Next.js + WebSocket',
+  description: 'MVP de apostas em tempo real com Next.js + WebSocket',
 };
 
 export default function RootLayout({

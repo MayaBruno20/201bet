@@ -1,36 +1,48 @@
-name: ci
+name: CI
 
 on:
-  push:
-    branches: [main, master]
   pull_request:
+    branches: [development, main]
 
 jobs:
-  build:
+  ci:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    timeout-minutes: 20
 
-      - name: Setup Node.js
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/backend/package-lock.json
+            apps/frontend/package-lock.json
 
-      - name: Install root deps
+      - name: Install Root Deps
         run: npm ci
 
-      - name: Install backend deps
-        run: npm ci
-        working-directory: apps/backend
+      - name: Install Backend Deps
+        run: npm ci --prefix apps/backend
 
-      - name: Install frontend deps
-        run: npm ci
-        working-directory: apps/frontend
+      - name: Install Frontend Deps
+        run: npm ci --prefix apps/frontend
 
-      - name: Build backend
-        run: npm run build
-        working-directory: apps/backend
+      - name: Lint Backend
+        run: npm --prefix apps/backend run lint
 
-      - name: Build frontend
-        run: npm run build
-        working-directory: apps/frontend
+      - name: Lint Frontend
+        run: npm --prefix apps/frontend run lint
+
+      - name: Test Backend
+        run: npm --prefix apps/backend run test
+
+      - name: Build Backend
+        run: npm --prefix apps/backend run build
+
+      - name: Build Frontend
+        run: npm --prefix apps/frontend run build
