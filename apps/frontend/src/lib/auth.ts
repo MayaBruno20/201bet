@@ -60,3 +60,10 @@ export async function logoutSession() {
 export function getAuthRole(): SessionUser['role'] | null {
   return getStoredUser()?.role ?? null;
 }
+
+/** Só admin e operador usam o painel /admin; USER, AUDITOR e perfis desconhecidos vão para a área do apostador. */
+export function getPostAuthPath(user: { role?: SessionUser['role'] | null }): '/admin' | '/carteira' {
+  const r = user.role;
+  if (r === 'ADMIN' || r === 'OPERATOR') return '/admin';
+  return '/carteira';
+}

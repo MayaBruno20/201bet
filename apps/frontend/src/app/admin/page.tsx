@@ -109,7 +109,7 @@ export default function AdminPage() {
   const [analyticsOverview, setAnalyticsOverview] = useState<AnalyticsOverview | null>(null);
   const [analyticsEvents, setAnalyticsEvents] = useState<EventPerformanceRow[]>([]);
 
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', cpf: '', birthDate: '', role: 'OPERATOR' });
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', cpf: '', birthDate: '', role: 'USER' });
   const [newEvent, setNewEvent] = useState({
     sport: 'DRAG_RACE',
     name: '',

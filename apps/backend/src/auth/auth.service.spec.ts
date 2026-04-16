@@ -80,5 +80,35 @@ describe('AuthService', () => {
         } as never),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
+
+    it('creates user with USER role and returns token payload', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) =>
+        fn(prisma as never),
+      );
+      prisma.user.create.mockResolvedValue({
+        id: 'new-id',
+        email: 'new@b.com',
+        name: 'Novo',
+        role: UserRole.USER,
+        status: UserStatus.ACTIVE,
+        wallet: { balance: { toNumber: () => 0 } },
+      } as never);
+
+      const out = await service.register({
+        email: 'new@b.com',
+        password: 'senha1234',
+        confirmPassword: 'senha1234',
+        name: 'Novo',
+        cpf: '12345678901',
+        birthDate: '1990-06-15',
+      });
+
+      expect(out.user.role).toBe(UserRole.USER);
+      expect(out.user.email).toBe('new@b.com');
+      expect(jwtService.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ sub: 'new-id', role: UserRole.USER }),
+      );
+    });
   });
 });
