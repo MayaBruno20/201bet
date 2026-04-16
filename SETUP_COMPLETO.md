@@ -1,200 +1,53 @@
-# Setup Completo — 201Bet (NeonDB + Upstash + Vercel + Fly.io + CI/CD)
+# Setup — 201Bet (Neon + Upstash + Vercel + backend em Render + CI/CD)
 
-Este guia cobre **do zero ao deploy final** (staging e produção), incluindo criação de contas, variáveis, IaC (Terraform) e CI/CD.
-
----
-
-## 1) Criar contas e pegar tokens
-
-### NeonDB
-1. Crie conta: https://neon.tech
-2. Gere API Key (Dashboard → API Keys)
-3. Guarde: `NEON_API_KEY`
-
-### Upstash
-1. Crie conta: https://upstash.com
-2. Gere API Key (Upstash Console → Account → API Keys)
-3. Guarde: `UPSTASH_API_KEY`
-
-### Fly.io
-1. Crie conta: https://fly.io
-2. Gere token: `flyctl auth token`
-3. Guarde: `FLY_API_TOKEN`
-
-### Vercel
-1. Crie conta: https://vercel.com
-2. Gere token (Account Settings → Tokens)
-3. Guarde: `VERCEL_TOKEN`
-
-### GitHub
-1. Crie um token (Settings → Developer settings → Personal access tokens)
-2. Permissões mínimas: `repo`, `admin:repo_hook`, `write:packages`, `read:org`
-3. Guarde: `GITHUB_TOKEN`
+Guia do zero ao deploy: contas, Terraform (IaC) e GitHub Actions.
 
 ---
 
-## 2) Configurar IaC (Terraform)
+## 1) Contas e tokens
 
-### 2.1) Pré‑requisitos
-- Terraform >= 1.6
-- Fly CLI instalado
+- **Neon:** https://neon.tech — API Key → `neon_api_key` no Terraform.
+- **Upstash:** https://upstash.com — API Key + email → `upstash_api_key`, `upstash_email`.
+- **Vercel:** token, org id, project id (secrets do GitHub Actions, não geridos pelo Terraform deste repo).
+- **GitHub:** PAT com `repo` (e o necessário para secrets) → `github_token`, `github_owner`, `github_repo`.
+- **Backend:** hospede a API (ex.: **Render**) com `infra/backend.Dockerfile`; anote a URL base HTTPS (sem `/api`).
 
-### 2.2) Preencher variáveis do Terraform
+---
 
-**Staging**
+## 2) Terraform
+
 ```bash
 cp infra/terraform/envs/staging/terraform.tfvars.example infra/terraform/envs/staging/terraform.tfvars
-```
-Edite `infra/terraform/envs/staging/terraform.tfvars` e preencha:
-- `neon_api_key`
-- `upstash_api_key`
-- `fly_api_token`
-- `vercel_api_token`
-- `github_token`
-- `github_owner`
-- `github_repo`
-- `jwt_secret`
-- `cors_origin` (URL do front staging)
-- `vercel_project_name`
-- `fly_app_name`
+# edite: neon, upstash, vercel, github, jwt_secret, cors_origin, backend_public_url, etc.
 
-**Produção**
-```bash
-cp infra/terraform/envs/production/terraform.tfvars.example infra/terraform/envs/production/terraform.tfvars
-```
-Edite `infra/terraform/envs/production/terraform.tfvars` e preencha os mesmos campos.
-
-### 2.3) Aplicar Terraform
-
-**Staging**
-```bash
 cd infra/terraform/envs/staging
-terraform init
-terraform plan
-terraform apply
+terraform init && terraform plan && terraform apply
 ```
 
-**Produção**
-```bash
-cd infra/terraform/envs/production
-terraform init
-terraform plan
-terraform apply
-```
+Repita com `envs/production`.
+
+Variáveis importantes:
+
+- `backend_public_url` — URL do backend (ex.: `https://xxx.onrender.com`), **sem** `/api`, se `enable_render_web_service = false`.
+- `enable_render_web_service = true` — cria o Web Service via Terraform; antes do `apply`, exporte `RENDER_API_KEY` e `RENDER_OWNER_ID` (Dashboard Render).
+
+Com `enable_github_secrets = true`, o Terraform grava secrets como `DATABASE_URL_*`, `UPSTASH_*`, `JWT_SECRET_*`, `CORS_ORIGIN_*`, `BACKEND_HTTP_ORIGIN_*` (e opcionalmente Render se preencher `render_api_key` / `render_owner_id` no tfvars).
+
+Configure à mão no GitHub: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`; opcional `BACKEND_STAGING_HEALTH_URL` / `BACKEND_PROD_HEALTH_URL` (ex.: `https://seu-backend/api/health`).
 
 ---
 
-## 3) Criar apps no Fly.io
+## 3) CI/CD
 
-**Staging**
-```bash
-flyctl launch --no-deploy --name 201bet-backend-staging --region gru --config apps/backend/fly.toml
-```
+- Push em `development` → staging (Vercel preview + migrações Prisma).
+- Push em `main` → produção (Vercel prod + migrações).
 
-**Produção**
-```bash
-flyctl launch --no-deploy --name 201bet-backend-prod --region gru --config apps/backend/fly.toml
-```
+O deploy do **backend** não é feito por estes workflows (use deploy automático do Render ligado ao Git ou outro pipeline).
 
 ---
 
-## 4) Configurar secrets no Fly.io
-
-**Staging**
-```bash
-flyctl secrets set \
-  DATABASE_URL="<NEONDB_STAGING_URL>" \
-  JWT_SECRET="<JWT_SECRET>" \
-  JWT_EXPIRES_IN="8h" \
-  CORS_ORIGIN="https://<staging-frontend>.vercel.app" \
-  UPSTASH_REDIS_REST_URL="<UPSTASH_URL>" \
-  UPSTASH_REDIS_REST_TOKEN="<UPSTASH_TOKEN>" \
-  --app 201bet-backend-staging
-```
-
-**Produção**
-```bash
-flyctl secrets set \
-  DATABASE_URL="<NEONDB_PROD_URL>" \
-  JWT_SECRET="<JWT_SECRET>" \
-  JWT_EXPIRES_IN="8h" \
-  CORS_ORIGIN="https://<frontend>.vercel.app" \
-  UPSTASH_REDIS_REST_URL="<UPSTASH_URL>" \
-  UPSTASH_REDIS_REST_TOKEN="<UPSTASH_TOKEN>" \
-  --app 201bet-backend-prod
-```
-
----
-
-## 5) Configurar secrets no GitHub (CI/CD)
-
-Com **`terraform apply`** em `envs/staging` e `envs/production` (e `enable_github_secrets = true`), o Terraform grava no repositório:
-
-- `FLY_API_TOKEN_STAGING` / `FLY_API_TOKEN_PROD`
-- `FLY_APP_NAME_STAGING` / `FLY_APP_NAME_PROD`
-- `DATABASE_URL_STAGING` / `DATABASE_URL_PROD` (URI do Neon do módulo)
-- `UPSTASH_REDIS_REST_URL_STAGING` / `_PROD` e `UPSTASH_REDIS_REST_TOKEN_STAGING` / `_PROD`
-- `JWT_SECRET_STAGING` / `JWT_SECRET_PROD`
-- `CORS_ORIGIN_STAGING` / `CORS_ORIGIN_PROD`
-
-Ainda é preciso configurar **à mão** em **Settings → Secrets and variables → Actions** (não geridos pelo Terraform deste repo):
-
-- `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`
-- `BACKEND_STAGING_HEALTH_URL` / `BACKEND_PROD_HEALTH_URL` (opcional, para health + rollback no workflow)
-
-Para os **Fly secrets** (secção 4), podes reutilizar os valores dos repository secrets acima (mesmos `DATABASE_URL`, `JWT_SECRET`, Upstash, `CORS_ORIGIN`).
-
----
-
-## 6) Deploy inicial
-
-**Staging**
-```bash
-flyctl deploy --config apps/backend/fly.toml --app 201bet-backend-staging
-```
-
-**Produção**
-```bash
-flyctl deploy --config apps/backend/fly.toml --app 201bet-backend-prod
-```
-
----
-
-## 7) CI/CD
-
-- Qualquer push em `development` → deploy automático para staging.
-- Qualquer push em `main` → deploy automático para produção.
-- Health check + rollback automático no Fly se falhar.
-
----
-
-## 8) Escalar durante evento
+## 4) Verificação
 
 ```bash
-scripts/scale-event.sh --app 201bet-backend-prod --up
-scripts/scale-event.sh --app 201bet-backend-prod --count 3
-scripts/scale-event.sh --app 201bet-backend-prod --down
-```
-
----
-
-## 9) Verificação rápida
-
-**Backend**
-```bash
-curl https://<backend>/api/health
-```
-
-**Logs**
-```bash
-flyctl logs --app 201bet-backend-prod
-```
-
----
-
-## 10) Rollback manual
-
-```bash
-flyctl releases --app 201bet-backend-prod
-flyctl releases rollback -a 201bet-backend-prod
+curl https://<seu-backend>/api/health
 ```

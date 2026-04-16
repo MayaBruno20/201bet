@@ -1,6 +1,18 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request } from 'express';
 import { UserRole } from '@prisma/client';
-import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -19,7 +31,7 @@ import { UpdateDriverDto } from './dto/update-driver.dto';
 import { UpdateDuelDto } from './dto/update-duel.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 
-type ReqUser = Request & { user?: { userId?: string } };
+type ReqUser = Request & { user?: { userId?: string; role?: UserRole } };
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -43,18 +55,32 @@ export class AdminController {
   }
 
   @Patch('users/:id')
-  updateUser(@Param('id', ParseUUIDPipe) id: string, @Body() payload: UpdateAdminUserDto, @Req() req: ReqUser) {
+  updateUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: UpdateAdminUserDto,
+    @Req() req: ReqUser,
+  ) {
     return this.adminService.updateUser(id, payload, this.auditFromReq(req));
   }
 
   @Delete('users/:id')
+  @Roles(UserRole.ADMIN)
   deleteUser(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
     return this.adminService.deleteUser(id, this.auditFromReq(req));
   }
 
   @Post('users/:id/wallet-adjust')
-  adjustUserWallet(@Param('id', ParseUUIDPipe) id: string, @Body() payload: AdjustUserWalletDto, @Req() req: ReqUser) {
-    return this.adminService.adjustUserWallet(id, payload, this.auditFromReq(req));
+  @Roles(UserRole.ADMIN)
+  adjustUserWallet(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: AdjustUserWalletDto,
+    @Req() req: ReqUser,
+  ) {
+    return this.adminService.adjustUserWallet(
+      id,
+      payload,
+      this.auditFromReq(req),
+    );
   }
 
   @Get('events')
@@ -68,7 +94,11 @@ export class AdminController {
   }
 
   @Patch('events/:id')
-  updateEvent(@Param('id', ParseUUIDPipe) id: string, @Body() payload: UpdateEventDto, @Req() req: ReqUser) {
+  updateEvent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: UpdateEventDto,
+    @Req() req: ReqUser,
+  ) {
     return this.adminService.updateEvent(id, payload, this.auditFromReq(req));
   }
 
@@ -88,7 +118,11 @@ export class AdminController {
   }
 
   @Patch('drivers/:id')
-  updateDriver(@Param('id', ParseUUIDPipe) id: string, @Body() payload: UpdateDriverDto, @Req() req: ReqUser) {
+  updateDriver(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: UpdateDriverDto,
+    @Req() req: ReqUser,
+  ) {
     return this.adminService.updateDriver(id, payload, this.auditFromReq(req));
   }
 
@@ -108,7 +142,11 @@ export class AdminController {
   }
 
   @Patch('cars/:id')
-  updateCar(@Param('id', ParseUUIDPipe) id: string, @Body() payload: UpdateCarDto, @Req() req: ReqUser) {
+  updateCar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: UpdateCarDto,
+    @Req() req: ReqUser,
+  ) {
     return this.adminService.updateCar(id, payload, this.auditFromReq(req));
   }
 
@@ -128,7 +166,11 @@ export class AdminController {
   }
 
   @Patch('duels/:id')
-  updateDuel(@Param('id', ParseUUIDPipe) id: string, @Body() payload: UpdateDuelDto, @Req() req: ReqUser) {
+  updateDuel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: UpdateDuelDto,
+    @Req() req: ReqUser,
+  ) {
     return this.adminService.updateDuel(id, payload, this.auditFromReq(req));
   }
 
@@ -148,6 +190,7 @@ export class AdminController {
   }
 
   @Delete('settings/:id')
+  @Roles(UserRole.ADMIN)
   deleteSetting(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
     return this.adminService.deleteSetting(id, this.auditFromReq(req));
   }
@@ -186,6 +229,7 @@ export class AdminController {
   private auditFromReq(req: ReqUser) {
     return {
       actorUserId: req.user?.userId,
+      actorRole: req.user?.role,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     };

@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { OAuth2Client } from 'google-auth-library';
 import { PrismaService } from '../database/prisma.service';
@@ -27,7 +31,10 @@ export class AuthService {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
-    const isValidPassword = await bcrypt.compare(payload.password, user.password);
+    const isValidPassword = await bcrypt.compare(
+      payload.password,
+      user.password,
+    );
     if (!isValidPassword) {
       throw new UnauthorizedException('Credenciais inválidas');
     }
@@ -51,14 +58,18 @@ export class AuthService {
     }
 
     if (!this.isAdult(payload.birthDate)) {
-      throw new BadRequestException('Cadastro permitido apenas para maiores de 18 anos');
+      throw new BadRequestException(
+        'Cadastro permitido apenas para maiores de 18 anos',
+      );
     }
 
     const existing = await this.prisma.user.findUnique({ where: { email } });
     const existingCpf = await this.prisma.user.findUnique({ where: { cpf } });
 
     if (existing || existingCpf) {
-      throw new BadRequestException(existing ? 'E-mail já cadastrado' : 'CPF já cadastrado');
+      throw new BadRequestException(
+        existing ? 'E-mail já cadastrado' : 'CPF já cadastrado',
+      );
     }
 
     const passwordHash = await bcrypt.hash(payload.password, 12);
@@ -108,10 +119,14 @@ export class AuthService {
     }
 
     const email = ticketPayload.email.toLowerCase();
-    const displayName = ticketPayload.name ?? email.split('@')[0] ?? 'Usuário Google';
+    const displayName =
+      ticketPayload.name ?? email.split('@')[0] ?? 'Usuário Google';
 
     const user = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.user.findUnique({ where: { email }, include: { wallet: true } });
+      const existing = await tx.user.findUnique({
+        where: { email },
+        include: { wallet: true },
+      });
       if (existing) {
         const updated = await tx.user.update({
           where: { id: existing.id },
@@ -247,7 +262,12 @@ export class AuthService {
                       include: {
                         duels: {
                           orderBy: { startsAt: 'asc' },
-                          select: { id: true, startsAt: true, bookingCloseAt: true, status: true },
+                          select: {
+                            id: true,
+                            startsAt: true,
+                            bookingCloseAt: true,
+                            status: true,
+                          },
                         },
                       },
                     },
@@ -268,12 +288,24 @@ export class AuthService {
       createdAt: bet.createdAt,
       items: bet.items.map((item) => {
         const event = item.odd.market.event;
-        const duels = [...event.duels].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
-        const nearest = duels.reduce<{ id: string; index: number; status: string } | null>((best, duel, index) => {
-          const diff = Math.abs(duel.startsAt.getTime() - bet.createdAt.getTime());
+        const duels = [...event.duels].sort(
+          (a, b) => a.startsAt.getTime() - b.startsAt.getTime(),
+        );
+        const nearest = duels.reduce<{
+          id: string;
+          index: number;
+          status: string;
+        } | null>((best, duel, index) => {
+          const diff = Math.abs(
+            duel.startsAt.getTime() - bet.createdAt.getTime(),
+          );
           if (!best) return { id: duel.id, index, status: duel.status };
-          const bestDiff = Math.abs(duels[best.index].startsAt.getTime() - bet.createdAt.getTime());
-          return diff < bestDiff ? { id: duel.id, index, status: duel.status } : best;
+          const bestDiff = Math.abs(
+            duels[best.index].startsAt.getTime() - bet.createdAt.getTime(),
+          );
+          return diff < bestDiff
+            ? { id: duel.id, index, status: duel.status }
+            : best;
         }, null);
 
         return {
@@ -284,7 +316,9 @@ export class AuthService {
           marketName: item.odd.market.name,
           eventName: item.odd.market.event.name,
           duelId: nearest?.id ?? null,
-          stageLabel: nearest ? `Etapa ${nearest.index + 1}` : 'Etapa não identificada',
+          stageLabel: nearest
+            ? `Etapa ${nearest.index + 1}`
+            : 'Etapa não identificada',
           duelStatus: nearest?.status ?? null,
         };
       }),
@@ -338,7 +372,12 @@ export class AuthService {
     };
   }
 
-  private async issueToken(userId: string, email: string, role: string, userPayload: Record<string, unknown>) {
+  private async issueToken(
+    userId: string,
+    email: string,
+    role: string,
+    userPayload: Record<string, unknown>,
+  ) {
     const accessToken = await this.jwtService.signAsync({
       sub: userId,
       email,

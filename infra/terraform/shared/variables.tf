@@ -15,11 +15,6 @@ variable "upstash_email" {
   type = string
 }
 
-variable "fly_api_token" {
-  type      = string
-  sensitive = true
-}
-
 variable "vercel_api_token" {
   type      = string
   sensitive = true

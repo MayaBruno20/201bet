@@ -11,17 +11,26 @@ export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post('deposit')
-  createDeposit(@CurrentUser() user: { userId: string }, @Body() payload: CreateDepositDto) {
+  createDeposit(
+    @CurrentUser() user: { userId: string },
+    @Body() payload: CreateDepositDto,
+  ) {
     return this.paymentsService.createDeposit(user.userId, payload);
   }
 
   @Get('deposit/:paymentId/status')
-  checkDepositStatus(@CurrentUser() user: { userId: string }, @Param('paymentId') paymentId: string) {
+  checkDepositStatus(
+    @CurrentUser() user: { userId: string },
+    @Param('paymentId') paymentId: string,
+  ) {
     return this.paymentsService.checkDepositStatus(user.userId, paymentId);
   }
 
   @Post('withdraw')
-  createWithdraw(@CurrentUser() user: { userId: string }, @Body() payload: CreateWithdrawDto) {
+  createWithdraw(
+    @CurrentUser() user: { userId: string },
+    @Body() payload: CreateWithdrawDto,
+  ) {
     return this.paymentsService.createWithdraw(user.userId, payload);
   }
 

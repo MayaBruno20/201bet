@@ -2,7 +2,8 @@
 
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
-import { clearAuthToken, getAuthToken, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
+import { apiFetch } from '@/lib/api-request';
+import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
 
 import { getPublicApiUrl } from '@/lib/env-public';
 
@@ -90,13 +91,12 @@ function traduzirStatusPagamento(status: string) {
 }
 
 export default function CarteiraPage() {
-  const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<MeResponse | null>(null);
   const [transactions, setTransactions] = useState<MyTransactions | null>(null);
   const [bets, setBets] = useState<MyBet[]>([]);
   const [activeTab, setActiveTab] = useState<UserTab>('conta');
   const [statusMessage, setStatusMessage] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [tabMenuOpen, setTabMenuOpen] = useState(false);
 
   const [profileForm, setProfileForm] = useState({
@@ -114,10 +114,6 @@ export default function CarteiraPage() {
   });
 
   useEffect(() => {
-    setToken(getAuthToken());
-  }, []);
-
-  useEffect(() => {
     if (typeof window === 'undefined') return;
     const tabFromQuery = new URLSearchParams(window.location.search).get('tab');
     if (tabFromQuery === 'saldo' || tabFromQuery === 'historico' || tabFromQuery === 'transacoes' || tabFromQuery === 'conta') {
@@ -126,22 +122,18 @@ export default function CarteiraPage() {
   }, []);
 
   useEffect(() => {
-    if (!token) return;
-
     void (async () => {
       setLoading(true);
       setStatusMessage('');
       try {
-        const headers = { Authorization: `Bearer ${token}` };
         const [meRes, transRes, betsRes] = await Promise.all([
-          fetch(`${apiUrl}/auth/me`, { headers, cache: 'no-store' }),
-          fetch(`${apiUrl}/auth/my-transactions`, { headers, cache: 'no-store' }),
-          fetch(`${apiUrl}/auth/my-bets`, { headers, cache: 'no-store' }),
+          apiFetch(`${apiUrl}/auth/me`, { cache: 'no-store' }),
+          apiFetch(`${apiUrl}/auth/my-transactions`, { cache: 'no-store' }),
+          apiFetch(`${apiUrl}/auth/my-bets`, { cache: 'no-store' }),
         ]);
 
         if (!meRes.ok) {
-          clearAuthToken();
-          setToken(null);
+          clearClientSession();
           setStatusMessage('Sessão expirada. Faça login novamente.');
           return;
         }
@@ -184,7 +176,7 @@ export default function CarteiraPage() {
         setLoading(false);
       }
     })();
-  }, [token]);
+  }, []);
 
   const displayName = useMemo(() => {
     if (!user) return 'Usuário';
@@ -192,16 +184,13 @@ export default function CarteiraPage() {
   }, [user]);
 
   async function saveProfile() {
-    if (!token) return;
-
     setLoading(true);
     setStatusMessage('');
     try {
-      const res = await fetch(`${apiUrl}/auth/me`, {
+      const res = await apiFetch(`${apiUrl}/auth/me`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(profileForm),
       });
@@ -248,7 +237,18 @@ export default function CarteiraPage() {
     reader.readAsDataURL(file);
   }
 
-  if (!token) {
+  if (loading) {
+    return (
+      <main className='min-h-screen bg-[#090b11] text-white'>
+        <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+          <MainNav />
+          <p className='mt-10 text-center text-white/50'>Carregando…</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!user) {
     return (
       <main className='min-h-screen bg-[#090b11] text-white'>
         <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>

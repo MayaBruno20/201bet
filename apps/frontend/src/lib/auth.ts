@@ -1,4 +1,6 @@
-export const AUTH_TOKEN_KEY = '201bet_auth_token';
+import { getApiBaseUrl, apiFetch } from './api-request';
+
+/** Cache opcional do perfil (sem segredos). O JWT fica só no cookie httpOnly. */
 export const AUTH_USER_KEY = '201bet_auth_user';
 
 export type SessionUser = {
@@ -10,40 +12,22 @@ export type SessionUser = {
   avatarUrl?: string | null;
 };
 
-export function getAuthToken() {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-  return localStorage.getItem(AUTH_TOKEN_KEY);
-}
-
-export function setAuthToken(token: string) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  localStorage.setItem(AUTH_TOKEN_KEY, token);
-}
-
-export function clearAuthToken() {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  localStorage.removeItem(AUTH_USER_KEY);
+function sessionStorageAvailable() {
+  return typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
 }
 
 export function setStoredUser(user: SessionUser) {
-  if (typeof window === 'undefined') {
+  if (!sessionStorageAvailable()) {
     return;
   }
-  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+  window.sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
 }
 
 export function getStoredUser(): SessionUser | null {
-  if (typeof window === 'undefined') {
+  if (!sessionStorageAvailable()) {
     return null;
   }
-  const raw = localStorage.getItem(AUTH_USER_KEY);
+  const raw = window.sessionStorage.getItem(AUTH_USER_KEY);
   if (!raw) {
     return null;
   }
@@ -54,32 +38,25 @@ export function getStoredUser(): SessionUser | null {
   }
 }
 
-export function getAuthRole(): SessionUser['role'] | null {
-  const stored = getStoredUser();
-  if (stored?.role) {
-    return stored.role;
+/** Remove apenas o cache local do perfil (não apaga o cookie no servidor). */
+export function clearClientSession() {
+  if (!sessionStorageAvailable()) {
+    return;
   }
-
-  const token = getAuthToken();
-  if (!token) {
-    return null;
-  }
-
-  const payload = parseJwtPayload(token);
-  return typeof payload?.role === 'string' ? (payload.role as SessionUser['role']) : null;
+  window.sessionStorage.removeItem(AUTH_USER_KEY);
 }
 
-function parseJwtPayload(token: string): Record<string, unknown> | null {
-  const [, payload] = token.split('.');
-  if (!payload) {
-    return null;
-  }
-
+/** Encerra sessão no servidor (apaga cookie httpOnly) e limpa o cache local. */
+export async function logoutSession() {
+  const base = getApiBaseUrl();
   try {
-    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const decoded = atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '='));
-    return JSON.parse(decoded) as Record<string, unknown>;
+    await apiFetch(`${base}/auth/logout`, { method: 'POST' });
   } catch {
-    return null;
+    /* ainda assim limpamos o estado local */
   }
+  clearClientSession();
+}
+
+export function getAuthRole(): SessionUser['role'] | null {
+  return getStoredUser()?.role ?? null;
 }

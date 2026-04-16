@@ -7,10 +7,6 @@ provider "upstash" {
   email   = var.upstash_email
 }
 
-provider "fly" {
-  fly_api_token = var.fly_api_token
-}
-
 provider "vercel" {
   api_token = var.vercel_api_token
 }
@@ -19,3 +15,5 @@ provider "github" {
   token = var.github_token
   owner = var.github_owner
 }
+
+provider "render" {}

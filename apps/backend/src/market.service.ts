@@ -1,5 +1,18 @@
-import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { DuelStatus, MarketStatus, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import {
+  DuelStatus,
+  MarketStatus,
+  OddStatus,
+  Prisma,
+  WalletTransactionType,
+} from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from './database/prisma.service';
 
@@ -60,8 +73,22 @@ export type MarketSnapshot = {
   lockReason?: string;
   lockMessage?: string;
   duel: {
-    left: { id: string; label: string; odd: number; tickets: number; pool: number; locked: boolean };
-    right: { id: string; label: string; odd: number; tickets: number; pool: number; locked: boolean };
+    left: {
+      id: string;
+      label: string;
+      odd: number;
+      tickets: number;
+      pool: number;
+      locked: boolean;
+    };
+    right: {
+      id: string;
+      label: string;
+      odd: number;
+      tickets: number;
+      pool: number;
+      locked: boolean;
+    };
   };
   history: Array<{
     at: string;
@@ -140,14 +167,29 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       orderBy: { startAt: 'asc' },
       include: {
         markets: { orderBy: { createdAt: 'asc' }, select: { name: true } },
-        duels: { orderBy: { startsAt: 'asc' }, select: { id: true, startsAt: true, bookingCloseAt: true, status: true } },
+        duels: {
+          orderBy: { startsAt: 'asc' },
+          select: {
+            id: true,
+            startsAt: true,
+            bookingCloseAt: true,
+            status: true,
+          },
+        },
       },
     });
 
     return {
       events: events.map((event) => {
-        const stateDuels = event.duels.filter((duel) => this.states.has(duel.id));
-        const current = stateDuels.find((duel) => ['BOOKING_OPEN', 'BOOKING_CLOSED'].includes(duel.status)) ?? stateDuels[0] ?? null;
+        const stateDuels = event.duels.filter((duel) =>
+          this.states.has(duel.id),
+        );
+        const current =
+          stateDuels.find((duel) =>
+            ['BOOKING_OPEN', 'BOOKING_CLOSED'].includes(duel.status),
+          ) ??
+          stateDuels[0] ??
+          null;
 
         return {
           id: event.id,
@@ -169,41 +211,129 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async placeBet(input: { userId: string; duelId: string; side: Side; amount: number }) {
-    const state = this.states.get(input.duelId);
-    if (!state) {
-      throw new NotFoundException('Não encontramos esta corrida para apostar');
-    }
-
+  async placeBet(input: {
+    userId: string;
+    duelId: string;
+    side: Side;
+    amount: number;
+  }) {
     const amount = Number(input.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      throw new Error('Informe um valor de aposta válido');
+      throw new BadRequestException('Informe um valor de aposta válido');
     }
 
     if (amount < 5) {
-      throw new Error('A aposta mínima é de R$ 5,00');
+      throw new BadRequestException('A aposta mínima é de R$ 5,00');
     }
 
-    const lock = this.evaluateLock(state);
-    if (lock.locked && (lock.lockedSide === 'BOTH' || lock.lockedSide === input.side)) {
-      throw new Error(lock.message ?? 'As apostas estão temporariamente bloqueadas');
-    }
-
-    const oddAtPlacement = input.side === 'LEFT' ? state.left.odd : state.right.odd;
     const amountDecimal = new Prisma.Decimal(amount.toFixed(4));
-    const potentialWin = amountDecimal.mul(new Prisma.Decimal(oddAtPlacement.toFixed(4)));
 
     const placed = await this.prisma.$transaction(async (tx) => {
-      const wallet = await tx.wallet.findUnique({ where: { userId: input.userId } });
+      const duel = await tx.duel.findUnique({
+        where: { id: input.duelId },
+        include: {
+          leftCar: { include: { driver: true } },
+          rightCar: { include: { driver: true } },
+        },
+      });
+
+      if (!duel) {
+        throw new NotFoundException(
+          'Não encontramos esta corrida para apostar',
+        );
+      }
+
+      await tx.duelPoolState.upsert({
+        where: { duelId: input.duelId },
+        create: {
+          duelId: input.duelId,
+          leftPool: 1500,
+          rightPool: 1500,
+          leftTickets: 18,
+          rightTickets: 18,
+        },
+        update: {},
+      });
+
+      await tx.$executeRaw(
+        Prisma.sql`SELECT 1 FROM "DuelPoolState" WHERE "duelId" = ${input.duelId} FOR UPDATE`,
+      );
+
+      const poolRow = await tx.duelPoolState.findUnique({
+        where: { duelId: input.duelId },
+      });
+      if (!poolRow) {
+        throw new NotFoundException('Estado do mercado indisponível');
+      }
+
+      const leftPool = Number(poolRow.leftPool);
+      const rightPool = Number(poolRow.rightPool);
+      const metrics = this.syntheticState(
+        duel.status,
+        duel.bookingCloseAt,
+        leftPool,
+        rightPool,
+      );
+      this.recalculateOdds(metrics);
+
+      const lock = this.evaluateLock(metrics);
+      if (
+        lock.locked &&
+        (lock.lockedSide === 'BOTH' || lock.lockedSide === input.side)
+      ) {
+        throw new BadRequestException(
+          lock.message ?? 'As apostas estão temporariamente bloqueadas',
+        );
+      }
+
+      const oddAtPlacement =
+        input.side === 'LEFT' ? metrics.left.odd : metrics.right.odd;
+      const potentialWin = amountDecimal.mul(
+        new Prisma.Decimal(oddAtPlacement.toFixed(4)),
+      );
+
+      const walletDec = await tx.wallet.updateMany({
+        where: { userId: input.userId, balance: { gte: amountDecimal } },
+        data: { balance: { decrement: amountDecimal } },
+      });
+
+      if (walletDec.count === 0) {
+        const walletRow = await tx.wallet.findUnique({
+          where: { userId: input.userId },
+        });
+        if (!walletRow) {
+          throw new BadRequestException('Carteira do usuário não encontrada');
+        }
+        throw new BadRequestException(
+          'Saldo insuficiente para realizar essa aposta',
+        );
+      }
+
+      const wallet = await tx.wallet.findUnique({
+        where: { userId: input.userId },
+      });
       if (!wallet) {
-        throw new Error('Carteira do usuário não encontrada');
+        throw new BadRequestException('Carteira do usuário não encontrada');
       }
 
-      if (wallet.balance.lt(amountDecimal)) {
-        throw new Error('Saldo insuficiente para realizar essa aposta');
-      }
+      const oddId = await this.resolveOddIdForSide(
+        tx,
+        input.duelId,
+        input.side,
+      );
 
-      const oddId = await this.resolveOddIdForSide(tx, input.duelId, input.side);
+      const poolUpdate =
+        input.side === 'LEFT'
+          ? { leftPool: { increment: amount }, leftTickets: { increment: 1 } }
+          : {
+              rightPool: { increment: amount },
+              rightTickets: { increment: 1 },
+            };
+
+      await tx.duelPoolState.update({
+        where: { duelId: input.duelId },
+        data: poolUpdate,
+      });
 
       const bet = await tx.bet.create({
         data: {
@@ -229,30 +359,40 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      const updatedWallet = await tx.wallet.update({
+      const updatedWallet = await tx.wallet.findUnique({
         where: { id: wallet.id },
-        data: { balance: { decrement: amountDecimal } },
       });
 
       return {
         betId: bet.id,
         potentialWin: Number(potentialWin),
-        newBalance: Number(updatedWallet.balance),
+        newBalance: Number(updatedWallet!.balance),
+        oddAtPlacement,
       };
     });
 
-    this.applyPoolIncrement(state, input.side, amount);
-    this.recalculateOdds(state);
-    const nextLock = this.evaluateLock(state);
-    this.captureHistory(state, nextLock.lockedSide, nextLock.reason);
+    const mem = this.states.get(input.duelId);
+    if (mem) {
+      this.applyPoolIncrement(mem, input.side, amount);
+      this.recalculateOdds(mem);
+      const nextLock = this.evaluateLock(mem);
+      this.captureHistory(mem, nextLock.lockedSide, nextLock.reason);
+    } else {
+      await this.safeRefreshStatesFromDatabase();
+    }
+
+    const snapshotState = this.states.get(input.duelId);
+    if (!snapshotState) {
+      throw new NotFoundException('Não encontramos esta corrida para apostar');
+    }
 
     return {
-      snapshot: this.toSnapshot(state),
+      snapshot: this.toSnapshot(snapshotState),
       bet: {
         id: placed.betId,
         side: input.side,
         stake: amount,
-        oddAtPlacement,
+        oddAtPlacement: placed.oddAtPlacement,
         potentialWin: Number(placed.potentialWin.toFixed(2)),
       },
       wallet: {
@@ -265,11 +405,17 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     const duels = await this.prisma.duel.findMany({
       where: {
         status: {
-          in: [DuelStatus.SCHEDULED, DuelStatus.BOOKING_OPEN, DuelStatus.BOOKING_CLOSED, DuelStatus.FINISHED],
+          in: [
+            DuelStatus.SCHEDULED,
+            DuelStatus.BOOKING_OPEN,
+            DuelStatus.BOOKING_CLOSED,
+            DuelStatus.FINISHED,
+          ],
         },
       },
       orderBy: { startsAt: 'asc' },
       include: {
+        poolState: true,
         event: {
           include: {
             markets: {
@@ -294,13 +440,28 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     for (const eventDuels of byEvent.values()) {
       eventDuels
         .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
-        .forEach((duel, index) => stageByDuelId.set(duel.id, `Etapa ${index + 1}`));
+        .forEach((duel, index) =>
+          stageByDuelId.set(duel.id, `Etapa ${index + 1}`),
+        );
     }
 
     for (const duel of duels) {
       const existing = this.states.get(duel.id);
-      const seedLeft = 800 + this.randomInt(0, 1800);
-      const seedRight = 800 + this.randomInt(0, 1800);
+      let pool = duel.poolState;
+
+      if (!pool) {
+        const seedLeft = 800 + this.randomInt(0, 1800);
+        const seedRight = 800 + this.randomInt(0, 1800);
+        pool = await this.prisma.duelPoolState.create({
+          data: {
+            duelId: duel.id,
+            leftPool: seedLeft,
+            rightPool: seedRight,
+            leftTickets: Math.max(1, Math.floor(seedLeft / 80)),
+            rightTickets: Math.max(1, Math.floor(seedRight / 80)),
+          },
+        });
+      }
 
       const state: EngineState = {
         duelId: duel.id,
@@ -311,28 +472,24 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         stageLabel: stageByDuelId.get(duel.id) ?? 'Etapa 1',
         status: duel.status,
         bookingCloseAt: duel.bookingCloseAt,
-        left: existing
-          ? { ...existing.left }
-          : {
-              carId: duel.leftCarId,
-              carName: duel.leftCar.name,
-              driverName: duel.leftCar.driver.name,
-              pool: seedLeft,
-              tickets: Math.max(1, Math.floor(seedLeft / 80)),
-              odd: 1.9,
-              locked: false,
-            },
-        right: existing
-          ? { ...existing.right }
-          : {
-              carId: duel.rightCarId,
-              carName: duel.rightCar.name,
-              driverName: duel.rightCar.driver.name,
-              pool: seedRight,
-              tickets: Math.max(1, Math.floor(seedRight / 80)),
-              odd: 1.9,
-              locked: false,
-            },
+        left: {
+          carId: duel.leftCarId,
+          carName: duel.leftCar.name,
+          driverName: duel.leftCar.driver.name,
+          pool: Number(pool.leftPool),
+          tickets: pool.leftTickets,
+          odd: 1.9,
+          locked: false,
+        },
+        right: {
+          carId: duel.rightCarId,
+          carName: duel.rightCar.name,
+          driverName: duel.rightCar.driver.name,
+          pool: Number(pool.rightPool),
+          tickets: pool.rightTickets,
+          odd: 1.9,
+          locked: false,
+        },
         history: existing?.history ?? [],
       };
 
@@ -344,7 +501,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     this.states = next;
   }
 
-  /** Evita crash loop na Fly se `prisma migrate deploy` ainda não foi aplicado nesta base. */
+  /** Evita crash loop em produção se `prisma migrate deploy` ainda não foi aplicado nesta base. */
   private async safeRefreshStatesFromDatabase() {
     try {
       await this.refreshStatesFromDatabase();
@@ -360,11 +517,16 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
   }
 
   private tick() {
+    const runSimulation = this.isSimulationLeader();
+
     for (const state of this.states.values()) {
       const lock = this.evaluateLock(state);
 
-      if (!lock.locked && state.status === DuelStatus.BOOKING_OPEN) {
-        // simula entrada orgânica de tickets em tempo real por lado
+      if (
+        runSimulation &&
+        !lock.locked &&
+        state.status === DuelStatus.BOOKING_OPEN
+      ) {
         const side = Math.random() > 0.5 ? 'LEFT' : 'RIGHT';
         const addAmount = this.randomInt(35, 280);
         this.applyPoolIncrement(state, side, addAmount);
@@ -373,30 +535,126 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       this.normalizePoolsIfNeeded(state);
       this.recalculateOdds(state);
       const nextLock = this.evaluateLock(state);
-      state.left.locked = nextLock.locked && (nextLock.lockedSide === 'LEFT' || nextLock.lockedSide === 'BOTH');
-      state.right.locked = nextLock.locked && (nextLock.lockedSide === 'RIGHT' || nextLock.lockedSide === 'BOTH');
+      state.left.locked =
+        nextLock.locked &&
+        (nextLock.lockedSide === 'LEFT' || nextLock.lockedSide === 'BOTH');
+      state.right.locked =
+        nextLock.locked &&
+        (nextLock.lockedSide === 'RIGHT' || nextLock.lockedSide === 'BOTH');
       this.captureHistory(state, nextLock.lockedSide, nextLock.reason);
     }
+
+    if (runSimulation) {
+      void this.persistAllPoolsToDb();
+    }
+  }
+
+  /**
+   * Em múltiplas instâncias, defina `MARKET_SIMULATION_LEADER=false` em todas exceto uma
+   * para evitar simulação duplicada; apostas reais continuam usando o Postgres como fonte de verdade.
+   */
+  private isSimulationLeader() {
+    return process.env.MARKET_SIMULATION_LEADER !== 'false';
+  }
+
+  private async persistAllPoolsToDb() {
+    for (const state of this.states.values()) {
+      try {
+        await this.prisma.duelPoolState.update({
+          where: { duelId: state.duelId },
+          data: {
+            leftPool: state.left.pool,
+            rightPool: state.right.pool,
+            leftTickets: state.left.tickets,
+            rightTickets: state.right.tickets,
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Falha ao persistir pools do duelo ${state.duelId}`,
+          err,
+        );
+      }
+    }
+  }
+
+  /** Estado mínimo só para calcular travas e odds a partir dos pools persistidos. */
+  private syntheticState(
+    status: DuelStatus,
+    bookingCloseAt: Date,
+    leftPool: number,
+    rightPool: number,
+  ): EngineState {
+    return {
+      duelId: '',
+      eventId: '',
+      eventName: '',
+      eventStartAt: new Date(),
+      marketNames: [],
+      stageLabel: '',
+      status,
+      bookingCloseAt,
+      left: {
+        carId: '',
+        carName: '',
+        driverName: '',
+        pool: leftPool,
+        tickets: 0,
+        odd: 1.9,
+        locked: false,
+      },
+      right: {
+        carId: '',
+        carName: '',
+        driverName: '',
+        pool: rightPool,
+        tickets: 0,
+        odd: 1.9,
+        locked: false,
+      },
+      history: [],
+    };
   }
 
   private recalculateOdds(state: EngineState) {
     const totalPool = state.left.pool + state.right.pool;
     const margin = this.getMarginPercent() / 100;
 
-    const leftOdd = this.clamp((totalPool * (1 - margin)) / Math.max(state.left.pool, 1), 1.1, 8);
-    const rightOdd = this.clamp((totalPool * (1 - margin)) / Math.max(state.right.pool, 1), 1.1, 8);
+    const leftOdd = this.clamp(
+      (totalPool * (1 - margin)) / Math.max(state.left.pool, 1),
+      1.1,
+      8,
+    );
+    const rightOdd = this.clamp(
+      (totalPool * (1 - margin)) / Math.max(state.right.pool, 1),
+      1.1,
+      8,
+    );
 
     state.left.odd = Number(leftOdd.toFixed(2));
     state.right.odd = Number(rightOdd.toFixed(2));
   }
 
-  private evaluateLock(state: EngineState): { locked: boolean; lockedSide: Side | 'BOTH' | 'NONE'; reason?: string; message?: string } {
+  private evaluateLock(state: EngineState): {
+    locked: boolean;
+    lockedSide: Side | 'BOTH' | 'NONE';
+    reason?: string;
+    message?: string;
+  } {
     const now = Date.now();
     if (state.status === DuelStatus.SCHEDULED) {
-      return { locked: true, lockedSide: 'BOTH', reason: 'BOOKING_NOT_OPEN', message: 'Apostas ainda não foram abertas para esta corrida' };
+      return {
+        locked: true,
+        lockedSide: 'BOTH',
+        reason: 'BOOKING_NOT_OPEN',
+        message: 'Apostas ainda não foram abertas para esta corrida',
+      };
     }
 
-    if (now >= state.bookingCloseAt.getTime() || state.status === DuelStatus.BOOKING_CLOSED) {
+    if (
+      now >= state.bookingCloseAt.getTime() ||
+      state.status === DuelStatus.BOOKING_CLOSED
+    ) {
       return {
         locked: true,
         lockedSide: 'BOTH',
@@ -405,7 +663,10 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
-    if (state.status === DuelStatus.FINISHED || state.status === DuelStatus.CANCELED) {
+    if (
+      state.status === DuelStatus.FINISHED ||
+      state.status === DuelStatus.CANCELED
+    ) {
       return {
         locked: true,
         lockedSide: 'BOTH',
@@ -419,8 +680,10 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       return { locked: false, lockedSide: 'NONE' };
     }
 
-    const biggerSide: Side = state.left.pool >= state.right.pool ? 'LEFT' : 'RIGHT';
-    const biggerPool = biggerSide === 'LEFT' ? state.left.pool : state.right.pool;
+    const biggerSide: Side =
+      state.left.pool >= state.right.pool ? 'LEFT' : 'RIGHT';
+    const biggerPool =
+      biggerSide === 'LEFT' ? state.left.pool : state.right.pool;
     const dominance = (biggerPool / totalPool) * 100;
     const threshold = this.getLockThresholdPercent();
 
@@ -429,9 +692,10 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         locked: true,
         lockedSide: biggerSide,
         reason: 'IMBALANCE_LOCK',
-        message: biggerSide === 'LEFT'
-          ? 'Apostas no lado azul foram pausadas para equilibrar o mercado'
-          : 'Apostas no lado laranja foram pausadas para equilibrar o mercado',
+        message:
+          biggerSide === 'LEFT'
+            ? 'Apostas no lado azul foram pausadas para equilibrar o mercado'
+            : 'Apostas no lado laranja foram pausadas para equilibrar o mercado',
       };
     }
 
@@ -444,7 +708,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         locked: true,
         lockedSide: 'LEFT',
         reason: 'HOUSE_EXPOSURE_LIMIT',
-        message: 'Apostas no lado azul pausadas por limite de segurança operacional',
+        message:
+          'Apostas no lado azul pausadas por limite de segurança operacional',
       };
     }
 
@@ -453,7 +718,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         locked: true,
         lockedSide: 'RIGHT',
         reason: 'HOUSE_EXPOSURE_LIMIT',
-        message: 'Apostas no lado laranja pausadas por limite de segurança operacional',
+        message:
+          'Apostas no lado laranja pausadas por limite de segurança operacional',
       };
     }
 
@@ -473,7 +739,10 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       stageLabel: state.stageLabel,
       status: state.status,
       totalPool: Number(totalPool.toFixed(2)),
-      closeInSeconds: Math.max(0, Math.floor((state.bookingCloseAt.getTime() - Date.now()) / 1000)),
+      closeInSeconds: Math.max(
+        0,
+        Math.floor((state.bookingCloseAt.getTime() - Date.now()) / 1000),
+      ),
       marginPercent: this.getMarginPercent(),
       lockThresholdPercent: this.getLockThresholdPercent(),
       locked: lock.locked,
@@ -487,7 +756,9 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           odd: state.left.odd,
           tickets: state.left.tickets,
           pool: Number(state.left.pool.toFixed(2)),
-          locked: lock.locked && (lock.lockedSide === 'LEFT' || lock.lockedSide === 'BOTH'),
+          locked:
+            lock.locked &&
+            (lock.lockedSide === 'LEFT' || lock.lockedSide === 'BOTH'),
         },
         right: {
           id: state.right.carId,
@@ -495,7 +766,9 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           odd: state.right.odd,
           tickets: state.right.tickets,
           pool: Number(state.right.pool.toFixed(2)),
-          locked: lock.locked && (lock.lockedSide === 'RIGHT' || lock.lockedSide === 'BOTH'),
+          locked:
+            lock.locked &&
+            (lock.lockedSide === 'RIGHT' || lock.lockedSide === 'BOTH'),
         },
       },
       history: state.history.slice(-20),
@@ -512,7 +785,11 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private captureHistory(state: EngineState, lockedSide: Side | 'BOTH' | 'NONE', reason?: string) {
+  private captureHistory(
+    state: EngineState,
+    lockedSide: Side | 'BOTH' | 'NONE',
+    reason?: string,
+  ) {
     const now = new Date().toISOString();
     const last = state.history[state.history.length - 1];
 
@@ -564,18 +841,26 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     state.right.pool *= factor;
   }
 
-  private async resolveOddIdForSide(tx: Prisma.TransactionClient, duelId: string, side: Side) {
+  private async resolveOddIdForSide(
+    tx: Prisma.TransactionClient,
+    duelId: string,
+    side: Side,
+  ) {
     const duel = await tx.duel.findUnique({
       where: { id: duelId },
       include: {
         event: {
           include: {
             markets: {
-              where: { status: { in: [MarketStatus.OPEN, MarketStatus.SUSPENDED] } },
+              where: {
+                status: { in: [MarketStatus.OPEN, MarketStatus.SUSPENDED] },
+              },
               orderBy: { createdAt: 'asc' },
               include: {
                 odds: {
-                  where: { status: { in: [OddStatus.ACTIVE, OddStatus.SUSPENDED] } },
+                  where: {
+                    status: { in: [OddStatus.ACTIVE, OddStatus.SUSPENDED] },
+                  },
                   orderBy: { createdAt: 'asc' },
                 },
               },
@@ -586,17 +871,19 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!duel) {
-      throw new Error('Corrida não encontrada');
+      throw new BadRequestException('Corrida não encontrada');
     }
 
     const market = duel.event.markets.find((m) => m.odds.length >= 2);
     if (!market) {
-      throw new Error('Mercado do evento sem odds válidas para registrar aposta');
+      throw new BadRequestException(
+        'Mercado do evento sem odds válidas para registrar aposta',
+      );
     }
 
     const odd = side === 'LEFT' ? market.odds[0] : market.odds[1];
     if (!odd) {
-      throw new Error('Odd indisponível para o lado selecionado');
+      throw new BadRequestException('Odd indisponível para o lado selecionado');
     }
 
     return odd.id;

@@ -1,0 +1,6 @@
+{
+  "terraform.languageServer.rootModules": [
+    "infra/terraform/envs/production",
+    "infra/terraform/envs/staging"
+  ]
+}

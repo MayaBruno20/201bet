@@ -5,7 +5,8 @@ import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
-import { setAuthToken, setStoredUser, type SessionUser } from '@/lib/auth';
+import { setStoredUser, type SessionUser } from '@/lib/auth';
+import { apiFetch } from '@/lib/api-request';
 import { getPublicApiUrl } from '@/lib/env-public';
 
 const apiUrl = getPublicApiUrl();
@@ -44,7 +45,7 @@ export default function LoginPage() {
   const [googleReady, setGoogleReady] = useState(false);
 
   async function authenticate(endpoint: 'login' | 'register', payload: Record<string, unknown>) {
-    const response = await fetch(`${apiUrl}/auth/${endpoint}`, {
+    const response = await apiFetch(`${apiUrl}/auth/${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -55,8 +56,7 @@ export default function LoginPage() {
       throw new Error(message || 'Falha na autenticação.');
     }
 
-    const data = (await response.json()) as { accessToken: string; user: SessionUser };
-    setAuthToken(data.accessToken);
+    const data = (await response.json()) as { user: SessionUser };
     setStoredUser(data.user);
     router.push(data.user.role === 'USER' ? '/carteira' : '/admin');
   }
@@ -104,7 +104,7 @@ export default function LoginPage() {
           setLoading(true);
           setError(null);
 
-          const response = await fetch(`${apiUrl}/auth/google`, {
+          const response = await apiFetch(`${apiUrl}/auth/google`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ idToken: credential }),
@@ -115,8 +115,7 @@ export default function LoginPage() {
             throw new Error(message || 'Falha no login Google');
           }
 
-          const data = (await response.json()) as { accessToken: string; user: SessionUser };
-          setAuthToken(data.accessToken);
+          const data = (await response.json()) as { user: SessionUser };
           setStoredUser(data.user);
           router.push(data.user.role === 'USER' ? '/carteira' : '/admin');
         } catch (err) {

@@ -38,11 +38,28 @@ jobs:
       - name: Lint Frontend
         run: npm --prefix apps/frontend run lint
 
-      - name: Test Backend
+      - name: Test Backend (unit)
         run: npm --prefix apps/backend run test
+
+      - name: Test Backend (integration)
+        run: npm --prefix apps/backend run test:integration
+
+      - name: Test Backend (e2e)
+        run: npm --prefix apps/backend run test:e2e
 
       - name: Build Backend
         run: npm --prefix apps/backend run build
 
+      - name: Test Frontend (unit)
+        run: npm --prefix apps/frontend run test
+
       - name: Build Frontend
         run: npm --prefix apps/frontend run build
+
+      - name: Install Playwright (Chromium)
+        run: cd apps/frontend && npx playwright install --with-deps chromium
+
+      - name: Test Frontend (E2E)
+        env:
+          CI: true
+        run: npm --prefix apps/frontend run test:e2e

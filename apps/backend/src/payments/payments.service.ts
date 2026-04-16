@@ -1,5 +1,15 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { PaymentStatus, PaymentType, Prisma, WalletTransactionType } from '@prisma/client';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  PaymentStatus,
+  PaymentType,
+  Prisma,
+  WalletTransactionType,
+} from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { ValutService } from './valut.service';
 import { CreateDepositDto } from './dto/create-deposit.dto';
@@ -22,7 +32,10 @@ export class PaymentsService {
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
     if (!wallet) throw new NotFoundException('Carteira não encontrada');
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { cpf: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { cpf: true },
+    });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
     const amountCents = Math.round(payload.amount * 100);
@@ -119,22 +132,40 @@ export class PaymentsService {
    * Confirm deposit — credits wallet. Called by webhook or polling.
    */
   async confirmDeposit(paymentId: string, userId?: string) {
-    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
-    if (!payment) throw new NotFoundException('Pagamento não encontrado');
-    if (payment.status !== 'PENDING') {
-      const wallet = await this.prisma.wallet.findUnique({ where: { userId: payment.userId } });
-      return { paymentId, status: payment.status, balance: Number(wallet?.balance ?? 0) };
-    }
-
-    const amount = payment.amount;
-
     return this.prisma.$transaction(async (tx) => {
-      await tx.payment.update({
-        where: { id: paymentId },
+      const claimed = await tx.payment.updateMany({
+        where: {
+          id: paymentId,
+          status: PaymentStatus.PENDING,
+          type: PaymentType.DEPOSIT,
+          ...(userId ? { userId } : {}),
+        },
         data: { status: PaymentStatus.APPROVED },
       });
 
-      const wallet = await tx.wallet.findUnique({ where: { userId: payment.userId } });
+      const payment = await tx.payment.findUnique({ where: { id: paymentId } });
+      if (!payment) throw new NotFoundException('Pagamento não encontrado');
+
+      if (userId && payment.userId !== userId) {
+        throw new NotFoundException('Pagamento não encontrado');
+      }
+
+      if (claimed.count === 0) {
+        const wallet = await tx.wallet.findUnique({
+          where: { userId: payment.userId },
+        });
+        return {
+          paymentId,
+          status: payment.status,
+          balance: Number(wallet?.balance ?? 0),
+        };
+      }
+
+      const amount = payment.amount;
+
+      const wallet = await tx.wallet.findUnique({
+        where: { userId: payment.userId },
+      });
       if (!wallet) throw new NotFoundException('Carteira não encontrada');
 
       await tx.wallet.update({
@@ -151,7 +182,9 @@ export class PaymentsService {
         },
       });
 
-      const updatedWallet = await tx.wallet.findUnique({ where: { id: wallet.id } });
+      const updatedWallet = await tx.wallet.findUnique({
+        where: { id: wallet.id },
+      });
 
       return {
         paymentId,
@@ -178,18 +211,25 @@ export class PaymentsService {
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
     if (!wallet) throw new NotFoundException('Carteira não encontrada');
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { cpf: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { cpf: true },
+    });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
     const amount = new Prisma.Decimal(payload.amount);
-    if (wallet.balance.lt(amount)) {
-      throw new BadRequestException('Saldo insuficiente para saque');
-    }
-
     const amountCents = Math.round(payload.amount * 100);
 
-    // Deduct balance and create payment first
     const result = await this.prisma.$transaction(async (tx) => {
+      const dec = await tx.wallet.updateMany({
+        where: { id: wallet.id, balance: { gte: amount } },
+        data: { balance: { decrement: amount } },
+      });
+
+      if (dec.count === 0) {
+        throw new BadRequestException('Saldo insuficiente para saque');
+      }
+
       const payment = await tx.payment.create({
         data: {
           userId,
@@ -198,11 +238,6 @@ export class PaymentsService {
           status: PaymentStatus.PENDING,
           provider: 'VALUT_PIX',
         },
-      });
-
-      await tx.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: { decrement: amount } },
       });
 
       await tx.walletTransaction.create({
@@ -233,7 +268,10 @@ export class PaymentsService {
       });
     } catch (err) {
       // Rollback: refund wallet and mark payment as failed
-      this.logger.error(`Valut cashout failed for payment ${result.id}, refunding wallet`, err);
+      this.logger.error(
+        `Valut cashout failed for payment ${result.id}, refunding wallet`,
+        err,
+      );
       await this.prisma.$transaction(async (tx) => {
         await tx.payment.update({
           where: { id: result.id },
@@ -252,10 +290,14 @@ export class PaymentsService {
           },
         });
       });
-      throw new BadRequestException('Falha ao processar saque. Saldo foi devolvido.');
+      throw new BadRequestException(
+        'Falha ao processar saque. Saldo foi devolvido.',
+      );
     }
 
-    const updatedWallet = await this.prisma.wallet.findUnique({ where: { userId } });
+    const updatedWallet = await this.prisma.wallet.findUnique({
+      where: { userId },
+    });
 
     return {
       paymentId: result.id,
@@ -285,7 +327,11 @@ export class PaymentsService {
     if (!wallet) throw new NotFoundException('Carteira não encontrada');
 
     const confirmedDeposits = await this.prisma.payment.aggregate({
-      where: { userId, type: PaymentType.DEPOSIT, status: PaymentStatus.APPROVED },
+      where: {
+        userId,
+        type: PaymentType.DEPOSIT,
+        status: PaymentStatus.APPROVED,
+      },
       _sum: { amount: true },
     });
 
