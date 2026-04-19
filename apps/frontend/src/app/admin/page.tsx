@@ -5,6 +5,7 @@ import { MainNav } from '@/components/site/main-nav';
 import { clearAuthToken, getAuthToken, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
 
 import { getPublicApiUrl } from '@/lib/env-public';
+import { maskCPF, unmaskCPF } from '@/lib/masks';
 
 const apiUrl = getPublicApiUrl();
 
@@ -88,6 +89,20 @@ const ADMIN_SECTIONS: { id: AdminSection; title: string; description: string }[]
   { id: 'audit', title: 'Auditoria', description: 'Rastro completo de operações administrativas.' },
 ];
 
+type ModalState = {
+  open: boolean;
+  title: string;
+  message: string;
+  mode: 'confirm' | 'input' | 'select';
+  inputLabel?: string;
+  inputDefault?: string;
+  selectOptions?: string[];
+  danger?: boolean;
+  onConfirm: (value?: string) => void;
+};
+
+const MODAL_CLOSED: ModalState = { open: false, title: '', message: '', mode: 'confirm', onConfirm: () => {} };
+
 export default function AdminPage() {
   const [token, setToken] = useState<string | null>(null);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
@@ -125,6 +140,20 @@ export default function AdminPage() {
   const [newSetting, setNewSetting] = useState({ key: '', value: '', description: '' });
 
   const isAllowed = useMemo(() => !!sessionUser && ['ADMIN', 'OPERATOR'].includes(sessionUser.role), [sessionUser]);
+
+  const [modal, setModal] = useState<ModalState>(MODAL_CLOSED);
+
+  function askInput(title: string, label: string, defaultValue: string, cb: (val: string) => void) {
+    setModal({ open: true, title, message: '', mode: 'input', inputLabel: label, inputDefault: defaultValue, onConfirm: (v) => { if (v) cb(v); } });
+  }
+
+  function askConfirm(title: string, msg: string, cb: () => void) {
+    setModal({ open: true, title, message: msg, mode: 'confirm', danger: true, onConfirm: () => cb() });
+  }
+
+  function askSelect(title: string, options: string[], defaultValue: string, cb: (val: string) => void) {
+    setModal({ open: true, title, message: '', mode: 'select', selectOptions: options, inputDefault: defaultValue, onConfirm: (v) => { if (v) cb(v); } });
+  }
 
   useEffect(() => {
     setToken(getAuthToken());
@@ -373,7 +402,7 @@ export default function AdminPage() {
                 void submit('Cadastro de usuário', () =>
                   apiFetch('/admin/users', {
                     method: 'POST',
-                    body: JSON.stringify({ ...newUser, cpf: newUser.cpf.replace(/\D/g, ''), status: 'ACTIVE' }),
+                    body: JSON.stringify({ ...newUser, cpf: unmaskCPF(newUser.cpf), status: 'ACTIVE' }),
                   }),
                 );
               }}
@@ -381,7 +410,7 @@ export default function AdminPage() {
               <input className='field' placeholder='Nome' value={newUser.name} onChange={(e) => setNewUser((p) => ({ ...p, name: e.target.value }))} required />
               <input className='field' placeholder='E-mail' type='email' value={newUser.email} onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))} required />
               <input className='field' placeholder='Senha forte' type='password' value={newUser.password} onChange={(e) => setNewUser((p) => ({ ...p, password: e.target.value }))} required />
-              <input className='field' placeholder='CPF (11 dígitos)' value={newUser.cpf} onChange={(e) => setNewUser((p) => ({ ...p, cpf: e.target.value.replace(/\D/g, '').slice(0, 11) }))} required />
+              <input className='field' placeholder='CPF' inputMode='numeric' value={maskCPF(newUser.cpf)} onChange={(e) => setNewUser((p) => ({ ...p, cpf: unmaskCPF(e.target.value).slice(0, 11) }))} required />
               <input className='field' type='date' value={newUser.birthDate} onChange={(e) => setNewUser((p) => ({ ...p, birthDate: e.target.value }))} required />
               <select className='field' value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
                 <option value='USER'>USER</option>
@@ -401,58 +430,51 @@ export default function AdminPage() {
                     <button
                       className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
                       type='button'
-                      onClick={() => {
-                        const role = prompt('Nova role (USER/ADMIN/OPERATOR/AUDITOR):', u.role);
-                        if (!role) return;
+                      onClick={() => askSelect('Editar role', ['USER', 'ADMIN', 'OPERATOR', 'AUDITOR'], u.role, (role) => {
                         void submit('Atualização de usuário', () =>
                           apiFetch(`/admin/users/${u.id}`, {
                             method: 'PATCH',
                             body: JSON.stringify({ role }),
                           }),
                         );
-                      }}
+                      })}
                     >
                       Editar role
                     </button>
                     <button
                       className='rounded-md bg-emerald-500/20 px-2 py-1 text-xs text-emerald-200 hover:bg-emerald-500/30'
                       type='button'
-                      onClick={() => {
-                        const amount = prompt('Valor para adicionar no saldo:');
-                        if (!amount) return;
+                      onClick={() => askInput('Adicionar saldo', 'Valor em R$', '', (amount) => {
                         void submit('Adicionar saldo', () =>
                           apiFetch(`/admin/users/${u.id}/wallet-adjust`, {
                             method: 'POST',
                             body: JSON.stringify({ operation: 'ADD', amount: Number(amount), reason: 'admin-credit' }),
                           }),
                         );
-                      }}
+                      })}
                     >
                       + Saldo
                     </button>
                     <button
                       className='rounded-md bg-amber-500/20 px-2 py-1 text-xs text-amber-200 hover:bg-amber-500/30'
                       type='button'
-                      onClick={() => {
-                        const amount = prompt('Valor para remover do saldo:');
-                        if (!amount) return;
+                      onClick={() => askInput('Remover saldo', 'Valor em R$', '', (amount) => {
                         void submit('Remover saldo', () =>
                           apiFetch(`/admin/users/${u.id}/wallet-adjust`, {
                             method: 'POST',
                             body: JSON.stringify({ operation: 'REMOVE', amount: Number(amount), reason: 'admin-debit' }),
                           }),
                         );
-                      }}
+                      })}
                     >
                       - Saldo
                     </button>
                     <button
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
                       type='button'
-                      onClick={() => {
-                        if (!confirm(`Desativar usuário ${u.email}?`)) return;
+                      onClick={() => askConfirm('Desativar usuário', `Desativar ${u.email}?`, () => {
                         void submit('Desativação de usuário', () => apiFetch(`/admin/users/${u.id}`, { method: 'DELETE' }));
-                      }}
+                      })}
                     >
                       Desativar
                     </button>
@@ -516,21 +538,18 @@ export default function AdminPage() {
                     <button
                       type='button'
                       className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
-                      onClick={() => {
-                        const name = prompt('Novo nome do evento:', event.name);
-                        if (!name) return;
+                      onClick={() => askInput('Editar evento', 'Nome do evento', event.name, (name) => {
                         void submit('Atualização de evento', () => apiFetch(`/admin/events/${event.id}`, { method: 'PATCH', body: JSON.stringify({ name }) }));
-                      }}
+                      })}
                     >
                       Editar
                     </button>
                     <button
                       type='button'
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
-                      onClick={() => {
-                        if (!confirm(`Cancelar evento ${event.name}?`)) return;
+                      onClick={() => askConfirm('Cancelar evento', `Cancelar ${event.name}?`, () => {
                         void submit('Cancelamento de evento', () => apiFetch(`/admin/events/${event.id}`, { method: 'DELETE' }));
-                      }}
+                      })}
                     >
                       Cancelar
                     </button>
@@ -564,21 +583,18 @@ export default function AdminPage() {
                     <button
                       type='button'
                       className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
-                      onClick={() => {
-                        const name = prompt('Novo nome:', driver.name);
-                        if (!name) return;
+                      onClick={() => askInput('Editar piloto', 'Nome', driver.name, (name) => {
                         void submit('Atualização de piloto', () => apiFetch(`/admin/drivers/${driver.id}`, { method: 'PATCH', body: JSON.stringify({ name }) }));
-                      }}
+                      })}
                     >
                       Editar
                     </button>
                     <button
                       type='button'
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
-                      onClick={() => {
-                        if (!confirm(`Desativar piloto ${driver.name}?`)) return;
+                      onClick={() => askConfirm('Desativar piloto', `Desativar ${driver.name}?`, () => {
                         void submit('Desativação de piloto', () => apiFetch(`/admin/drivers/${driver.id}`, { method: 'DELETE' }));
-                      }}
+                      })}
                     >
                       Desativar
                     </button>
@@ -619,21 +635,18 @@ export default function AdminPage() {
                     <button
                       type='button'
                       className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
-                      onClick={() => {
-                        const category = prompt('Nova categoria:', car.category);
-                        if (!category) return;
+                      onClick={() => askInput('Editar carro', 'Categoria', car.category, (category) => {
                         void submit('Atualização de carro', () => apiFetch(`/admin/cars/${car.id}`, { method: 'PATCH', body: JSON.stringify({ category }) }));
-                      }}
+                      })}
                     >
                       Editar
                     </button>
                     <button
                       type='button'
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
-                      onClick={() => {
-                        if (!confirm(`Desativar carro ${car.name}?`)) return;
+                      onClick={() => askConfirm('Desativar carro', `Desativar ${car.name}?`, () => {
                         void submit('Desativação de carro', () => apiFetch(`/admin/cars/${car.id}`, { method: 'DELETE' }));
-                      }}
+                      })}
                     >
                       Desativar
                     </button>
@@ -694,21 +707,18 @@ export default function AdminPage() {
                     <button
                       type='button'
                       className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
-                      onClick={() => {
-                        const status = prompt('Novo status (SCHEDULED/BOOKING_OPEN/BOOKING_CLOSED/FINISHED/CANCELED):', duel.status);
-                        if (!status) return;
+                      onClick={() => askSelect('Editar embate', ['SCHEDULED', 'BOOKING_OPEN', 'BOOKING_CLOSED', 'FINISHED', 'CANCELED'], duel.status, (status) => {
                         void submit('Atualização de embate', () => apiFetch(`/admin/duels/${duel.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }));
-                      }}
+                      })}
                     >
                       Editar
                     </button>
                     <button
                       type='button'
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
-                      onClick={() => {
-                        if (!confirm('Cancelar este embate?')) return;
+                      onClick={() => askConfirm('Cancelar embate', 'Cancelar este embate?', () => {
                         void submit('Cancelamento de embate', () => apiFetch(`/admin/duels/${duel.id}`, { method: 'DELETE' }));
-                      }}
+                      })}
                     >
                       Cancelar
                     </button>
@@ -743,26 +753,23 @@ export default function AdminPage() {
                     <button
                       type='button'
                       className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
-                      onClick={() => {
-                        const value = prompt('Novo valor:', setting.value);
-                        if (!value) return;
+                      onClick={() => askInput('Editar configuração', `Valor para ${setting.key}`, setting.value, (value) => {
                         void submit('Atualização de configuração', () =>
                           apiFetch('/admin/settings', {
                             method: 'POST',
                             body: JSON.stringify({ key: setting.key, value, description: setting.description }),
                           }),
                         );
-                      }}
+                      })}
                     >
                       Editar
                     </button>
                     <button
                       type='button'
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
-                      onClick={() => {
-                        if (!confirm(`Excluir configuração ${setting.key}?`)) return;
+                      onClick={() => askConfirm('Excluir configuração', `Excluir ${setting.key}?`, () => {
                         void submit('Exclusão de configuração', () => apiFetch(`/admin/settings/${setting.id}`, { method: 'DELETE' }));
-                      }}
+                      })}
                     >
                       Excluir
                     </button>
@@ -819,6 +826,7 @@ export default function AdminPage() {
           </Panel>
         ) : null}
       </div>
+      {modal.open && <AdminModal state={modal} onClose={() => setModal(MODAL_CLOSED)} />}
     </main>
   );
 }
@@ -853,6 +861,79 @@ function ListBlock({ items }: { items: string[] }) {
           {item}
         </p>
       ))}
+    </div>
+  );
+}
+
+function AdminModal({ state, onClose }: { state: ModalState; onClose: () => void }) {
+  const [inputValue, setInputValue] = useState(state.inputDefault ?? '');
+
+  return (
+    <div className='fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4' onClick={onClose}>
+      <div
+        className='w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl border border-white/10 bg-[#101525] p-6 shadow-2xl'
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className='flex items-center justify-between mb-4'>
+          <h3 className='text-lg font-bold'>{state.title}</h3>
+          <button type='button' onClick={onClose} className='flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-white/40 hover:bg-white/10 hover:text-white transition-colors'>
+            <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.5' strokeLinecap='round' strokeLinejoin='round'>
+              <line x1='18' y1='6' x2='6' y2='18' /><line x1='6' y1='6' x2='18' y2='18' />
+            </svg>
+          </button>
+        </div>
+
+        {state.message && <p className='text-sm text-white/60 mb-4'>{state.message}</p>}
+
+        {state.mode === 'input' && (
+          <div className='mb-5'>
+            {state.inputLabel && <label className='block text-xs font-medium text-white/50 mb-1.5'>{state.inputLabel}</label>}
+            <input
+              className='field text-lg'
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') { state.onConfirm(inputValue); onClose(); } }}
+            />
+          </div>
+        )}
+
+        {state.mode === 'select' && (
+          <div className='mb-5 flex flex-col gap-1.5'>
+            {state.selectOptions?.map((opt) => (
+              <button
+                key={opt}
+                type='button'
+                className={`rounded-xl px-4 py-3 text-left text-sm font-medium transition-all ${inputValue === opt ? 'bg-white text-black' : 'bg-white/5 text-white/70 hover:bg-white/10'}`}
+                onClick={() => setInputValue(opt)}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className='flex gap-3 mt-2'>
+          <button
+            type='button'
+            className='flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3.5 text-sm font-semibold text-white/70 hover:bg-white/10 transition-colors touch-manipulation'
+            onClick={onClose}
+          >
+            Cancelar
+          </button>
+          <button
+            type='button'
+            className={`flex-1 rounded-xl px-4 py-3.5 text-sm font-bold transition-colors touch-manipulation ${
+              state.danger
+                ? 'bg-red-500 text-white hover:bg-red-400'
+                : 'bg-white text-black hover:bg-white/90'
+            }`}
+            onClick={() => { state.onConfirm(state.mode === 'confirm' ? undefined : inputValue); onClose(); }}
+          >
+            Confirmar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

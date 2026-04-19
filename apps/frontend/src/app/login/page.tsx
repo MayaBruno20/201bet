@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
 import { setAuthToken, setStoredUser, type SessionUser } from '@/lib/auth';
 import { getPublicApiUrl } from '@/lib/env-public';
+import { maskCPF, unmaskCPF } from '@/lib/masks';
 
 const apiUrl = getPublicApiUrl();
 const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
@@ -78,7 +79,7 @@ export default function LoginPage() {
           throw new Error('Cadastro permitido apenas para maiores de 18 anos.');
         }
 
-        await authenticate('register', { email, password, confirmPassword, name, cpf: cpf.replace(/\D/g, ''), birthDate });
+        await authenticate('register', { email, password, confirmPassword, name, cpf: unmaskCPF(cpf), birthDate });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro inesperado na autenticação.');
@@ -206,9 +207,9 @@ export default function LoginPage() {
                   className='w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm text-white placeholder:text-white/30 outline-none transition-all focus:border-white/20 focus:ring-4 focus:ring-white/5'
                   type='text'
                   inputMode='numeric'
-                  placeholder='CPF (somente números)'
-                  value={cpf}
-                  onChange={(e) => setCpf(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  placeholder='CPF'
+                  value={maskCPF(cpf)}
+                  onChange={(e) => setCpf(unmaskCPF(e.target.value).slice(0, 11))}
                   required
                 />
                 <input

@@ -41,7 +41,8 @@ export default function ApostasPage() {
   const [snapshots, setSnapshots] = useState<Record<string, MarketSnapshot>>({});
   const [selectedEventId, setSelectedEventId] = useState<string>('');
   const [selectedDuelId, setSelectedDuelId] = useState<string>('');
-  const [stake, setStake] = useState<number>(100);
+  const [stakeRaw, setStakeRaw] = useState('100');
+  const stake = Number(stakeRaw) || 0;
   const [side, setSide] = useState<'LEFT' | 'RIGHT'>('LEFT');
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
@@ -418,8 +419,8 @@ export default function ApostasPage() {
                         type='number'
                         min={5}
                         step={5}
-                        value={stake}
-                        onChange={(e) => setStake(Number(e.target.value || 0))}
+                        value={stakeRaw}
+                        onChange={(e) => setStakeRaw(e.target.value)}
                       />
                     </div>
                     <button
