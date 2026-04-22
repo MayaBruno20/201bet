@@ -70,10 +70,17 @@ export class MailService {
     jobName: (typeof EMAIL_JOBS)[keyof typeof EMAIL_JOBS],
     data: object,
   ): Promise<void> {
-    await this.emailQueue.add(jobName, data, {
-      priority: EMAIL_JOB_PRIORITY[jobName],
-      jobId: undefined,
-    });
+    try {
+      await this.emailQueue.add(jobName, data, {
+        priority: EMAIL_JOB_PRIORITY[jobName],
+        jobId: undefined,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Email queue unavailable, skipping ${jobName}: ${message}`,
+      );
+    }
   }
 
   private buildUrl(path: string, token: string): string {

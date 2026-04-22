@@ -13,7 +13,12 @@ import { NoopProvider } from './providers/noop.provider';
 import { TemplateRenderer } from './template-renderer';
 
 @Module({
-  imports: [BullModule.registerQueue({ name: QUEUE_NAMES.EMAIL })],
+  imports: [
+    BullModule.registerQueue({
+      name: QUEUE_NAMES.EMAIL,
+      skipWaitingForReady: true,
+    }),
+  ],
   providers: [
     TemplateRenderer,
     DailyRateLimiter,

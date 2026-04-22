@@ -18,7 +18,7 @@ import type {
   VerificationJobData,
 } from './mail.types';
 
-@Processor(QUEUE_NAMES.EMAIL)
+@Processor(QUEUE_NAMES.EMAIL, { skipWaitingForReady: true })
 export class MailProcessor extends WorkerHost {
   private readonly logger = new Logger(MailProcessor.name);
 
