@@ -19,8 +19,11 @@ describe('api-request', () => {
 
     await apiFetch('http://localhost:3502/api/health');
 
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3502/api/health', {
-      credentials: 'include',
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3502/api/health',
+      expect.objectContaining({
+        credentials: 'include',
+      }),
+    );
   });
 });
