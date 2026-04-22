@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch, getApiBaseUrl } from './api-request';
+import { AUTH_ACCESS_TOKEN_KEY } from './auth-token';
 
 describe('api-request', () => {
   afterEach(() => {
@@ -25,5 +26,25 @@ describe('api-request', () => {
         credentials: 'include',
       }),
     );
+  });
+
+  it('apiFetch forwards bearer token from sessionStorage when available', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:3502/api');
+    window.sessionStorage.setItem(AUTH_ACCESS_TOKEN_KEY, 'jwt-fallback-token');
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiFetch('http://localhost:3502/api/auth/me');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3502/api/auth/me',
+      expect.objectContaining({
+        credentials: 'include',
+        headers: expect.any(Headers),
+      }),
+    );
+
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+    expect(headers.get('Authorization')).toBe('Bearer jwt-fallback-token');
   });
 });

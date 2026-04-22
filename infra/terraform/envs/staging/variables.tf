@@ -37,6 +37,49 @@ variable "jwt_expires_in" {
 }
 variable "cors_origin" { type = string }
 variable "vercel_project_name" { type = string }
+variable "frontend_url" {
+  type        = string
+  description = "URL pública do frontend usada pelo backend para links em e-mails."
+}
+variable "email_provider" {
+  type        = string
+  description = "Provider de e-mail do backend: noop, mailtrap ou brevo."
+  default     = "noop"
+}
+variable "email_from_address" {
+  type        = string
+  description = "Remetente padrão dos e-mails transacionais."
+}
+variable "email_from_name" {
+  type        = string
+  description = "Nome do remetente dos e-mails transacionais."
+  default     = "201Bet"
+}
+variable "email_reply_to" {
+  type        = string
+  description = "Endereço de reply-to dos e-mails transacionais."
+  default     = "suporte@201-bet.com"
+}
+variable "email_daily_limit" {
+  type        = number
+  description = "Limite diário de envios configurado no backend."
+  default     = 295
+}
+variable "email_verification_ttl_hours" {
+  type        = number
+  description = "Validade do token de verificação de e-mail em horas."
+  default     = 24
+}
+variable "password_reset_ttl_minutes" {
+  type        = number
+  description = "Validade do token de redefinição de senha em minutos."
+  default     = 30
+}
+variable "email_logo_url" {
+  type        = string
+  description = "URL pública opcional da logo usada nos e-mails."
+  default     = ""
+}
 
 variable "backend_public_url" {
   type        = string
