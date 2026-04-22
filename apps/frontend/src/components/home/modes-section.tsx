@@ -133,19 +133,6 @@ export function ModesSection() {
                   <p className='relative z-10 mt-3 text-sm leading-relaxed text-white/40 group-hover:text-white/65 transition-colors flex-1'>
                     {mode.description}
                   </p>
-
-                  <div className='relative z-10 mt-6 flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-white/20 group-hover:text-white/60 transition-all'>
-                    <span>Saiba mais</span>
-                    <svg
-                      className='h-3.5 w-3.5 transition-transform group-hover:translate-x-1.5'
-                      fill='none'
-                      viewBox='0 0 24 24'
-                      stroke='currentColor'
-                      strokeWidth={3}
-                    >
-                      <path strokeLinecap='round' strokeLinejoin='round' d='M13 7l5 5m0 0l-5 5m5-5H6' />
-                    </svg>
-                  </div>
                 </article>
               </SpotlightCard>
             </AnimatedContent>

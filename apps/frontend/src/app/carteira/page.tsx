@@ -7,6 +7,7 @@ import { apiFetch } from '@/lib/api-request';
 import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
 
 import { getPublicApiUrl } from '@/lib/env-public';
+import { maskCEP, maskPhone, maskCPF } from '@/lib/masks';
 
 const apiUrl = getPublicApiUrl();
 type UserTab = 'conta' | 'saldo' | 'historico' | 'transacoes';
@@ -240,6 +241,29 @@ export default function CarteiraPage() {
     reader.readAsDataURL(file);
   }
 
+  async function fetchCEP(cep: string) {
+    const digits = cep.replace(/\D/g, '');
+    if (digits.length !== 8) return;
+
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const data = await res.json() as { erro?: boolean; uf?: string; localidade?: string; logradouro?: string; bairro?: string };
+      if (data.erro) {
+        setStatusMessage('CEP não encontrado.');
+        return;
+      }
+
+      setProfileForm((prev) => ({
+        ...prev,
+        state: data.uf || prev.state,
+        city: data.localidade || prev.city,
+        address: [data.logradouro, data.bairro].filter(Boolean).join(', ') || prev.address,
+      }));
+    } catch {
+      // silently fail — user can fill manually
+    }
+  }
+
   if (loading) {
     return (
       <main className='min-h-screen bg-[#090b11] text-white'>
@@ -338,13 +362,35 @@ export default function CarteiraPage() {
 
         {activeTab === 'conta' ? (
           <section className='mt-6 grid gap-4 lg:grid-cols-[280px_1fr]'>
-            <aside className='rounded-3xl border border-white/10 bg-[#101525] p-5 backdrop-blur-md'>
-              <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3'>Conta</p>
-              <p className='mt-2 text-sm text-white/50'>Informações de perfil e documento.</p>
-              <label className='mt-4 block rounded-lg border border-white/15 bg-white/5 p-3 text-sm cursor-pointer'>
-                <span className='block font-medium'>Trocar foto</span>
-                <input type='file' accept='image/*' className='mt-2 block w-full text-xs text-white/50' onChange={onAvatarUpload} />
-              </label>
+            <aside className='rounded-3xl border border-white/10 bg-[#101525] p-5 backdrop-blur-md flex flex-col items-center'>
+              {/* Avatar com preview */}
+              <div className='relative'>
+                {profileForm.avatarUrl ? (
+                  <img src={profileForm.avatarUrl} alt='Avatar' className='h-24 w-24 rounded-full object-cover border-2 border-white/10' />
+                ) : (
+                  <div className='h-24 w-24 rounded-full bg-white/10 flex items-center justify-center text-2xl font-bold text-white/40'>
+                    {displayName.slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+                <label className='absolute bottom-0 right-0 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-white text-black hover:bg-white/90 transition-colors shadow-lg touch-manipulation'>
+                  <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.5' strokeLinecap='round' strokeLinejoin='round'>
+                    <path d='M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z' />
+                    <circle cx='12' cy='13' r='4' />
+                  </svg>
+                  <input type='file' accept='image/*' className='hidden' onChange={onAvatarUpload} />
+                </label>
+              </div>
+              <p className='mt-4 text-lg font-semibold text-center'>{displayName}</p>
+              <p className='text-sm text-white/40'>{user?.email}</p>
+              {profileForm.avatarUrl && (
+                <button
+                  type='button'
+                  className='mt-3 text-xs text-red-400/70 hover:text-red-400 transition-colors'
+                  onClick={() => setProfileForm((p) => ({ ...p, avatarUrl: '' }))}
+                >
+                  Remover foto
+                </button>
+              )}
             </aside>
 
             <article className='rounded-3xl border border-white/10 bg-[#101525] p-5 backdrop-blur-md'>
@@ -352,17 +398,36 @@ export default function CarteiraPage() {
               <div className='mt-4 grid gap-3 md:grid-cols-2'>
                 <input className='field' placeholder='Primeiro nome' value={profileForm.firstName} onChange={(e) => setProfileForm((p) => ({ ...p, firstName: e.target.value }))} />
                 <input className='field' placeholder='Último nome' value={profileForm.lastName} onChange={(e) => setProfileForm((p) => ({ ...p, lastName: e.target.value }))} />
-                <input className='field' placeholder='Telefone' value={profileForm.phone} onChange={(e) => setProfileForm((p) => ({ ...p, phone: e.target.value }))} />
+                <input className='field' placeholder='Telefone' inputMode='tel' value={maskPhone(profileForm.phone)} onChange={(e) => setProfileForm((p) => ({ ...p, phone: e.target.value.replace(/\D/g, '').slice(0, 11) }))} />
                 <input className='field' placeholder='Nacionalidade' value={profileForm.nationality} onChange={(e) => setProfileForm((p) => ({ ...p, nationality: e.target.value }))} />
-                <input className='field' placeholder='País' value={profileForm.country} onChange={(e) => setProfileForm((p) => ({ ...p, country: e.target.value }))} />
+
+                <div className='md:col-span-2 mt-2'>
+                  <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-2'>Endereço</p>
+                </div>
+
+                <input
+                  className='field'
+                  placeholder='CEP'
+                  inputMode='numeric'
+                  value={maskCEP(profileForm.postalCode)}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/\D/g, '').slice(0, 8);
+                    setProfileForm((p) => ({ ...p, postalCode: raw }));
+                    if (raw.length === 8) void fetchCEP(raw);
+                  }}
+                />
                 <input className='field' placeholder='Estado' value={profileForm.state} onChange={(e) => setProfileForm((p) => ({ ...p, state: e.target.value }))} />
                 <input className='field' placeholder='Cidade' value={profileForm.city} onChange={(e) => setProfileForm((p) => ({ ...p, city: e.target.value }))} />
-                <input className='field' placeholder='CEP' value={profileForm.postalCode} onChange={(e) => setProfileForm((p) => ({ ...p, postalCode: e.target.value }))} />
-                <input className='field md:col-span-2' placeholder='Endereço' value={profileForm.address} onChange={(e) => setProfileForm((p) => ({ ...p, address: e.target.value }))} />
+                <input className='field' placeholder='País' value={profileForm.country} onChange={(e) => setProfileForm((p) => ({ ...p, country: e.target.value }))} />
+                <input className='field md:col-span-2' placeholder='Endereço completo (rua, número, bairro)' value={profileForm.address} onChange={(e) => setProfileForm((p) => ({ ...p, address: e.target.value }))} />
+
+                <div className='md:col-span-2 mt-2'>
+                  <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-2'>Outros</p>
+                </div>
+
                 <input className='field' placeholder='Gênero' value={profileForm.gender} onChange={(e) => setProfileForm((p) => ({ ...p, gender: e.target.value }))} />
-                <input className='field' placeholder='URL da foto (opcional)' value={profileForm.avatarUrl} onChange={(e) => setProfileForm((p) => ({ ...p, avatarUrl: e.target.value }))} />
-                <input className='field bg-white/5 text-white/70' value={`CPF: ${user?.cpf ?? ''}`} readOnly />
-                <input className='field bg-white/5 text-white/70' value={`Nascimento: ${user?.birthDate ? new Date(user.birthDate).toLocaleDateString('pt-BR') : ''}`} readOnly />
+                <input className='field bg-white/[0.03] text-white/50 cursor-not-allowed' value={`CPF: ${user?.cpf ? maskCPF(user.cpf) : ''}`} readOnly />
+                <input className='field bg-white/[0.03] text-white/50 cursor-not-allowed' value={`Nascimento: ${user?.birthDate ? new Date(user.birthDate).toLocaleDateString('pt-BR') : ''}`} readOnly />
               </div>
               <button type='button' className='w-full sm:w-auto rounded-2xl bg-white px-6 py-3 text-sm font-bold text-black shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-all hover:shadow-[0_0_25px_rgba(255,255,255,0.2)] hover:scale-[1.01] disabled:opacity-50 mt-5' disabled={loading} onClick={saveProfile}>
                 {loading ? 'Salvando...' : 'Salvar'}

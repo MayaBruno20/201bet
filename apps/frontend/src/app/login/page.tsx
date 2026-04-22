@@ -8,6 +8,7 @@ import { MainNav } from '@/components/site/main-nav';
 import { getPostAuthPath, setStoredUser, type SessionUser } from '@/lib/auth';
 import { apiFetch } from '@/lib/api-request';
 import { getPublicApiUrl } from '@/lib/env-public';
+import { maskCPF, unmaskCPF } from '@/lib/masks';
 
 const apiUrl = getPublicApiUrl();
 const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
@@ -213,11 +214,9 @@ export default function LoginPage() {
                   className='w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm text-white placeholder:text-white/30 outline-none transition-all focus:border-white/20 focus:ring-4 focus:ring-white/5'
                   type='text'
                   inputMode='numeric'
-                  placeholder='CPF (11 dígitos)'
-                  value={cpf}
-                  onChange={(e) => setCpf(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                  minLength={11}
-                  maxLength={11}
+                  placeholder='CPF'
+                  value={maskCPF(cpf)}
+                  onChange={(e) => setCpf(unmaskCPF(e.target.value).slice(0, 11))}
                   required
                 />
                 <input

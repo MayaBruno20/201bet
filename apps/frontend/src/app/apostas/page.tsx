@@ -61,7 +61,8 @@ export default function ApostasPage() {
   const [selectedDuelId, setSelectedDuelId] = useState<string>('');
   const [selectedMarketId, setSelectedMarketId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<Tab>('passadas');
-  const [stake, setStake] = useState<number>(100);
+  const [stakeRaw, setStakeRaw] = useState('100');
+  const stake = Number(stakeRaw) || 0;
   const [side, setSide] = useState<'LEFT' | 'RIGHT'>('LEFT');
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
@@ -366,7 +367,7 @@ export default function ApostasPage() {
                           <div className='flex flex-col justify-end gap-3'>
                             <div className='relative'>
                               <span className='absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-medium'>R$</span>
-                              <input className='w-full rounded-2xl border border-white/10 bg-[#090b11]/50 py-4 pl-12 pr-4 text-2xl font-semibold text-white focus:border-white/30 focus:outline-none' type='number' min={10} step={10} value={stake} onChange={(e) => setStake(Number(e.target.value || 0))} />
+                              <input className='w-full rounded-2xl border border-white/10 bg-[#090b11]/50 py-4 pl-12 pr-4 text-2xl font-semibold text-white focus:border-white/30 focus:outline-none' type='number' min={10} step={10} value={stakeRaw} onChange={(e) => setStakeRaw(e.target.value)} />
                             </div>
                             <button type='button' className='w-full rounded-2xl bg-white px-4 py-4 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all hover:bg-white/90 disabled:opacity-50 disabled:pointer-events-none' disabled={!canBet || placingBet} onClick={() => setConfirmOpen(true)}>
                               {placingBet ? 'Processando...' : 'Confirmar Bilhete ->'}
@@ -428,7 +429,7 @@ export default function ApostasPage() {
                       snapshot={currentMRSnapshot}
                       me={me}
                       stake={stake}
-                      setStake={setStake}
+                      setStake={(value) => setStakeRaw(String(value))}
                       onPlaceBet={placeMultiRunnerBet}
                       placingBet={placingBet}
                     />
