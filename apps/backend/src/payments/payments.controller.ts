@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { EmailVerifiedGuard } from '../auth/email-verified.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PaymentsService } from './payments.service';
 import { CreateDepositDto } from './dto/create-deposit.dto';
@@ -11,6 +12,7 @@ export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post('deposit')
+  @UseGuards(EmailVerifiedGuard)
   createDeposit(
     @CurrentUser() user: { userId: string },
     @Body() payload: CreateDepositDto,
@@ -27,6 +29,7 @@ export class PaymentsController {
   }
 
   @Post('withdraw')
+  @UseGuards(EmailVerifiedGuard)
   createWithdraw(
     @CurrentUser() user: { userId: string },
     @Body() payload: CreateWithdrawDto,

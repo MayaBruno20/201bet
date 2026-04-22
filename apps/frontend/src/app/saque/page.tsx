@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
+import { VerificationBanner } from '@/components/site/verification-banner';
 import { apiFetch } from '@/lib/api-request';
 import { clearClientSession } from '@/lib/auth';
 import { getPublicApiUrl } from '@/lib/env-public';
@@ -33,6 +34,7 @@ function statusClass(status: string) {
 
 export default function SaquePage() {
   const [sessionOk, setSessionOk] = useState(false);
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [balance, setBalance] = useState(0);
   const [confirmedDeposits, setConfirmedDeposits] = useState(0);
   const [amount, setAmount] = useState('');
@@ -49,9 +51,10 @@ export default function SaquePage() {
 
   async function loadData() {
     try {
-      const [summaryRes, withdrawRes] = await Promise.all([
+      const [summaryRes, withdrawRes, meRes] = await Promise.all([
         apiFetch(`${apiUrl}/payments/summary`, { cache: 'no-store' }),
         apiFetch(`${apiUrl}/payments/withdrawals`, { cache: 'no-store' }),
+        apiFetch(`${apiUrl}/auth/me`, { cache: 'no-store' }),
       ]);
       if (!summaryRes.ok) {
         clearClientSession();
@@ -63,6 +66,10 @@ export default function SaquePage() {
       setBalance(summary.balance);
       setConfirmedDeposits(summary.confirmedDeposits);
       if (withdrawRes.ok) setWithdrawals(await withdrawRes.json());
+      if (meRes.ok) {
+        const me = (await meRes.json()) as { emailVerified?: boolean };
+        setEmailVerified(me.emailVerified ?? false);
+      }
     } catch { /* ignore */ }
   }
 
@@ -97,8 +104,12 @@ export default function SaquePage() {
         body: JSON.stringify({ amount: numericAmount, pixKeyType, pixKey: pixKey.trim() }),
       });
       if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(msg || 'Falha ao solicitar saque');
+        const body = await res.json().catch(() => null);
+        if (res.status === 403 && body?.code === 'EMAIL_NOT_VERIFIED') {
+          setEmailVerified(false);
+          throw new Error(body.message || 'Confirme seu e-mail para liberar saques.');
+        }
+        throw new Error(body?.message || 'Falha ao solicitar saque');
       }
       const data = await res.json();
       setBalance(data.balance);
@@ -131,6 +142,8 @@ export default function SaquePage() {
     <main className='min-h-screen bg-[#090b11] pb-10 text-white'>
       <div className='mx-auto max-w-2xl px-4 py-6 sm:px-6'>
         <MainNav />
+
+        <VerificationBanner hidden={emailVerified !== false} message='Depósitos, saques e apostas ficam bloqueados até você confirmar o e-mail.' />
 
         {/* Header */}
         <div className='flex items-center gap-3 mb-6'>
@@ -187,11 +200,11 @@ export default function SaquePage() {
           {error && <p className='text-sm text-red-400 mb-4 rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-2'>{error}</p>}
           {success && <p className='text-sm text-emerald-400 mb-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-4 py-2'>{success}</p>}
 
-          <button type='button' onClick={handleWithdraw} disabled={loading || numericAmount < 20 || !pixKey.trim()} className='w-full rounded-xl bg-[#d4a843] px-6 py-3.5 text-base font-bold text-[#04111d] transition-all hover:bg-[#e0b84d] disabled:opacity-50 flex items-center justify-center gap-2'>
+          <button type='button' onClick={handleWithdraw} disabled={loading || numericAmount < 20 || !pixKey.trim() || emailVerified === false} className='w-full rounded-xl bg-[#d4a843] px-6 py-3.5 text-base font-bold text-[#04111d] transition-all hover:bg-[#e0b84d] disabled:opacity-50 flex items-center justify-center gap-2'>
             <svg className='h-5 w-5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
               <path strokeLinecap='round' strokeLinejoin='round' d='M19 14l-7 7m0 0l-7-7m7 7V3' />
             </svg>
-            {loading ? 'Processando...' : 'Solicitar saque'}
+            {loading ? 'Processando...' : emailVerified === false ? 'Confirme o e-mail para sacar' : 'Solicitar saque'}
           </button>
         </section>
 

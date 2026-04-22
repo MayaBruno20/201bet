@@ -232,6 +232,13 @@ export default function LoginPage() {
             <button disabled={loading} className='w-full rounded-2xl bg-white px-4 py-3.5 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] hover:scale-[1.01] disabled:opacity-50 disabled:pointer-events-none'>
               {loading ? 'Processando...' : mode === 'login' ? 'Entrar' : 'Cadastrar'}
             </button>
+            {mode === 'login' ? (
+              <div className='text-right'>
+                <Link href='/forgot-password' className='text-xs text-white/60 hover:text-white transition-colors'>
+                  Esqueci minha senha
+                </Link>
+              </div>
+            ) : null}
           </form>
 
           <div className='mt-4 flex items-center gap-3'>

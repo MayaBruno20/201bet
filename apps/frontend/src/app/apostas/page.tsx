@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { MainNav } from '@/components/site/main-nav';
+import { VerificationBanner } from '@/components/site/verification-banner';
 import { apiFetch } from '@/lib/api-request';
 import { getPublicApiUrl, getPublicWsUrl } from '@/lib/env-public';
 import { BettingBoard, MarketSnapshot } from '@/types/market';
@@ -14,6 +15,7 @@ type MeResponse = {
   id: string;
   name: string;
   email: string;
+  emailVerified?: boolean;
   wallet?: { balance: number | string; currency: string };
 };
 
@@ -103,7 +105,8 @@ export default function ApostasPage() {
   }, [side, snapshot]);
 
   const isGlobalLock = snapshot?.lockedSide === 'BOTH';
-  const canBet = !!snapshot && !!me && stake >= 5 && currentBalance >= stake && !isGlobalLock && !sideBlockedMessage;
+  const emailUnverified = me?.emailVerified === false;
+  const canBet = !!snapshot && !!me && !emailUnverified && stake >= 5 && currentBalance >= stake && !isGlobalLock && !sideBlockedMessage;
   const filteredBets = useMemo(() => {
     return myBets.filter((bet) => {
       const firstItem = bet.items[0];
@@ -214,6 +217,10 @@ export default function ApostasPage() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => null as unknown);
+        if (response.status === 403 && (data as { code?: string } | null)?.code === 'EMAIL_NOT_VERIFIED') {
+          setMe((prev) => (prev ? { ...prev, emailVerified: false } : prev));
+          throw new Error(parseApiError(data) ?? 'Confirme seu e-mail para liberar apostas.');
+        }
         throw new Error(parseApiError(data) ?? 'Não foi possível confirmar sua aposta agora');
       }
 
@@ -245,6 +252,8 @@ export default function ApostasPage() {
     <main className='min-h-screen bg-[#090b11] text-white'>
       <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
         <MainNav />
+
+        <VerificationBanner hidden={!me || me.emailVerified !== false} />
 
         <div className='mt-2 flex items-center gap-3'>
           <span className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-medium ${connected ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
@@ -394,6 +403,7 @@ export default function ApostasPage() {
                     </div>
 
                     {!me && <p className='mt-3 text-xs text-amber-400'>● Você precisa fazer login para apostar.</p>}
+                    {emailUnverified && <p className='mt-3 text-xs text-amber-400'>● Confirme seu e-mail para liberar apostas.</p>}
                     {stake < 5 && <p className='mt-1 text-xs text-amber-400'>● O valor mínimo é de R$ 5,00.</p>}
                     {me && currentBalance < stake && <p className='mt-1 text-xs text-red-400'>● Saldo insuficiente para este valor.</p>}
                     {sideBlockedMessage && <p className='mt-1 text-xs text-amber-400'>● {sideBlockedMessage}</p>}

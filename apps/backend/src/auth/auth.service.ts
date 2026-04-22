@@ -1,11 +1,17 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { VerificationTokenType } from '@prisma/client';
 import { OAuth2Client } from 'google-auth-library';
+import type { AppEnv } from '../config/env.validation';
 import { PrismaService } from '../database/prisma.service';
+import { MailService } from '../mail/mail.service';
+import { TokensService } from '../tokens/tokens.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
@@ -14,11 +20,15 @@ import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly tokens: TokensService,
+    private readonly mail: MailService,
+    private readonly config: ConfigService<AppEnv, true>,
   ) {}
 
   async login(payload: LoginDto) {
@@ -45,6 +55,7 @@ export class AuthService {
       name: user.name,
       role: user.role,
       status: user.status,
+      emailVerified: user.emailVerified,
       walletBalance: user.wallet?.balance ?? 0,
     });
   }
@@ -93,14 +104,195 @@ export class AuthService {
       });
     });
 
+    await this.dispatchVerificationEmail(user.id, user.email, user.name);
+
     return this.issueToken(user.id, user.email, user.role, {
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
       status: user.status,
+      emailVerified: user.emailVerified,
       walletBalance: user.wallet?.balance ?? 0,
     });
+  }
+
+  async verifyEmail(rawToken: string) {
+    const { userId } = await this.tokens.consume(
+      rawToken,
+      VerificationTokenType.EMAIL_VERIFICATION,
+    );
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { emailVerified: true },
+    });
+
+    await this.tokens.invalidateAllOfType(
+      userId,
+      VerificationTokenType.EMAIL_VERIFICATION,
+    );
+
+    return { ok: true, emailVerified: true };
+  }
+
+  async resendVerification(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, emailVerified: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Sessão inválida');
+    }
+
+    if (user.emailVerified) {
+      return { ok: true, alreadyVerified: true };
+    }
+
+    await this.tokens.invalidateAllOfType(
+      user.id,
+      VerificationTokenType.EMAIL_VERIFICATION,
+    );
+    await this.dispatchVerificationEmail(user.id, user.email, user.name);
+
+    return { ok: true, alreadyVerified: false };
+  }
+
+  async forgotPassword(email: string) {
+    const normalized = email.toLowerCase().trim();
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalized },
+      select: { id: true, email: true, name: true, status: true },
+    });
+
+    if (user && user.status === 'ACTIVE') {
+      await this.tokens.invalidateAllOfType(
+        user.id,
+        VerificationTokenType.PASSWORD_RESET,
+      );
+      await this.dispatchPasswordResetEmail(user.id, user.email, user.name);
+    }
+
+    return { ok: true };
+  }
+
+  async verifyResetPasswordToken(rawToken: string) {
+    const inspected = await this.tokens.inspect(
+      rawToken,
+      VerificationTokenType.PASSWORD_RESET,
+    );
+    if (!inspected.valid) {
+      return { valid: false as const, reason: inspected.reason };
+    }
+    return {
+      valid: true as const,
+      maskedEmail: this.maskEmail(inspected.email),
+    };
+  }
+
+  private maskEmail(email: string): string {
+    const [local, domain] = email.split('@');
+    if (!local || !domain) return '***';
+    if (local.length <= 2) return `${local[0]}***@${domain}`;
+    if (local.length <= 4) {
+      return `${local[0]}***${local.slice(-1)}@${domain}`;
+    }
+    return `${local.slice(0, 2)}***${local.slice(-1)}@${domain}`;
+  }
+
+  async resetPassword(
+    rawToken: string,
+    newPassword: string,
+    confirmPassword: string,
+    ipAddress?: string,
+  ) {
+    if (newPassword !== confirmPassword) {
+      throw new BadRequestException('Senha e confirmação não conferem');
+    }
+
+    const { userId } = await this.tokens.consume(
+      rawToken,
+      VerificationTokenType.PASSWORD_RESET,
+    );
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: passwordHash },
+      select: { id: true, email: true, name: true },
+    });
+
+    await this.tokens.invalidateAllOfType(
+      user.id,
+      VerificationTokenType.PASSWORD_RESET,
+    );
+
+    try {
+      await this.mail.sendPasswordChanged({
+        userId: user.id,
+        email: user.email,
+        userName: user.name,
+        ipAddress,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Falha ao despachar e-mail password-changed para ${user.id}: ${
+          error instanceof Error ? error.message : 'erro desconhecido'
+        }`,
+      );
+    }
+
+    return { ok: true };
+  }
+
+  private async dispatchVerificationEmail(
+    userId: string,
+    email: string,
+    userName: string | null,
+  ) {
+    try {
+      const ttlHours = this.config.get('EMAIL_VERIFICATION_TTL_HOURS', {
+        infer: true,
+      });
+      const { rawToken } = await this.tokens.issue(
+        userId,
+        VerificationTokenType.EMAIL_VERIFICATION,
+        ttlHours * 60 * 60 * 1000,
+      );
+      await this.mail.sendVerification({ userId, email, userName, rawToken });
+    } catch (error) {
+      this.logger.error(
+        `Falha ao despachar e-mail de verificação para ${userId}: ${
+          error instanceof Error ? error.message : 'erro desconhecido'
+        }`,
+      );
+    }
+  }
+
+  private async dispatchPasswordResetEmail(
+    userId: string,
+    email: string,
+    userName: string | null,
+  ) {
+    try {
+      const ttlMinutes = this.config.get('PASSWORD_RESET_TTL_MINUTES', {
+        infer: true,
+      });
+      const { rawToken } = await this.tokens.issue(
+        userId,
+        VerificationTokenType.PASSWORD_RESET,
+        ttlMinutes * 60 * 1000,
+      );
+      await this.mail.sendPasswordReset({ userId, email, userName, rawToken });
+    } catch (error) {
+      this.logger.error(
+        `Falha ao despachar e-mail de reset de senha para ${userId}: ${
+          error instanceof Error ? error.message : 'erro desconhecido'
+        }`,
+      );
+    }
   }
 
   async googleLogin(payload: GoogleLoginDto) {
@@ -130,7 +322,11 @@ export class AuthService {
       if (existing) {
         const updated = await tx.user.update({
           where: { id: existing.id },
-          data: { googleSub: ticketPayload.sub, status: 'ACTIVE' },
+          data: {
+            googleSub: ticketPayload.sub,
+            status: 'ACTIVE',
+            emailVerified: true,
+          },
           include: { wallet: true },
         });
         return updated;
@@ -147,6 +343,7 @@ export class AuthService {
       name: user.name,
       role: user.role,
       status: user.status,
+      emailVerified: user.emailVerified,
       walletBalance: user.wallet?.balance ?? 0,
     });
   }
@@ -171,6 +368,7 @@ export class AuthService {
         nationality: true,
         gender: true,
         avatarUrl: true,
+        emailVerified: true,
         role: true,
         status: true,
         createdAt: true,
@@ -232,6 +430,7 @@ export class AuthService {
         nationality: true,
         gender: true,
         avatarUrl: true,
+        emailVerified: true,
         role: true,
         status: true,
         wallet: {

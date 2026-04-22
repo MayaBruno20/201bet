@@ -9,6 +9,7 @@ export type SessionUser = {
   name: string;
   role: 'USER' | 'ADMIN' | 'OPERATOR' | 'AUDITOR';
   status: string;
+  emailVerified: boolean;
   avatarUrl?: string | null;
 };
 

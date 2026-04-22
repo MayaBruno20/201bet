@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
+import { VerificationBanner } from '@/components/site/verification-banner';
 import { apiFetch } from '@/lib/api-request';
 import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
 
@@ -146,6 +147,7 @@ export default function CarteiraPage() {
           name: me.name,
           role: me.role,
           status: me.status,
+          emailVerified: me.emailVerified,
           avatarUrl: me.avatarUrl,
         });
 
@@ -208,6 +210,7 @@ export default function CarteiraPage() {
         name: updated.name,
         role: updated.role,
         status: updated.status,
+        emailVerified: updated.emailVerified,
         avatarUrl: updated.avatarUrl,
       });
       setStatusMessage('Perfil atualizado com sucesso.');
@@ -267,6 +270,8 @@ export default function CarteiraPage() {
     <main className='min-h-screen bg-[#090b11] pb-10 text-white'>
       <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
         <MainNav />
+
+        <VerificationBanner hidden={user?.emailVerified === true} />
 
         <section className='rounded-3xl border border-white/10 bg-[#101525] p-5 backdrop-blur-md'>
           <div className='flex flex-wrap items-center gap-4'>

@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { EmailVerifiedGuard } from './auth/email-verified.guard';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { CurrentUser } from './common/decorators/current-user.decorator';
 import { MarketService } from './market.service';
@@ -35,7 +36,7 @@ export class AppController {
     return this.marketService.getBettingBoard();
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, EmailVerifiedGuard)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('market/bet')
   placeBet(
