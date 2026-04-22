@@ -11,6 +11,7 @@ locals {
       JWT_SECRET               = var.jwt_secret
       JWT_EXPIRES_IN           = var.jwt_expires_in
       CORS_ORIGIN              = var.cors_origin
+      AUTH_COOKIE_SAMESITE     = "none" # obrigatório se front e API forem domínios diferentes (ex. Vercel + Render)
       UPSTASH_REDIS_REST_URL   = local.upstash_rest_url_value
       UPSTASH_REDIS_REST_TOKEN = local.upstash_rest_token_value
     },
@@ -43,7 +44,7 @@ check "render_managed_requires_git" {
 
 check "upstash_manual_when_no_resource" {
   assert {
-    condition = var.create_upstash_redis || (var.upstash_rest_url != "" && var.upstash_rest_token != "") || (!var.enable_render_web_service && !var.enable_github_secrets)
+    condition     = var.create_upstash_redis || (var.upstash_rest_url != "" && var.upstash_rest_token != "") || (!var.enable_render_web_service && !var.enable_github_secrets)
     error_message = "Com create_upstash_redis = false e enable_render_web_service ou enable_github_secrets = true, defina upstash_rest_url e upstash_rest_token (Upstash → REST API)."
   }
 }
@@ -91,9 +92,9 @@ module "vercel" {
 }
 
 module "gha" {
-  source  = "../../modules/github_actions"
-  count   = var.enable_github_secrets ? 1 : 0
-  repo    = var.github_repo
+  source = "../../modules/github_actions"
+  count  = var.enable_github_secrets ? 1 : 0
+  repo   = var.github_repo
   secrets = merge(
     {
       DATABASE_URL_PROD             = module.neon.connection_uri
@@ -104,9 +105,9 @@ module "gha" {
       BACKEND_HTTP_ORIGIN_PROD      = local.backend_http_origin
     },
     var.enable_render_web_service && var.render_api_key != "" && var.render_owner_id != "" ? {
-      RENDER_API_KEY_PROD     = var.render_api_key
-      RENDER_OWNER_ID_PROD    = var.render_owner_id
-      RENDER_SERVICE_ID_PROD  = module.render_backend[0].id
+      RENDER_API_KEY_PROD    = var.render_api_key
+      RENDER_OWNER_ID_PROD   = var.render_owner_id
+      RENDER_SERVICE_ID_PROD = module.render_backend[0].id
     } : {},
   )
 }

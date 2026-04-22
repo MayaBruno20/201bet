@@ -5,7 +5,7 @@ import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
-import { getPostAuthPath, setStoredUser, type SessionUser } from '@/lib/auth';
+import { getPostAuthPath, setStoredAccessToken, setStoredUser, type SessionUser } from '@/lib/auth';
 import { apiFetch } from '@/lib/api-request';
 import { getPublicApiUrl } from '@/lib/env-public';
 import { maskCPF, unmaskCPF } from '@/lib/masks';
@@ -57,8 +57,9 @@ export default function LoginPage() {
       throw new Error(message || 'Falha na autenticação.');
     }
 
-    const data = (await response.json()) as { user: SessionUser };
+    const data = (await response.json()) as { user: SessionUser; accessToken?: string };
     setStoredUser(data.user);
+    if (data.accessToken) setStoredAccessToken(data.accessToken);
     router.push(getPostAuthPath(data.user));
   }
 
@@ -121,8 +122,9 @@ export default function LoginPage() {
             throw new Error(message || 'Falha no login Google');
           }
 
-          const data = (await response.json()) as { user: SessionUser };
+          const data = (await response.json()) as { user: SessionUser; accessToken?: string };
           setStoredUser(data.user);
+          if (data.accessToken) setStoredAccessToken(data.accessToken);
           router.push(getPostAuthPath(data.user));
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Erro no login Google.');

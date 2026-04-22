@@ -22,7 +22,7 @@ export class AuthController {
   async login(@Body() payload: LoginDto, @Res({ passthrough: true }) res: Response) {
     const { accessToken, user } = await this.authService.login(payload);
     attachAccessTokenCookie(res, accessToken);
-    return { user };
+    return { user, accessToken };
   }
 
   @Post('register')
@@ -30,7 +30,7 @@ export class AuthController {
   async register(@Body() payload: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const { accessToken, user } = await this.authService.register(payload);
     attachAccessTokenCookie(res, accessToken);
-    return { user };
+    return { user, accessToken };
   }
 
   @Post('google')
@@ -38,7 +38,7 @@ export class AuthController {
   async google(@Body() payload: GoogleLoginDto, @Res({ passthrough: true }) res: Response) {
     const { accessToken, user } = await this.authService.googleLogin(payload);
     attachAccessTokenCookie(res, accessToken);
-    return { user };
+    return { user, accessToken };
   }
 
   @Post('logout')
