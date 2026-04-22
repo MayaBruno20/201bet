@@ -162,6 +162,10 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     return [...this.states.values()].map((state) => this.toSnapshot(state));
   }
 
+  removeDuel(duelId: string) {
+    this.states.delete(duelId);
+  }
+
   async getBettingBoard(): Promise<BettingBoard> {
     const events = await this.prisma.event.findMany({
       orderBy: { startAt: 'asc' },

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -218,6 +219,119 @@ export class AdminController {
   @Get('analytics/export')
   exportAnalytics(@Query() query: AnalyticsExportQueryDto) {
     return this.adminService.exportAnalytics(query);
+  }
+
+  // ── Multi-Runner Markets ──
+
+  @Get('markets')
+  listMarkets() {
+    return this.adminService.listMultiRunnerMarkets();
+  }
+
+  @Post('markets')
+  createMarket(
+    @Body() payload: { eventId: string; name: string; type: string; runners: string[]; rakePercent?: number; bookingCloseAt?: string; duelId?: string },
+    @Req() req: ReqUser,
+  ) {
+    return this.adminService.createMultiRunnerMarket(payload, this.auditFromReq(req));
+  }
+
+  @Patch('markets/:id')
+  updateMarket(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: { name?: string; status?: string; rakePercent?: number; bookingCloseAt?: string },
+    @Req() req: ReqUser,
+  ) {
+    return this.adminService.updateMultiRunnerMarket(id, payload, this.auditFromReq(req));
+  }
+
+  @Post('markets/:id/settle')
+  settleMarket(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: { winnerOddId: string },
+    @Req() req: ReqUser,
+  ) {
+    return this.adminService.settleMarket(id, payload.winnerOddId, this.auditFromReq(req));
+  }
+
+  @Post('markets/:id/void')
+  voidMarket(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
+    return this.adminService.voidMarket(id, this.auditFromReq(req));
+  }
+
+  @Post('duels/:id/settle')
+  settleDuel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: { winningSide: 'LEFT' | 'RIGHT' },
+    @Req() req: ReqUser,
+  ) {
+    return this.adminService.settleDuel(id, payload.winningSide, this.auditFromReq(req));
+  }
+
+  // ── Affiliates ──
+
+  @Get('affiliates')
+  listAffiliates() {
+    return this.adminService.listAffiliates();
+  }
+
+  @Post('affiliates')
+  createAffiliate(
+    @Body() payload: { name: string; code: string; commissionPct: number },
+    @Req() req: ReqUser,
+  ) {
+    return this.adminService.createAffiliate(payload, this.auditFromReq(req));
+  }
+
+  @Patch('affiliates/:id')
+  updateAffiliate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: { name?: string; code?: string; commissionPct?: number; active?: boolean },
+    @Req() req: ReqUser,
+  ) {
+    return this.adminService.updateAffiliate(id, payload, this.auditFromReq(req));
+  }
+
+  @Delete('affiliates/:id')
+  deleteAffiliate(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
+    return this.adminService.deleteAffiliate(id, this.auditFromReq(req));
+  }
+
+  @Get('affiliates/:id/commissions')
+  affiliateCommissions(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getAffiliateCommissions(id);
+  }
+
+  // ── Config ──
+
+  @Post('config/margin')
+  async updateMargin(@Body() payload: { value: number }, @Req() req: ReqUser) {
+    const val = Number(payload.value);
+    if (!Number.isFinite(val) || val < 0 || val > 50) throw new BadRequestException('Valor inválido (0-50)');
+    process.env.MARKET_MARGIN_PERCENT = String(val);
+    await this.adminService.upsertSetting({ key: 'MARKET_MARGIN_PERCENT', value: String(val), description: 'Comissão da casa %' }, this.auditFromReq(req));
+    return { marginPercent: val };
+  }
+
+  @Post('config/min-bet')
+  async updateMinBet(@Body() payload: { value: number }, @Req() req: ReqUser) {
+    const val = Number(payload.value);
+    if (!Number.isFinite(val) || val < 0) throw new BadRequestException('Valor inválido');
+    process.env.MIN_BET_AMOUNT = String(val);
+    await this.adminService.upsertSetting({ key: 'MIN_BET_AMOUNT', value: String(val), description: 'Aposta mínima R$' }, this.auditFromReq(req));
+    return { minBetAmount: val };
+  }
+
+  // ── Profit Dashboard ──
+
+  @Get('analytics/profit-by-market')
+  profitByMarket() {
+    return this.adminService.getProfitByMarket();
+  }
+
+  @Get('analytics/profit-summary')
+  profitSummary() {
+    return this.adminService.getProfitSummary();
   }
 
   @Get('audit-logs')

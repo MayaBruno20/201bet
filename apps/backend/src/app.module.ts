@@ -14,6 +14,8 @@ import { QueueModule } from './queue/queue.module';
 import { TokensModule } from './tokens/tokens.module';
 import { MarketGateway } from './market.gateway';
 import { MarketService } from './market.service';
+import { MultiRunnerMarketService } from './multi-runner-market.service';
+import { SettlementService } from './settlement.service';
 
 @Module({
   imports: [
@@ -34,6 +36,8 @@ import { MarketService } from './market.service';
   controllers: [AppController],
   providers: [
     MarketService,
+    MultiRunnerMarketService,
+    SettlementService,
     MarketGateway,
     {
       provide: APP_GUARD,

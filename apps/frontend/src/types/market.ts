@@ -29,6 +29,34 @@ export type MarketSnapshot = {
   }>;
 };
 
+export type MultiRunnerSnapshot = {
+  marketId: string;
+  marketType: 'WINNER' | 'BEST_REACTION' | 'FALSE_START';
+  eventId: string;
+  eventName: string;
+  marketName: string;
+  status: string;
+  totalPool: number;
+  rakePercent: number;
+  closeInSeconds: number;
+  locked: boolean;
+  lockMessage?: string;
+  runners: Array<{
+    oddId: string;
+    label: string;
+    odd: number;
+    pool: number;
+    tickets: number;
+    locked: boolean;
+    poolShare: number;
+  }>;
+  history: Array<{
+    at: string;
+    odds: Record<string, number>;
+    totalPool: number;
+  }>;
+};
+
 export type BettingBoard = {
   events: Array<{
     id: string;
