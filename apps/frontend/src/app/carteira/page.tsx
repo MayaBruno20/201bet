@@ -226,17 +226,37 @@ export default function CarteiraPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 1_500_000) {
-      setStatusMessage('Imagem muito grande. Use arquivo de até 1.5MB.');
+    if (file.size > 5_000_000) {
+      setStatusMessage('Imagem muito grande. Use arquivo de até 5MB.');
       return;
     }
 
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result;
-      if (typeof result === 'string') {
-        setProfileForm((prev) => ({ ...prev, avatarUrl: result }));
-      }
+      if (typeof result !== 'string') return;
+
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 256;
+        const scale = Math.min(1, MAX_DIM / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          setStatusMessage('Não foi possível processar a imagem.');
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL('image/jpeg', 0.82);
+        setProfileForm((prev) => ({ ...prev, avatarUrl: compressed }));
+      };
+      img.onerror = () => setStatusMessage('Arquivo de imagem inválido.');
+      img.src = result;
     };
     reader.readAsDataURL(file);
   }

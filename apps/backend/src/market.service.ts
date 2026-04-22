@@ -251,10 +251,10 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         where: { duelId: input.duelId },
         create: {
           duelId: input.duelId,
-          leftPool: 1500,
-          rightPool: 1500,
-          leftTickets: 18,
-          rightTickets: 18,
+          leftPool: 0,
+          rightPool: 0,
+          leftTickets: 0,
+          rightTickets: 0,
         },
         update: {},
       });
@@ -454,15 +454,13 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       let pool = duel.poolState;
 
       if (!pool) {
-        const seedLeft = 800 + this.randomInt(0, 1800);
-        const seedRight = 800 + this.randomInt(0, 1800);
         pool = await this.prisma.duelPoolState.create({
           data: {
             duelId: duel.id,
-            leftPool: seedLeft,
-            rightPool: seedRight,
-            leftTickets: Math.max(1, Math.floor(seedLeft / 80)),
-            rightTickets: Math.max(1, Math.floor(seedRight / 80)),
+            leftPool: 0,
+            rightPool: 0,
+            leftTickets: 0,
+            rightTickets: 0,
           },
         });
       }
@@ -523,21 +521,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
   }
 
   private tick() {
-    const runSimulation = this.isSimulationLeader();
-
     for (const state of this.states.values()) {
-      const lock = this.evaluateLock(state);
-
-      if (
-        runSimulation &&
-        !lock.locked &&
-        state.status === DuelStatus.BOOKING_OPEN
-      ) {
-        const side = Math.random() > 0.5 ? 'LEFT' : 'RIGHT';
-        const addAmount = this.randomInt(35, 280);
-        this.applyPoolIncrement(state, side, addAmount);
-      }
-
       this.normalizePoolsIfNeeded(state);
       this.recalculateOdds(state);
       const nextLock = this.evaluateLock(state);
@@ -548,39 +532,6 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         nextLock.locked &&
         (nextLock.lockedSide === 'RIGHT' || nextLock.lockedSide === 'BOTH');
       this.captureHistory(state, nextLock.lockedSide, nextLock.reason);
-    }
-
-    if (runSimulation) {
-      void this.persistAllPoolsToDb();
-    }
-  }
-
-  /**
-   * Em múltiplas instâncias, defina `MARKET_SIMULATION_LEADER=false` em todas exceto uma
-   * para evitar simulação duplicada; apostas reais continuam usando o Postgres como fonte de verdade.
-   */
-  private isSimulationLeader() {
-    return process.env.MARKET_SIMULATION_LEADER !== 'false';
-  }
-
-  private async persistAllPoolsToDb() {
-    for (const state of this.states.values()) {
-      try {
-        await this.prisma.duelPoolState.update({
-          where: { duelId: state.duelId },
-          data: {
-            leftPool: state.left.pool,
-            rightPool: state.right.pool,
-            leftTickets: state.left.tickets,
-            rightTickets: state.right.tickets,
-          },
-        });
-      } catch (err) {
-        this.logger.warn(
-          `Falha ao persistir pools do duelo ${state.duelId}`,
-          err,
-        );
-      }
     }
   }
 
@@ -912,9 +863,5 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
 
   private clamp(value: number, min: number, max: number) {
     return Math.min(max, Math.max(min, value));
-  }
-
-  private randomInt(min: number, max: number) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 }

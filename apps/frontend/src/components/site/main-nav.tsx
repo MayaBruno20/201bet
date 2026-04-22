@@ -17,6 +17,7 @@ const baseLinks: NavLink[] = [
   { href: '/', label: 'Início' },
   { href: '/apostas', label: 'Apostas' },
   { href: '/eventos', label: 'Eventos' },
+  { href: '/listas', label: 'Listas Brasil' },
   { href: '/carteira', label: 'Carteira', requiresAuth: true },
 ];
 

@@ -35,15 +35,6 @@ type AdminUser = {
 type AdminDriver = { id: string; name: string; nickname?: string | null; active: boolean };
 type AdminCar = { id: string; name: string; category: string; number?: string | null; active: boolean; driver: { id: string; name: string } };
 type AdminEvent = { id: string; name: string; sport: string; status: string; startAt: string };
-type AdminDuel = {
-  id: string;
-  status: string;
-  startsAt: string;
-  bookingCloseAt: string;
-  event: { id: string; name: string };
-  leftCar: { id: string; name: string; driver: { name: string } };
-  rightCar: { id: string; name: string; driver: { name: string } };
-};
 type AdminSetting = { id: string; key: string; value: string; description?: string | null };
 type AuditLog = { id: string; action: string; entity: string; createdAt: string; actorUser?: { email: string } | null };
 
@@ -81,7 +72,7 @@ type EventPerformanceRow = {
 type MarketConfig = { marginPercent: number; minBetAmount: number };
 type LiveProfit = { totalVolume: number; totalRake: number; markets: Array<{ name: string; type: string; pool: number; rake: number }> };
 
-type AdminSection = 'config' | 'user' | 'event' | 'driver' | 'car' | 'duel' | 'market' | 'affiliate' | 'profit' | 'setting' | 'analytics' | 'audit';
+type AdminSection = 'config' | 'user' | 'driver' | 'car' | 'market' | 'affiliate' | 'profit' | 'setting' | 'analytics' | 'audit';
 
 type AdminMarket = {
   id: string; name: string; type: string; status: string;
@@ -105,10 +96,8 @@ type ProfitSummary = {
 const ADMIN_SECTIONS: { id: AdminSection; title: string; description: string }[] = [
   { id: 'config', title: 'Config Motor', description: 'Comissao da casa, aposta minima e lucro em tempo real.' },
   { id: 'user', title: 'Cadastro de usuario', description: 'CRUD de contas, roles e ajuste de saldo.' },
-  { id: 'event', title: 'Cadastro de evento', description: 'CRUD de eventos e controle de status.' },
   { id: 'driver', title: 'Cadastro de piloto', description: 'CRUD completo de pilotos.' },
   { id: 'car', title: 'Cadastro de carro', description: 'CRUD completo de carros.' },
-  { id: 'duel', title: 'Cadastro de embate', description: 'CRUD completo de embates.' },
   { id: 'market', title: 'Mercados Multi-Runner', description: 'Criar, liquidar e gerenciar mercados especiais.' },
   { id: 'affiliate', title: 'Afiliados', description: 'Gestao de afiliados e comissoes.' },
   { id: 'profit', title: 'Lucro & Dashboard', description: 'Lucro por mercado e resumo financeiro.' },
@@ -144,7 +133,6 @@ export default function AdminPage() {
   const [drivers, setDrivers] = useState<AdminDriver[]>([]);
   const [cars, setCars] = useState<AdminCar[]>([]);
   const [events, setEvents] = useState<AdminEvent[]>([]);
-  const [duels, setDuels] = useState<AdminDuel[]>([]);
   const [settings, setSettings] = useState<AdminSetting[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
@@ -158,19 +146,8 @@ export default function AdminPage() {
   const [liveProfit, setLiveProfit] = useState<LiveProfit | null>(null);
 
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', cpf: '', birthDate: '', role: 'USER' });
-  const [newEvent, setNewEvent] = useState({
-    sport: 'DRAG_RACE',
-    name: '',
-    startAt: '',
-    marketName: '',
-    oddALabel: 'Carro A',
-    oddAValue: '1.80',
-    oddBLabel: 'Carro B',
-    oddBValue: '1.90',
-  });
   const [newDriver, setNewDriver] = useState({ name: '', nickname: '' });
   const [newCar, setNewCar] = useState({ driverId: '', name: '', category: '', number: '' });
-  const [newDuel, setNewDuel] = useState({ eventId: '', leftCarId: '', rightCarId: '', startsAt: '', bookingCloseAt: '', status: 'BOOKING_OPEN', notes: '' });
   const [newSetting, setNewSetting] = useState({ key: '', value: '', description: '' });
 
   const isAllowed = useMemo(() => !!sessionUser && ['ADMIN', 'OPERATOR'].includes(sessionUser.role), [sessionUser]);
@@ -250,7 +227,6 @@ export default function AdminPage() {
         driversRes,
         carsRes,
         eventsRes,
-        duelsRes,
         settingsRes,
         auditRes,
         overviewRes,
@@ -267,7 +243,6 @@ export default function AdminPage() {
         fetchWithCredentials(`${apiUrl}/admin/drivers`, {}),
         fetchWithCredentials(`${apiUrl}/admin/cars`, {}),
         fetchWithCredentials(`${apiUrl}/admin/events`, {}),
-        fetchWithCredentials(`${apiUrl}/admin/duels`, {}),
         fetchWithCredentials(`${apiUrl}/admin/settings`, {}),
         fetchWithCredentials(`${apiUrl}/admin/audit-logs?limit=40`, {}),
         fetchWithCredentials(`${apiUrl}/admin/analytics/overview`, {}),
@@ -280,7 +255,7 @@ export default function AdminPage() {
         fetchWithCredentials(`${apiUrl}/market/profit-live`, {}),
       ]);
 
-      for (const res of [dashboardRes, usersRes, driversRes, carsRes, eventsRes, duelsRes, settingsRes, overviewRes, perfRes]) {
+      for (const res of [dashboardRes, usersRes, driversRes, carsRes, eventsRes, settingsRes, overviewRes, perfRes]) {
         if (!res.ok) {
           if (res.status === 401 || res.status === 403) {
             clearClientSession();
@@ -295,7 +270,6 @@ export default function AdminPage() {
       setDrivers((await driversRes.json()) as AdminDriver[]);
       setCars((await carsRes.json()) as AdminCar[]);
       setEvents((await eventsRes.json()) as AdminEvent[]);
-      setDuels((await duelsRes.json()) as AdminDuel[]);
       setSettings((await settingsRes.json()) as AdminSetting[]);
       setAnalyticsOverview((await overviewRes.json()) as AnalyticsOverview);
       setAnalyticsEvents((await perfRes.json()) as EventPerformanceRow[]);
@@ -408,6 +382,16 @@ export default function AdminPage() {
               <Metric label='Ledger volume' value={`R$ ${dashboard.ledgerVolume.toLocaleString('pt-BR')}`} />
             </div>
           ) : null}
+
+          <div className='mt-5 flex flex-wrap gap-2'>
+            <a
+              href='/admin/listas'
+              className='inline-flex items-center gap-2 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 px-4 py-2 text-xs font-bold text-[#d4a843] transition hover:bg-[#d4a843]/20'
+            >
+              <span>🏁 Listas Brasil</span>
+              <span className='text-[#d4a843]/70'>— cadastro de eventos, embates e gestão de listas</span>
+            </a>
+          </div>
         </section>
 
         {/* Mobile: Dropdown section selector */}
@@ -640,81 +624,6 @@ export default function AdminPage() {
           </Panel>
         ) : null}
 
-        {activeSection === 'event' ? (
-          <Panel title='Cadastro e CRUD de eventos'>
-            <form
-              className='space-y-2'
-              onSubmit={(e) => {
-                e.preventDefault();
-                void submit('Cadastro de evento', () =>
-                  adminJson('/admin/events', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                      sport: newEvent.sport,
-                      name: newEvent.name,
-                      startAt: new Date(newEvent.startAt).toISOString(),
-                      status: 'SCHEDULED',
-                      markets: [
-                        {
-                          name: newEvent.marketName,
-                          status: 'OPEN',
-                          odds: [
-                            { label: newEvent.oddALabel, value: Number(newEvent.oddAValue), status: 'ACTIVE' },
-                            { label: newEvent.oddBLabel, value: Number(newEvent.oddBValue), status: 'ACTIVE' },
-                          ],
-                        },
-                      ],
-                    }),
-                  }),
-                );
-              }}
-            >
-              <input className='field' placeholder='Esporte (DRAG_RACE)' value={newEvent.sport} onChange={(e) => setNewEvent((p) => ({ ...p, sport: e.target.value }))} required />
-              <input className='field' placeholder='Nome do evento' value={newEvent.name} onChange={(e) => setNewEvent((p) => ({ ...p, name: e.target.value }))} required />
-              <input className='field' type='datetime-local' value={newEvent.startAt} onChange={(e) => setNewEvent((p) => ({ ...p, startAt: e.target.value }))} required />
-              <input className='field' placeholder='Nome do mercado' value={newEvent.marketName} onChange={(e) => setNewEvent((p) => ({ ...p, marketName: e.target.value }))} required />
-              <div className='grid grid-cols-2 gap-2'>
-                <input className='field' placeholder='Label odd A' value={newEvent.oddALabel} onChange={(e) => setNewEvent((p) => ({ ...p, oddALabel: e.target.value }))} required />
-                <input className='field' placeholder='Valor odd A' value={newEvent.oddAValue} onChange={(e) => setNewEvent((p) => ({ ...p, oddAValue: e.target.value }))} required />
-              </div>
-              <div className='grid grid-cols-2 gap-2'>
-                <input className='field' placeholder='Label odd B' value={newEvent.oddBLabel} onChange={(e) => setNewEvent((p) => ({ ...p, oddBLabel: e.target.value }))} required />
-                <input className='field' placeholder='Valor odd B' value={newEvent.oddBValue} onChange={(e) => setNewEvent((p) => ({ ...p, oddBValue: e.target.value }))} required />
-              </div>
-              <button className='btn-primary' disabled={loading}>Salvar evento</button>
-            </form>
-
-            <div className='mt-5 space-y-2'>
-              {events.map((event) => (
-                <article key={event.id} className='rounded-lg border border-white/10 bg-white/5 p-3'>
-                  <p className='font-semibold'>{event.name}</p>
-                  <p className='text-xs text-white/70'>{event.sport} • {new Date(event.startAt).toLocaleString('pt-BR')} • {event.status}</p>
-                  <div className='mt-2 flex gap-2'>
-                    <button
-                      type='button'
-                      className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
-                      onClick={() => askInput('Editar evento', 'Nome do evento', event.name, (name) => {
-                        void submit('Atualização de evento', () => adminJson(`/admin/events/${event.id}`, { method: 'PATCH', body: JSON.stringify({ name }) }));
-                      })}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type='button'
-                      className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
-                      onClick={() => askConfirm('Cancelar evento', `Cancelar ${event.name}?`, () => {
-                        void submit('Cancelamento de evento', () => adminJson(`/admin/events/${event.id}`, { method: 'DELETE' }));
-                      })}
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </Panel>
-        ) : null}
-
         {activeSection === 'driver' ? (
           <Panel title='Cadastro e CRUD de pilotos'>
             <form
@@ -804,78 +713,6 @@ export default function AdminPage() {
                       })}
                     >
                       Desativar
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </Panel>
-        ) : null}
-
-        {activeSection === 'duel' ? (
-          <Panel title='Cadastro e CRUD de embates'>
-            <form
-              className='space-y-2'
-              onSubmit={(e) => {
-                e.preventDefault();
-                void submit('Cadastro de embate', () =>
-                  adminJson('/admin/duels', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                      ...newDuel,
-                      startsAt: new Date(newDuel.startsAt).toISOString(),
-                      bookingCloseAt: new Date(newDuel.bookingCloseAt).toISOString(),
-                    }),
-                  }),
-                );
-              }}
-            >
-              <select className='field' value={newDuel.eventId} onChange={(e) => setNewDuel((p) => ({ ...p, eventId: e.target.value }))} required>
-                <option value=''>Selecione o evento</option>
-                {events.map((event) => (
-                  <option key={event.id} value={event.id}>{event.name}</option>
-                ))}
-              </select>
-              <select className='field' value={newDuel.leftCarId} onChange={(e) => setNewDuel((p) => ({ ...p, leftCarId: e.target.value }))} required>
-                <option value=''>Carro lado A</option>
-                {cars.map((car) => (
-                  <option key={car.id} value={car.id}>{car.name} ({car.driver.name})</option>
-                ))}
-              </select>
-              <select className='field' value={newDuel.rightCarId} onChange={(e) => setNewDuel((p) => ({ ...p, rightCarId: e.target.value }))} required>
-                <option value=''>Carro lado B</option>
-                {cars.map((car) => (
-                  <option key={car.id} value={car.id}>{car.name} ({car.driver.name})</option>
-                ))}
-              </select>
-              <input className='field' type='datetime-local' value={newDuel.startsAt} onChange={(e) => setNewDuel((p) => ({ ...p, startsAt: e.target.value }))} required />
-              <input className='field' type='datetime-local' value={newDuel.bookingCloseAt} onChange={(e) => setNewDuel((p) => ({ ...p, bookingCloseAt: e.target.value }))} required />
-              <button className='btn-primary' disabled={loading}>Salvar embate</button>
-            </form>
-
-            <div className='mt-5 space-y-2'>
-              {duels.map((duel) => (
-                <article key={duel.id} className='rounded-lg border border-white/10 bg-white/5 p-3'>
-                  <p className='font-semibold'>{duel.leftCar.name} x {duel.rightCar.name}</p>
-                  <p className='text-xs text-white/70'>{duel.event.name} • {new Date(duel.startsAt).toLocaleString('pt-BR')} • {duel.status}</p>
-                  <div className='mt-2 flex gap-2'>
-                    <button
-                      type='button'
-                      className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
-                      onClick={() => askSelect('Editar embate', ['SCHEDULED', 'BOOKING_OPEN', 'BOOKING_CLOSED', 'FINISHED', 'CANCELED'], duel.status, (status) => {
-                        void submit('Atualização de embate', () => adminJson(`/admin/duels/${duel.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }));
-                      })}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type='button'
-                      className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
-                      onClick={() => askConfirm('Cancelar embate', 'Cancelar este embate?', () => {
-                        void submit('Cancelamento de embate', () => adminJson(`/admin/duels/${duel.id}`, { method: 'DELETE' }));
-                      })}
-                    >
-                      Cancelar
                     </button>
                   </div>
                 </article>

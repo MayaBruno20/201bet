@@ -99,6 +99,36 @@ enum MarketType {
   FALSE_START
 }
 
+enum ListFormat {
+  TOP_10
+  TOP_20
+}
+
+enum ListRoundType {
+  ODD
+  EVEN
+  SHARK_TANK
+}
+
+enum MatchupSide {
+  LEFT
+  RIGHT
+}
+
+enum ListEventStatus {
+  DRAFT
+  IN_PROGRESS
+  FINISHED
+  CANCELED
+}
+
+enum SharkTankStatus {
+  REGISTERED
+  ELIMINATED
+  FINALIST
+  PROMOTED
+}
+
 model User {
   id            String     @id @default(uuid())
   email         String     @unique
@@ -201,11 +231,19 @@ model Driver {
   id        String   @id @default(uuid())
   name      String
   nickname  String?
+  carNumber String?
+  team      String?
+  hometown  String?
+  avatarUrl String?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  cars Car[]
+  cars             Car[]
+  rosters          ListRoster[]
+  leftMatchups     ListMatchup[]    @relation("matchupLeftDriver")
+  rightMatchups    ListMatchup[]    @relation("matchupRightDriver")
+  sharkTankEntries SharkTankEntry[] @relation("sharkTankDriver")
 
   @@index([active])
 }
@@ -424,4 +462,104 @@ model AffiliateCommission {
   @@index([affiliateId, createdAt])
   @@index([betId])
   @@index([marketId])
+}
+
+model BrazilList {
+  id                String     @id @default(uuid())
+  areaCode          Int        @unique
+  name              String
+  format            ListFormat @default(TOP_20)
+  administratorName String?
+  hometown          String?
+  active            Boolean    @default(true)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  roster ListRoster[]
+  events ListEvent[]
+
+  @@index([active])
+}
+
+model ListRoster {
+  id        String   @id @default(uuid())
+  listId    String
+  driverId  String
+  position  Int
+  isKing    Boolean  @default(false)
+  joinedAt  DateTime @default(now())
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  list   BrazilList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  driver Driver     @relation(fields: [driverId], references: [id], onDelete: Restrict)
+
+  @@unique([listId, position])
+  @@unique([listId, driverId])
+  @@index([listId])
+  @@index([driverId])
+}
+
+model ListEvent {
+  id          String          @id @default(uuid())
+  listId      String
+  name        String
+  scheduledAt DateTime
+  status      ListEventStatus @default(DRAFT)
+  eventId     String?
+  notes       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  list      BrazilList       @relation(fields: [listId], references: [id], onDelete: Cascade)
+  matchups  ListMatchup[]
+  sharkTank SharkTankEntry[]
+
+  @@index([listId, scheduledAt])
+  @@index([status])
+}
+
+model ListMatchup {
+  id               String        @id @default(uuid())
+  listEventId      String
+  roundNumber      Int
+  roundType        ListRoundType
+  order            Int
+  leftPosition     Int?
+  rightPosition    Int?
+  leftDriverId     String?
+  rightDriverId    String?
+  winnerSide       MatchupSide?
+  isManualOverride Boolean       @default(false)
+  marketOpen       Boolean       @default(false)
+  duelId           String?       @unique
+  settledAt        DateTime?
+  notes            String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  listEvent   ListEvent @relation(fields: [listEventId], references: [id], onDelete: Cascade)
+  leftDriver  Driver?   @relation("matchupLeftDriver", fields: [leftDriverId], references: [id], onDelete: SetNull)
+  rightDriver Driver?   @relation("matchupRightDriver", fields: [rightDriverId], references: [id], onDelete: SetNull)
+
+  @@index([listEventId, roundNumber, order])
+  @@index([marketOpen])
+}
+
+model SharkTankEntry {
+  id          String          @id @default(uuid())
+  listEventId String
+  driverId    String
+  status      SharkTankStatus @default(REGISTERED)
+  seed        Int?
+  notes       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  listEvent ListEvent @relation(fields: [listEventId], references: [id], onDelete: Cascade)
+  driver    Driver    @relation("sharkTankDriver", fields: [driverId], references: [id], onDelete: Restrict)
+
+  @@unique([listEventId, driverId])
+  @@index([listEventId, status])
 }

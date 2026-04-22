@@ -1,14 +1,11 @@
 import {
-  AuditLog,
-  EventStatus,
-  MarketStatus,
-  OddStatus,
   PrismaClient,
   UserRole,
   UserStatus,
   WalletTransactionType,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { BRAZIL_LISTS } from './brazil-lists-data';
 
 const prisma = new PrismaClient();
 
@@ -86,71 +83,6 @@ async function main() {
     });
   }
 
-  const event =
-    (await prisma.event.findFirst({ where: { name: 'Armageddon 2026 - Corrida Classificatoria' } })) ??
-    (await prisma.event.create({
-      data: {
-        sport: 'DRAG_RACE',
-        name: 'Armageddon 2026 - Corrida Classificatoria',
-        startAt: new Date('2026-06-19T20:30:00.000Z'),
-        status: EventStatus.SCHEDULED,
-      },
-    }));
-
-  const driverA =
-    (await prisma.driver.findFirst({ where: { name: 'Kaio V8' } })) ??
-    (await prisma.driver.create({ data: { name: 'Kaio V8', nickname: 'K8' } }));
-
-  const driverB =
-    (await prisma.driver.findFirst({ where: { name: 'Luiz Turbo' } })) ??
-    (await prisma.driver.create({ data: { name: 'Luiz Turbo', nickname: 'LT' } }));
-
-  const carA =
-    (await prisma.car.findFirst({ where: { name: 'Gol Turbo Preto' } })) ??
-    (await prisma.car.create({ data: { driverId: driverA.id, name: 'Gol Turbo Preto', category: 'PRO_MOD', number: '07' } }));
-
-  const carB =
-    (await prisma.car.findFirst({ where: { name: 'Chevette 2JZ' } })) ??
-    (await prisma.car.create({ data: { driverId: driverB.id, name: 'Chevette 2JZ', category: 'FORCA_LIVRE', number: '21' } }));
-
-  const market =
-    (await prisma.market.findFirst({ where: { eventId: event.id, name: 'Passou na frente - Duelo A x B' } })) ??
-    (await prisma.market.create({
-      data: {
-        eventId: event.id,
-        name: 'Passou na frente - Duelo A x B',
-        status: MarketStatus.OPEN,
-      },
-    }));
-
-  const oddA = await prisma.odd.findFirst({ where: { marketId: market.id, label: 'Carro A' } });
-  if (!oddA) {
-    await prisma.odd.create({
-      data: { marketId: market.id, label: 'Carro A', value: 1.74, status: OddStatus.ACTIVE },
-    });
-  }
-
-  const oddB = await prisma.odd.findFirst({ where: { marketId: market.id, label: 'Carro B' } });
-  if (!oddB) {
-    await prisma.odd.create({
-      data: { marketId: market.id, label: 'Carro B', value: 1.96, status: OddStatus.ACTIVE },
-    });
-  }
-
-  const duel = await prisma.duel.findFirst({ where: { eventId: event.id, leftCarId: carA.id, rightCarId: carB.id } });
-  if (!duel) {
-    await prisma.duel.create({
-      data: {
-        eventId: event.id,
-        leftCarId: carA.id,
-        rightCarId: carB.id,
-        startsAt: new Date('2026-06-19T20:30:00.000Z'),
-        bookingCloseAt: new Date('2026-06-19T20:25:00.000Z'),
-        status: 'BOOKING_OPEN',
-      },
-    });
-  }
-
   const setting = await prisma.globalSetting.findUnique({ where: { key: 'BOOKING_LOCK_PERCENT' } });
   if (!setting) {
     await prisma.globalSetting.create({
@@ -162,6 +94,73 @@ async function main() {
       },
     });
   }
+
+  console.log('Seeding Listas Brasil...');
+  let seededLists = 0;
+  let seededDrivers = 0;
+  let seededRosters = 0;
+  for (const list of BRAZIL_LISTS) {
+    const brazilList = await prisma.brazilList.upsert({
+      where: { areaCode: list.areaCode },
+      update: {
+        name: list.name,
+        format: list.format,
+        administratorName: list.administratorName ?? null,
+        hometown: list.hometown ?? null,
+        active: list.active ?? true,
+      },
+      create: {
+        areaCode: list.areaCode,
+        name: list.name,
+        format: list.format,
+        administratorName: list.administratorName ?? null,
+        hometown: list.hometown ?? null,
+        active: list.active ?? true,
+      },
+    });
+    seededLists += 1;
+
+    for (const roster of list.roster) {
+      if (roster.vacancy) continue;
+
+      const driverId = `bl-${list.areaCode}-${roster.position}`;
+      await prisma.driver.upsert({
+        where: { id: driverId },
+        update: {
+          name: roster.name,
+          nickname: roster.nickname ?? null,
+          carNumber: roster.carNumber ?? null,
+          team: roster.team ?? null,
+          active: true,
+        },
+        create: {
+          id: driverId,
+          name: roster.name,
+          nickname: roster.nickname ?? null,
+          carNumber: roster.carNumber ?? null,
+          team: roster.team ?? null,
+          active: true,
+        },
+      });
+      seededDrivers += 1;
+
+      await prisma.listRoster.upsert({
+        where: { listId_position: { listId: brazilList.id, position: roster.position } },
+        update: {
+          driverId,
+          isKing: roster.isKing ?? false,
+        },
+        create: {
+          listId: brazilList.id,
+          driverId,
+          position: roster.position,
+          isKing: roster.isKing ?? false,
+        },
+      });
+      seededRosters += 1;
+    }
+  }
+  console.log(`Listas Brasil: ${seededLists} listas, ${seededDrivers} pilotos, ${seededRosters} entradas de roster.`);
 
   await prisma.auditLog.create({
     data: {

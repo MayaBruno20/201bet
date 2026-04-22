@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { Flag, Trophy, Zap, Flame, type LucideIcon } from 'lucide-react';
 import { MainNav } from '@/components/site/main-nav';
 import { apiFetch } from '@/lib/api-request';
 import { getPublicApiUrl, getPublicWsUrl } from '@/lib/env-public';
@@ -39,11 +40,11 @@ type MyBet = {
 
 type Tab = 'passadas' | 'vencedor' | 'reacao' | 'queimada';
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'passadas', label: 'Passadas', icon: '🏁' },
-  { id: 'vencedor', label: 'Vencedor Geral', icon: '🏆' },
-  { id: 'reacao', label: 'Reações Baixas', icon: '⏱' },
-  { id: 'queimada', label: 'Queimadas', icon: '🔥' },
+const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
+  { id: 'passadas', label: 'Passadas', Icon: Flag },
+  { id: 'vencedor', label: 'Vencedor Geral', Icon: Trophy },
+  { id: 'reacao', label: 'Reações Baixas', Icon: Zap },
+  { id: 'queimada', label: 'Queimadas', Icon: Flame },
 ];
 
 const MARKET_TYPE_MAP: Record<Tab, string> = {
@@ -273,20 +274,28 @@ export default function ApostasPage() {
 
             {/* Tabs por modalidade */}
             <div className='mt-4 flex gap-1 rounded-xl bg-[#101525] p-1 border border-white/10'>
-              {TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type='button'
-                  className={`flex-1 rounded-lg px-4 py-3 text-sm font-semibold transition-all text-center ${activeTab === tab.id
-                    ? 'bg-white text-[#090b11] shadow-lg'
-                    : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-                  }`}
-                  onClick={() => setActiveTab(tab.id)}
-                >
-                  <span className='block text-lg mb-0.5'>{tab.icon}</span>
-                  {tab.label}
-                </button>
-              ))}
+              {TABS.map((tab) => {
+                const { Icon } = tab;
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type='button'
+                    className={`group flex flex-1 flex-col items-center justify-center gap-1.5 rounded-lg px-4 py-3 text-sm font-semibold transition-all ${active
+                      ? 'bg-white text-[#090b11] shadow-lg'
+                      : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                    }`}
+                    onClick={() => setActiveTab(tab.id)}
+                  >
+                    <Icon
+                      size={20}
+                      strokeWidth={active ? 2.4 : 2}
+                      className={`transition-transform ${active ? 'scale-110' : 'group-hover:scale-105'}`}
+                    />
+                    <span className='leading-none'>{tab.label}</span>
+                  </button>
+                );
+              })}
             </div>
 
             <div className='mt-6'>
@@ -321,8 +330,6 @@ export default function ApostasPage() {
                           <h2 className='mt-1 text-2xl font-semibold tracking-tight'>{snapshot.eventName}</h2>
                           <p className='mt-1 text-xs text-white/50'>
                             Pote: <strong className='text-white/80'>R$ {formatMoney(snapshot.totalPool)}</strong>
-                            <span className='mx-2'>•</span>
-                            Margem: <strong className='text-white/80'>{snapshot.marginPercent}%</strong>
                           </p>
                         </div>
                       </div>
@@ -376,23 +383,6 @@ export default function ApostasPage() {
                         </div>
                       </div>
 
-                      {/* History */}
-                      <article className='rounded-2xl border border-white/10 bg-[#101525] p-5'>
-                        <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3'>Histórico de cotações</p>
-                        <div className='max-h-48 space-y-1.5 overflow-auto pr-1'>
-                          {(snapshot.history ?? []).slice().reverse().map((point) => (
-                            <div key={`${point.at}-${point.leftOdd}`} className='flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] p-2.5 text-xs'>
-                              <span className='text-white/30 tabular-nums'>{new Date(point.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                              <div className='flex gap-3'>
-                                <span><span className='text-blue-400'>@</span> <strong>{point.leftOdd.toFixed(2)}</strong></span>
-                                <span className='text-white/15'>/</span>
-                                <span><span className='text-orange-400'>@</span> <strong>{point.rightOdd.toFixed(2)}</strong></span>
-                              </div>
-                              <span className='text-white/25 tabular-nums hidden sm:block'>R$ {formatMoney(point.leftPool + point.rightPool)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </article>
                     </>
                   ) : (
                     <div className='rounded-2xl border border-dashed border-white/10 p-12 text-center'>

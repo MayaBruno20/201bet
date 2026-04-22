@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { CacheModule } from './cache/cache.module';
 import { AppConfigModule } from './config/config.module';
 import { PrismaModule } from './database/prisma.module';
+import { BrazilListsModule } from './brazil-lists/brazil-lists.module';
 import { EventsModule } from './events/events.module';
 import { MailModule } from './mail/mail.module';
 import { PaymentsModule } from './payments/payments.module';
@@ -27,6 +28,7 @@ import { SettlementService } from './settlement.service';
     MailModule,
     AuthModule,
     EventsModule,
+    BrazilListsModule,
     AdminModule,
     PaymentsModule,
     ThrottlerModule.forRoot({
