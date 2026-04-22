@@ -11,9 +11,18 @@ locals {
       JWT_SECRET               = var.jwt_secret
       JWT_EXPIRES_IN           = var.jwt_expires_in
       CORS_ORIGIN              = var.cors_origin
+      FRONTEND_URL             = var.frontend_url
       AUTH_COOKIE_SAMESITE     = "none" # obrigatório se front e API forem domínios diferentes (ex. Vercel + Render)
       UPSTASH_REDIS_REST_URL   = local.upstash_rest_url_value
       UPSTASH_REDIS_REST_TOKEN = local.upstash_rest_token_value
+      EMAIL_PROVIDER           = var.email_provider
+      EMAIL_FROM_ADDRESS       = var.email_from_address
+      EMAIL_FROM_NAME          = var.email_from_name
+      EMAIL_REPLY_TO           = var.email_reply_to
+      EMAIL_DAILY_LIMIT        = tostring(var.email_daily_limit)
+      EMAIL_VERIFICATION_TTL_HOURS = tostring(var.email_verification_ttl_hours)
+      PASSWORD_RESET_TTL_MINUTES   = tostring(var.password_reset_ttl_minutes)
+      EMAIL_LOGO_URL           = var.email_logo_url
     },
     var.render_additional_env,
   )
@@ -102,6 +111,15 @@ module "gha" {
       UPSTASH_REDIS_REST_TOKEN_PROD = local.upstash_rest_token_value
       JWT_SECRET_PROD               = var.jwt_secret
       CORS_ORIGIN_PROD              = var.cors_origin
+      FRONTEND_URL_PROD             = var.frontend_url
+      EMAIL_PROVIDER_PROD           = var.email_provider
+      EMAIL_FROM_ADDRESS_PROD       = var.email_from_address
+      EMAIL_FROM_NAME_PROD          = var.email_from_name
+      EMAIL_REPLY_TO_PROD           = var.email_reply_to
+      EMAIL_DAILY_LIMIT_PROD        = tostring(var.email_daily_limit)
+      EMAIL_VERIFICATION_TTL_HOURS_PROD = tostring(var.email_verification_ttl_hours)
+      PASSWORD_RESET_TTL_MINUTES_PROD   = tostring(var.password_reset_ttl_minutes)
+      EMAIL_LOGO_URL_PROD           = var.email_logo_url
       BACKEND_HTTP_ORIGIN_PROD      = local.backend_http_origin
     },
     var.enable_render_web_service && var.render_api_key != "" && var.render_owner_id != "" ? {

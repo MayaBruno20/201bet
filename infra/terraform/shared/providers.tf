@@ -16,4 +16,7 @@ provider "github" {
   owner = var.github_owner
 }
 
-provider "render" {}
+provider "render" {
+  api_key  = var.enable_render_web_service ? var.render_api_key : "render-disabled"
+  owner_id = var.enable_render_web_service ? var.render_owner_id : "render-disabled"
+}

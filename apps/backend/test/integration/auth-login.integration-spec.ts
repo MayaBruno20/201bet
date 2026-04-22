@@ -50,7 +50,7 @@ describe('AuthModule (integration)', () => {
     if (app) await app.close();
   });
 
-  it('POST /api/auth/login sets httpOnly cookie and returns user without token in body', async () => {
+  it('POST /api/auth/login sets httpOnly cookie and returns user with accessToken in body', async () => {
     const hash = await bcrypt.hash('CorrectPass1', 4);
     prisma.user.findUnique.mockResolvedValue({
       id: 'user-1',
@@ -71,7 +71,8 @@ describe('AuthModule (integration)', () => {
       email: 'user@test.local',
       role: 'USER',
     });
-    expect(res.body.accessToken).toBeUndefined();
+    expect(typeof res.body.accessToken).toBe('string');
+    expect(res.body.accessToken.length).toBeGreaterThan(20);
 
     const setCookie = res.headers['set-cookie'] as string[] | undefined;
     expect(setCookie?.some((c) => c.startsWith(`${AUTH_ACCESS_COOKIE}=`))).toBe(true);

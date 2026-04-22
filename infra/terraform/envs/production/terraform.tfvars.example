@@ -16,6 +16,15 @@ jwt_secret        = ""
 jwt_expires_in    = "8h"
 cors_origin       = "https://<frontend>.vercel.app"
 vercel_project_name = "201bet-frontend"
+frontend_url      = "https://<frontend>.vercel.app"
+email_provider    = "noop"
+email_from_address = "no-reply@201-bet.com"
+email_from_name   = "201Bet"
+email_reply_to    = "suporte@201-bet.com"
+email_daily_limit = 295
+email_verification_ttl_hours = 24
+password_reset_ttl_minutes = 30
+email_logo_url    = ""
 
 # URL pública do backend (Render, etc.), sem /api — obrigatória se enable_render_web_service = false
 backend_public_url = "https://<backend>.onrender.com"
