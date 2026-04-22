@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
 import { apiFetch } from '@/lib/api-request';
 import { getPublicApiUrl } from '@/lib/env-public';
@@ -12,6 +12,28 @@ const apiUrl = getPublicApiUrl();
 type Status = 'loading' | 'success' | 'error' | 'already';
 
 export default function VerifyEmailPage() {
+  return (
+    <Suspense fallback={<VerifyEmailFallback />}>
+      <VerifyEmailContent />
+    </Suspense>
+  );
+}
+
+function VerifyEmailFallback() {
+  return (
+    <main className='min-h-screen bg-[#090b11] text-white'>
+      <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+        <MainNav />
+        <section className='mx-auto mt-12 max-w-md rounded-3xl border border-white/10 bg-[#101525] p-8 backdrop-blur-md'>
+          <h1 className='text-2xl font-semibold tracking-tight'>Confirmação de e-mail</h1>
+          <p className='mt-4 text-sm text-white/60'>Carregando...</p>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function VerifyEmailContent() {
   const params = useSearchParams();
   const token = params.get('token')?.trim() ?? '';
   const [status, setStatus] = useState<Status>(token ? 'loading' : 'error');
