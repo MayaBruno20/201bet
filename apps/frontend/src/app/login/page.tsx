@@ -58,8 +58,23 @@ export default function LoginPage() {
     }
 
     const data = (await response.json()) as { user: SessionUser; accessToken?: string };
+    console.log('[login] auth response', {
+      endpoint,
+      hasAccessToken: !!data.accessToken,
+      userRole: data.user?.role,
+      userEmail: data.user?.email,
+    });
     setStoredUser(data.user);
-    if (data.accessToken) setStoredAccessToken(data.accessToken);
+    if (data.accessToken) {
+      setStoredAccessToken(data.accessToken);
+      console.log('[login] stored access token', {
+        tokenLength: data.accessToken.length,
+        storageHasToken:
+          typeof window !== 'undefined' ? !!window.sessionStorage.getItem('201bet_access_token') : false,
+      });
+    } else {
+      console.log('[login] no access token returned in auth response');
+    }
     router.push(getPostAuthPath(data.user));
   }
 

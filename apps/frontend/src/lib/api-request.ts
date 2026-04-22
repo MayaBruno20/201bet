@@ -13,8 +13,18 @@ export function getApiBaseUrl() {
 export function apiFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
   const token = getStoredAccessToken();
   const headers = new Headers(init?.headers ?? undefined);
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  if (typeof window !== 'undefined') {
+    console.log('[apiFetch]', {
+      url,
+      hasStoredToken: !!token,
+      authHeaderPresent: headers.has('Authorization'),
+      credentials: init?.credentials ?? 'include',
+    });
   }
 
   return fetch(input, { ...init, headers, credentials: 'include' });
