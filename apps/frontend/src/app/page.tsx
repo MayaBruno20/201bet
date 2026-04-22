@@ -2,7 +2,6 @@ import { EventsShowcase } from '@/components/home/events-showcase';
 import { HeroSection } from '@/components/home/hero-section';
 import { ModesSection } from '@/components/home/modes-section';
 import { MainNav } from '@/components/site/main-nav';
-import { upcomingEvents } from '@/lib/events';
 
 export default function Home() {
   return (
@@ -11,7 +10,7 @@ export default function Home() {
         <MainNav />
       </div>
       <HeroSection />
-      <EventsShowcase events={upcomingEvents} />
+      <EventsShowcase />
       <ModesSection />
     </main>
   );

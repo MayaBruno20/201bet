@@ -8,6 +8,7 @@ import { MainNav } from '@/components/site/main-nav';
 import { getPostAuthPath, setStoredAccessToken, setStoredUser, type SessionUser } from '@/lib/auth';
 import { apiFetch } from '@/lib/api-request';
 import { getPublicApiUrl } from '@/lib/env-public';
+import { maskCPF, unmaskCPF } from '@/lib/masks';
 
 const apiUrl = getPublicApiUrl();
 const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
@@ -215,11 +216,9 @@ export default function LoginPage() {
                   className='w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm text-white placeholder:text-white/30 outline-none transition-all focus:border-white/20 focus:ring-4 focus:ring-white/5'
                   type='text'
                   inputMode='numeric'
-                  placeholder='CPF (11 dígitos)'
-                  value={cpf}
-                  onChange={(e) => setCpf(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                  minLength={11}
-                  maxLength={11}
+                  placeholder='CPF'
+                  value={maskCPF(cpf)}
+                  onChange={(e) => setCpf(unmaskCPF(e.target.value).slice(0, 11))}
                   required
                 />
                 <input
@@ -234,6 +233,13 @@ export default function LoginPage() {
             <button disabled={loading} className='w-full rounded-2xl bg-white px-4 py-3.5 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] hover:scale-[1.01] disabled:opacity-50 disabled:pointer-events-none'>
               {loading ? 'Processando...' : mode === 'login' ? 'Entrar' : 'Cadastrar'}
             </button>
+            {mode === 'login' ? (
+              <div className='text-right'>
+                <Link href='/forgot-password' className='text-xs text-white/60 hover:text-white transition-colors'>
+                  Esqueci minha senha
+                </Link>
+              </div>
+            ) : null}
           </form>
 
           <div className='mt-4 flex items-center gap-3'>

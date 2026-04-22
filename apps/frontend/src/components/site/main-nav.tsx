@@ -17,6 +17,7 @@ const baseLinks: NavLink[] = [
   { href: '/', label: 'Início' },
   { href: '/apostas', label: 'Apostas' },
   { href: '/eventos', label: 'Eventos' },
+  { href: '/listas', label: 'Listas Brasil' },
   { href: '/carteira', label: 'Carteira', requiresAuth: true },
 ];
 
@@ -108,25 +109,18 @@ export function MainNav() {
         <div className='mx-auto max-w-7xl px-4 flex h-16 items-center justify-between sm:px-6 lg:px-8'>
           
           <div className='flex items-center gap-6'>
-            <Link 
-              href='/' 
-              className='flex items-center gap-1 transition-opacity hover:opacity-70'
+            <Link
+              href='/'
+              className='flex items-center transition-opacity hover:opacity-80'
             >
-              <svg viewBox='0 0 120 36' className='h-10 w-auto' fill='none' xmlns='http://www.w3.org/2000/svg'>
-                <defs>
-                  <linearGradient id='logoGrad' x1='0%' y1='0%' x2='100%' y2='100%'>
-                    <stop offset='0%' stopColor='white' />
-                    <stop offset='100%' stopColor='#93C5FD' />
-                  </linearGradient>
-                </defs>
-                {/* Blue speed accent */}
-                <rect x='0' y='14' width='14' height='3' rx='1.5' fill='#3B82F6' opacity='0.8' />
-                <rect x='3' y='20' width='8' height='2' rx='1' fill='#3B82F6' opacity='0.4' />
-                {/* 201 bold with gradient */}
-                <text x='18' y='26' fontFamily='Inter, system-ui, sans-serif' fontSize='22' fontWeight='800' fill='url(#logoGrad)' letterSpacing='-0.5'>201</text>
-                {/* BET lighter, closer */}
-                <text x='66' y='26' fontFamily='Inter, system-ui, sans-serif' fontSize='22' fontWeight='400' fill='rgba(255,255,255,0.5)' letterSpacing='0.5'>BET</text>
-              </svg>
+              <Image
+                src='/images/logo.png'
+                alt='201bet'
+                width={180}
+                height={48}
+                priority
+                className='h-9 w-auto'
+              />
             </Link>
 
             {/* Desktop Navigation */}

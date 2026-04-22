@@ -1,11 +1,3 @@
-export type EventCard = {
-  id: string;
-  title: string;
-  date: string;
-  category: 'Passou na frente' | 'Vencedor geral' | 'Reações mais baixas' | 'Reações queimadas';
-  image: string;
-};
-
 export type ApiEvent = {
   id: string;
   sport: string;

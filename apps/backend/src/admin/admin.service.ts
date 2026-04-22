@@ -9,6 +9,7 @@ import {
   DuelStatus,
   EventStatus,
   MarketStatus,
+  MarketType,
   OddStatus,
   PaymentType,
   Prisma,
@@ -18,6 +19,9 @@ import {
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../database/prisma.service';
+import { MarketService } from '../market.service';
+import { MultiRunnerMarketService } from '../multi-runner-market.service';
+import { SettlementService } from '../settlement.service';
 import {
   AnalyticsExportFormat,
   AnalyticsExportQueryDto,
@@ -54,7 +58,12 @@ const PRIVILEGED_ROLES: UserRole[] = [
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settlementService: SettlementService,
+    private readonly multiRunnerService: MultiRunnerMarketService,
+    private readonly marketService: MarketService,
+  ) {}
 
   async getDashboardSummary() {
     const [
@@ -450,13 +459,26 @@ export class AdminService {
     const existing = await this.prisma.event.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Evento não encontrado');
 
+    // Void all open markets (refund bets) before canceling
+    const openMarkets = await this.prisma.market.findMany({
+      where: { eventId: id, status: { in: [MarketStatus.OPEN, MarketStatus.SUSPENDED] } },
+      select: { id: true },
+    });
+
+    for (const m of openMarkets) {
+      try {
+        await this.settlementService.voidMarket(m.id, audit);
+        this.multiRunnerService.removeMarket(m.id);
+      } catch { /* market may already be closed */ }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       await tx.event.update({
         where: { id },
         data: { status: EventStatus.CANCELED },
       });
       await tx.market.updateMany({
-        where: { eventId: id },
+        where: { eventId: id, status: { not: MarketStatus.SETTLED } },
         data: { status: MarketStatus.CLOSED },
       });
       await tx.odd.updateMany({
@@ -1112,6 +1134,265 @@ export class AdminService {
         },
       },
     });
+  }
+
+  // ── Multi-Runner Markets ──
+
+  async listMultiRunnerMarkets() {
+    return this.prisma.market.findMany({
+      where: { type: { not: MarketType.DUEL } },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        event: { select: { id: true, name: true } },
+        odds: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+  }
+
+  async createMultiRunnerMarket(
+    payload: { eventId: string; name: string; type: string; runners: string[]; rakePercent?: number; bookingCloseAt?: string; duelId?: string },
+    audit: AuditContext = {},
+  ) {
+    const event = await this.prisma.event.findUnique({ where: { id: payload.eventId } });
+    if (!event) throw new NotFoundException('Evento não encontrado');
+
+    if (!payload.runners || payload.runners.length < 2) {
+      throw new BadRequestException('Informe pelo menos 2 opções/pilotos');
+    }
+
+    const validTypes: Record<string, MarketType> = {
+      WINNER: MarketType.WINNER,
+      BEST_REACTION: MarketType.BEST_REACTION,
+      FALSE_START: MarketType.FALSE_START,
+    };
+
+    const marketType = validTypes[payload.type];
+    if (!marketType) {
+      throw new BadRequestException('Tipo de mercado inválido. Use: WINNER, BEST_REACTION ou FALSE_START');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const market = await tx.market.create({
+        data: {
+          eventId: payload.eventId,
+          name: payload.name.trim(),
+          type: marketType,
+          status: MarketStatus.OPEN,
+          rakePercent: payload.rakePercent ? new Prisma.Decimal(payload.rakePercent) : null,
+          bookingCloseAt: payload.bookingCloseAt ? new Date(payload.bookingCloseAt) : null,
+          duelId: payload.duelId || null,
+          odds: {
+            create: payload.runners.map((label) => ({
+              label: label.trim(),
+              value: new Prisma.Decimal(1),
+              status: OddStatus.ACTIVE,
+            })),
+          },
+        },
+        include: { odds: true, event: { select: { id: true, name: true } } },
+      });
+
+      await this.logAction(tx, 'ADMIN_CREATE_MARKET', 'Market', market.id, {
+        name: market.name,
+        type: market.type,
+        runners: payload.runners,
+      }, audit);
+
+      return market;
+    });
+  }
+
+  async updateMultiRunnerMarket(
+    id: string,
+    payload: { name?: string; status?: string; rakePercent?: number; bookingCloseAt?: string },
+    audit: AuditContext = {},
+  ) {
+    const existing = await this.prisma.market.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Mercado não encontrado');
+
+    const data: Prisma.MarketUpdateInput = {};
+    if (payload.name) data.name = payload.name.trim();
+    if (payload.status) data.status = payload.status as MarketStatus;
+    if (payload.rakePercent !== undefined) data.rakePercent = new Prisma.Decimal(payload.rakePercent);
+    if (payload.bookingCloseAt) data.bookingCloseAt = new Date(payload.bookingCloseAt);
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.market.update({ where: { id }, data, include: { odds: true } });
+      await this.logAction(tx, 'ADMIN_UPDATE_MARKET', 'Market', id, payload, audit);
+      return updated;
+    });
+  }
+
+  async settleMarket(marketId: string, winnerOddId: string, audit: AuditContext = {}) {
+    const result = await this.settlementService.settleMarket(marketId, winnerOddId, audit);
+    this.multiRunnerService.removeMarket(marketId);
+    return result;
+  }
+
+  async voidMarket(marketId: string, audit: AuditContext = {}) {
+    const result = await this.settlementService.voidMarket(marketId, audit);
+    this.multiRunnerService.removeMarket(marketId);
+    return result;
+  }
+
+  async settleDuel(duelId: string, winningSide: 'LEFT' | 'RIGHT', audit: AuditContext = {}) {
+    const result = await this.settlementService.settleDuel(duelId, winningSide, audit);
+    this.marketService.removeDuel(duelId);
+    return result;
+  }
+
+  // ── Affiliates ──
+
+  async listAffiliates() {
+    return this.prisma.affiliate.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: { select: { referredUsers: true, commissions: true } },
+        commissions: { select: { amount: true } },
+      },
+    });
+  }
+
+  async createAffiliate(
+    payload: { name: string; code: string; commissionPct: number },
+    audit: AuditContext = {},
+  ) {
+    const existing = await this.prisma.affiliate.findUnique({ where: { code: payload.code } });
+    if (existing) throw new ConflictException('Código de afiliado já existe');
+
+    return this.prisma.$transaction(async (tx) => {
+      const affiliate = await tx.affiliate.create({
+        data: {
+          name: payload.name.trim(),
+          code: payload.code.trim().toUpperCase(),
+          commissionPct: new Prisma.Decimal(payload.commissionPct),
+        },
+      });
+
+      await this.logAction(tx, 'ADMIN_CREATE_AFFILIATE', 'Affiliate', affiliate.id, {
+        name: affiliate.name, code: affiliate.code, commissionPct: payload.commissionPct,
+      }, audit);
+
+      return affiliate;
+    });
+  }
+
+  async updateAffiliate(
+    id: string,
+    payload: { name?: string; code?: string; commissionPct?: number; active?: boolean },
+    audit: AuditContext = {},
+  ) {
+    const existing = await this.prisma.affiliate.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Afiliado não encontrado');
+
+    if (payload.code) {
+      const dup = await this.prisma.affiliate.findUnique({ where: { code: payload.code } });
+      if (dup && dup.id !== id) throw new ConflictException('Código de afiliado já existe');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.affiliate.update({
+        where: { id },
+        data: {
+          name: payload.name?.trim(),
+          code: payload.code?.trim().toUpperCase(),
+          commissionPct: payload.commissionPct !== undefined ? new Prisma.Decimal(payload.commissionPct) : undefined,
+          active: payload.active,
+        },
+      });
+      await this.logAction(tx, 'ADMIN_UPDATE_AFFILIATE', 'Affiliate', id, payload, audit);
+      return updated;
+    });
+  }
+
+  async deleteAffiliate(id: string, audit: AuditContext = {}) {
+    const existing = await this.prisma.affiliate.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Afiliado não encontrado');
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.affiliate.update({ where: { id }, data: { active: false } });
+      await this.logAction(tx, 'ADMIN_DEACTIVATE_AFFILIATE', 'Affiliate', id, { active: false }, audit);
+      return { id, active: false };
+    });
+  }
+
+  async getAffiliateCommissions(affiliateId: string) {
+    return this.prisma.affiliateCommission.findMany({
+      where: { affiliateId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        bet: { select: { id: true, stake: true, status: true, userId: true } },
+        market: { select: { id: true, name: true, type: true } },
+      },
+    });
+  }
+
+  // ── Profit Dashboard ──
+
+  async getProfitByMarket() {
+    const settledMarkets = await this.prisma.market.findMany({
+      where: { status: MarketStatus.SETTLED },
+      orderBy: { settledAt: 'desc' },
+      include: {
+        event: { select: { name: true } },
+        odds: { select: { id: true, label: true } },
+        commissions: { select: { amount: true } },
+      },
+    });
+
+    const results: Array<{
+      marketId: string; marketName: string; marketType: string; eventName: string;
+      winnerLabel: string; totalPool: number; rakePercent: number; rakeCollected: number;
+      affiliatePayouts: number; netProfit: number; settledAt: Date | null;
+    }> = [];
+    for (const market of settledMarkets) {
+      // Get total pool from bets
+      const bets = await this.prisma.betItem.findMany({
+        where: { odd: { marketId: market.id } },
+        include: { bet: { select: { stake: true } } },
+      });
+
+      const totalPool = bets.reduce((sum, bi) => sum + Number(bi.bet.stake), 0);
+      const rakePercent = market.rakePercent ? Number(market.rakePercent) : 6;
+      const rakeCollected = totalPool * (rakePercent / 100);
+      const affiliatePayouts = market.commissions.reduce((sum, c) => sum + Number(c.amount), 0);
+      const netProfit = rakeCollected - affiliatePayouts;
+      const winnerOdd = market.odds.find((o) => o.id === market.winnerOddId);
+
+      results.push({
+        marketId: market.id,
+        marketName: market.name,
+        marketType: market.type,
+        eventName: market.event.name,
+        winnerLabel: winnerOdd?.label ?? '—',
+        totalPool,
+        rakePercent,
+        rakeCollected,
+        affiliatePayouts,
+        netProfit,
+        settledAt: market.settledAt,
+      });
+    }
+
+    return results;
+  }
+
+  async getProfitSummary() {
+    const markets = await this.getProfitByMarket();
+
+    const totalPool = markets.reduce((s, m) => s + m.totalPool, 0);
+    const totalRake = markets.reduce((s, m) => s + m.rakeCollected, 0);
+    const totalAffiliatePayouts = markets.reduce((s, m) => s + m.affiliatePayouts, 0);
+    const totalNetProfit = markets.reduce((s, m) => s + m.netProfit, 0);
+
+    return {
+      settledMarkets: markets.length,
+      totalPool,
+      totalRake,
+      totalAffiliatePayouts,
+      totalNetProfit,
+      averageRakePercent: markets.length > 0 ? totalRake / totalPool * 100 : 0,
+    };
   }
 
   private async logAction(

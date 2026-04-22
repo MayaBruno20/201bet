@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
+import { VerificationBanner } from '@/components/site/verification-banner';
 import { apiFetch } from '@/lib/api-request';
 import { clearClientSession } from '@/lib/auth';
 import { getPublicApiUrl } from '@/lib/env-public';
@@ -13,6 +14,7 @@ type Step = 'valor' | 'pix' | 'confirmado';
 
 export default function DepositoPage() {
   const [sessionOk, setSessionOk] = useState(false);
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [balance, setBalance] = useState(0);
   const [amount, setAmount] = useState('');
   const [step, setStep] = useState<Step>('valor');
@@ -30,15 +32,22 @@ export default function DepositoPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await apiFetch(`${apiUrl}/payments/summary`, { cache: 'no-store' });
-        if (!res.ok) {
+        const [summaryRes, meRes] = await Promise.all([
+          apiFetch(`${apiUrl}/payments/summary`, { cache: 'no-store' }),
+          apiFetch(`${apiUrl}/auth/me`, { cache: 'no-store' }),
+        ]);
+        if (!summaryRes.ok) {
           clearClientSession();
           setSessionOk(false);
           return;
         }
         setSessionOk(true);
-        const data = await res.json();
+        const data = await summaryRes.json();
         setBalance(data.balance);
+        if (meRes.ok) {
+          const me = (await meRes.json()) as { emailVerified?: boolean };
+          setEmailVerified(me.emailVerified ?? false);
+        }
       } catch {
         /* ignore */
       }
@@ -96,8 +105,12 @@ export default function DepositoPage() {
         body: JSON.stringify({ amount: numericAmount }),
       });
       if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(msg || 'Falha ao gerar PIX');
+        const body = await res.json().catch(() => null);
+        if (res.status === 403 && body?.code === 'EMAIL_NOT_VERIFIED') {
+          setEmailVerified(false);
+          throw new Error(body.message || 'Confirme seu e-mail para liberar depósitos.');
+        }
+        throw new Error(body?.message || 'Falha ao gerar PIX');
       }
       const data = await res.json();
       setPaymentId(data.paymentId);
@@ -139,6 +152,8 @@ export default function DepositoPage() {
     <main className='min-h-screen bg-[#090b11] pb-10 text-white'>
       <div className='mx-auto max-w-2xl px-4 py-6 sm:px-6'>
         <MainNav />
+
+        <VerificationBanner hidden={emailVerified !== false} />
 
         {/* Header */}
         <div className='flex items-center gap-3 mb-6'>
@@ -218,8 +233,8 @@ export default function DepositoPage() {
 
             {error && <p className='text-sm text-red-400 mb-4 rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-2'>{error}</p>}
 
-            <button type='button' onClick={handleGeneratePix} className='w-full rounded-xl bg-[#d4a843] px-6 py-3.5 text-base font-bold text-[#04111d] transition-all hover:bg-[#e0b84d] disabled:opacity-50' disabled={numericAmount < 20 || loading}>
-              {loading ? 'Gerando PIX...' : 'Gerar PIX'}
+            <button type='button' onClick={handleGeneratePix} className='w-full rounded-xl bg-[#d4a843] px-6 py-3.5 text-base font-bold text-[#04111d] transition-all hover:bg-[#e0b84d] disabled:opacity-50' disabled={numericAmount < 20 || loading || emailVerified === false}>
+              {loading ? 'Gerando PIX...' : emailVerified === false ? 'Confirme o e-mail para depositar' : 'Gerar PIX'}
             </button>
           </section>
         )}

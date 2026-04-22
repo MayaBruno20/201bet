@@ -1,14 +1,21 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import type { AppEnv } from '../config/env.validation';
 import { PrismaService } from '../database/prisma.service';
+import { MailService } from '../mail/mail.service';
+import { TokensService } from '../tokens/tokens.service';
 import { AuthService } from './auth.service';
 
 describe('AuthService', () => {
   let service: AuthService;
   let prisma: jest.Mocked<Pick<PrismaService, 'user' | '$transaction'>>;
   let jwtService: { signAsync: jest.Mock };
+  let tokens: { issue: jest.Mock; consume: jest.Mock; invalidateAllOfType: jest.Mock };
+  let mail: { sendVerification: jest.Mock; sendPasswordReset: jest.Mock; sendPasswordChanged: jest.Mock };
+  let config: { get: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -21,7 +28,29 @@ describe('AuthService', () => {
       $transaction: jest.fn(),
     };
     jwtService = { signAsync: jest.fn().mockResolvedValue('signed-jwt') };
-    service = new AuthService(prisma as unknown as PrismaService, jwtService as unknown as JwtService);
+    tokens = {
+      issue: jest.fn().mockResolvedValue({
+        rawToken: 'raw-token',
+        tokenHash: 'hash',
+        expiresAt: new Date(Date.now() + 3600_000),
+        id: 'tok-id',
+      }),
+      consume: jest.fn(),
+      invalidateAllOfType: jest.fn().mockResolvedValue(0),
+    };
+    mail = {
+      sendVerification: jest.fn().mockResolvedValue(undefined),
+      sendPasswordReset: jest.fn().mockResolvedValue(undefined),
+      sendPasswordChanged: jest.fn().mockResolvedValue(undefined),
+    };
+    config = { get: jest.fn().mockReturnValue(24) };
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      jwtService as unknown as JwtService,
+      tokens as unknown as TokensService,
+      mail as unknown as MailService,
+      config as unknown as ConfigService<AppEnv, true>,
+    );
   });
 
   describe('login', () => {
