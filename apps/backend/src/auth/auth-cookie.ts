@@ -28,6 +28,7 @@ function resolveCookieMaxAgeMs(): number {
 }
 
 function baseCookieOptions(): CookieOptions {
+  // Cross-site front (ex. Vercel) + API (ex. Render): AUTH_COOKIE_SAMESITE=none + HTTPS (Secure).
   const sameSite = process.env.AUTH_COOKIE_SAMESITE === 'none' ? 'none' : 'lax';
   const secure = sameSite === 'none' || process.env.NODE_ENV === 'production';
 

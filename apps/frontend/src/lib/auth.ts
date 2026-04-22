@@ -1,7 +1,10 @@
 import { getApiBaseUrl, apiFetch } from './api-request';
+import { clearStoredAccessToken, getStoredAccessToken, setStoredAccessToken } from './auth-token';
 
-/** Cache opcional do perfil (sem segredos). O JWT fica só no cookie httpOnly. */
+/** Cache opcional do perfil (sem segredos). */
 export const AUTH_USER_KEY = '201bet_auth_user';
+
+export { getStoredAccessToken, setStoredAccessToken };
 
 export type SessionUser = {
   id: string;
@@ -9,6 +12,7 @@ export type SessionUser = {
   name: string;
   role: 'USER' | 'ADMIN' | 'OPERATOR' | 'AUDITOR';
   status: string;
+  emailVerified: boolean;
   avatarUrl?: string | null;
 };
 
@@ -44,6 +48,7 @@ export function clearClientSession() {
     return;
   }
   window.sessionStorage.removeItem(AUTH_USER_KEY);
+  clearStoredAccessToken();
 }
 
 /** Encerra sessão no servidor (apaga cookie httpOnly) e limpa o cache local. */

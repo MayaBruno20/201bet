@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
 import { ApiEvent } from '@/types/events';
@@ -8,20 +9,47 @@ import { getPublicApiUrl } from '@/lib/env-public';
 
 const apiUrl = getPublicApiUrl();
 
+type BrazilListLiveEvent = {
+  id: string;
+  name: string;
+  scheduledAt: string;
+  status: 'IN_PROGRESS' | 'FINISHED' | 'DRAFT' | 'CANCELED';
+  list: { id: string; areaCode: number; name: string; format: 'TOP_10' | 'TOP_20' };
+  matchups: Array<{
+    id: string;
+    roundNumber: number;
+    roundType: 'ODD' | 'EVEN' | 'SHARK_TANK';
+    order: number;
+    leftPosition: number | null;
+    rightPosition: number | null;
+    leftDriverName: string | null;
+    rightDriverName: string | null;
+    winnerSide: 'LEFT' | 'RIGHT' | null;
+    marketOpen: boolean;
+  }>;
+};
+
 export default function EventosPage() {
   const [events, setEvents] = useState<ApiEvent[]>([]);
+  const [listEvents, setListEvents] = useState<BrazilListLiveEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${apiUrl}/events`)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Falha ao carregar eventos (${response.status})`);
-        }
-        return (await response.json()) as ApiEvent[];
+    Promise.all([
+      fetch(`${apiUrl}/events`).then(async (r) => {
+        if (!r.ok) throw new Error(`Falha ao carregar eventos (${r.status})`);
+        return (await r.json()) as ApiEvent[];
+      }),
+      fetch(`${apiUrl}/brazil-lists/live-events`).then(async (r) => {
+        if (!r.ok) return [] as BrazilListLiveEvent[];
+        return (await r.json()) as BrazilListLiveEvent[];
+      }),
+    ])
+      .then(([eventsData, listEventsData]) => {
+        setEvents(eventsData);
+        setListEvents(listEventsData);
       })
-      .then((data) => setEvents(data))
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -56,8 +84,13 @@ export default function EventosPage() {
                 <line x1='16' y1='2' x2='16' y2='6' /><line x1='8' y1='2' x2='8' y2='6' />
                 <line x1='3' y1='10' x2='21' y2='10' />
               </svg>
-              {events.length} evento{events.length !== 1 ? 's' : ''}
+              {events.length + listEvents.length} evento{(events.length + listEvents.length) !== 1 ? 's' : ''}
             </span>
+            {listEvents.length > 0 && (
+              <span className='inline-flex items-center gap-2 rounded-full bg-[#d4a843]/10 border border-[#d4a843]/20 px-3 py-1.5 text-xs font-medium text-[#d4a843]'>
+                🏁 {listEvents.length} Listas Brasil
+              </span>
+            )}
           </div>
         </section>
 
@@ -74,7 +107,92 @@ export default function EventosPage() {
           </div>
         )}
 
+        {/* Listas Brasil live events */}
+        {listEvents.length > 0 && (
+          <div className='mt-6 space-y-4'>
+            <p className='text-[10px] font-bold uppercase tracking-widest text-[#d4a843]'>Listas Brasil — eventos ativos</p>
+            {listEvents.map((le) => {
+              const open = le.matchups.filter((m) => m.marketOpen).length;
+              const total = le.matchups.length;
+              return (
+                <Link
+                  key={le.id}
+                  href={`/listas/${le.list.areaCode}`}
+                  className='block group rounded-3xl border border-[#d4a843]/20 bg-[#101525] overflow-hidden transition-colors hover:border-[#d4a843]/40'
+                >
+                  <div className='relative p-6 pb-5'>
+                    <div className='absolute -right-16 -top-16 h-48 w-48 rounded-full bg-[#d4a843]/5 blur-3xl' />
+                    <div className='relative flex flex-wrap items-start justify-between gap-4'>
+                      <div className='flex-1 min-w-0'>
+                        <div className='flex items-center gap-2 mb-2'>
+                          <span className='inline-flex items-center rounded-full border border-[#d4a843]/30 bg-[#d4a843]/10 px-2.5 py-1 text-[10px] font-bold tracking-wider text-[#d4a843]'>
+                            DDD {le.list.areaCode} · {le.list.format}
+                          </span>
+                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-wider ${le.status === 'IN_PROGRESS' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' : 'bg-white/10 text-white/50 border-white/10'}`}>
+                            {le.status === 'IN_PROGRESS' ? 'Em andamento' : 'Encerrado'}
+                          </span>
+                          {open > 0 && (
+                            <span className='inline-flex items-center rounded-full border border-blue-500/30 bg-blue-500/15 px-2.5 py-1 text-[10px] font-bold tracking-wider text-blue-300'>
+                              {open} mercado{open !== 1 ? 's' : ''} aberto{open !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                        <h2 className='text-xl font-semibold tracking-tight'>{le.name}</h2>
+                        <p className='mt-1 text-xs text-white/50'>{le.list.name}</p>
+                        <div className='mt-2 flex flex-wrap items-center gap-3 text-xs text-white/40'>
+                          <span className='inline-flex items-center gap-1.5'>
+                            {new Date(le.scheduledAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                          </span>
+                          <span className='h-1 w-1 rounded-full bg-white/20' />
+                          <span>{new Date(le.scheduledAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                          {total > 0 && (
+                            <>
+                              <span className='h-1 w-1 rounded-full bg-white/20' />
+                              <span>{total} confronto{total !== 1 ? 's' : ''}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {le.matchups.length > 0 && (
+                    <div className='border-t border-white/5 p-6'>
+                      <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-4'>Embates</p>
+                      <div className='grid grid-cols-1 gap-2 sm:grid-cols-2'>
+                        {le.matchups.slice(0, 6).map((m) => (
+                          <div key={m.id} className='flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2'>
+                            <span className='text-[10px] font-bold text-white/30'>#{m.order}</span>
+                            <span className={`flex-1 truncate text-sm ${m.winnerSide === 'LEFT' ? 'text-emerald-300 font-bold' : 'text-white/80'}`}>
+                              {m.leftPosition ? <span className='mr-1 text-[10px] text-white/40'>[{m.leftPosition}]</span> : null}
+                              {m.leftDriverName ?? '—'}
+                            </span>
+                            <span className='text-[10px] text-white/30'>×</span>
+                            <span className={`flex-1 truncate text-right text-sm ${m.winnerSide === 'RIGHT' ? 'text-emerald-300 font-bold' : 'text-white/80'}`}>
+                              {m.rightDriverName ?? '—'}
+                              {m.rightPosition ? <span className='ml-1 text-[10px] text-white/40'>[{m.rightPosition}]</span> : null}
+                            </span>
+                            {m.marketOpen && (
+                              <span className='rounded-full border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[9px] font-bold text-blue-300'>AO VIVO</span>
+                            )}
+                          </div>
+                        ))}
+                        {le.matchups.length > 6 && (
+                          <div className='sm:col-span-2 text-center text-xs text-white/40 py-2'>+{le.matchups.length - 6} confrontos — ver lista completa</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+
         <div className='mt-6 space-y-6'>
+          {events.length > 0 && listEvents.length > 0 && (
+            <p className='text-[10px] font-bold uppercase tracking-widest text-white/40'>Outros eventos</p>
+          )}
           {events.map((event) => {
             const evStatus = getStatus(event.status);
             return (
@@ -205,7 +323,7 @@ export default function EventosPage() {
             );
           })}
 
-          {!loading && events.length === 0 && !error && (
+          {!loading && events.length === 0 && listEvents.length === 0 && !error && (
             <div className='rounded-2xl border border-dashed border-white/10 p-12 text-center'>
               <svg className='mx-auto h-10 w-10 text-white/15' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
                 <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={1} d='M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' />

@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
-import { apiFetch as fetchWithCredentials } from '@/lib/api-request';
+import { apiFetch } from '@/lib/api-request';
+const fetchWithCredentials = apiFetch;
 import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
 
 import { getPublicApiUrl } from '@/lib/env-public';
+import { maskCPF, unmaskCPF } from '@/lib/masks';
 
 const apiUrl = getPublicApiUrl();
 
@@ -33,15 +35,6 @@ type AdminUser = {
 type AdminDriver = { id: string; name: string; nickname?: string | null; active: boolean };
 type AdminCar = { id: string; name: string; category: string; number?: string | null; active: boolean; driver: { id: string; name: string } };
 type AdminEvent = { id: string; name: string; sport: string; status: string; startAt: string };
-type AdminDuel = {
-  id: string;
-  status: string;
-  startsAt: string;
-  bookingCloseAt: string;
-  event: { id: string; name: string };
-  leftCar: { id: string; name: string; driver: { name: string } };
-  rightCar: { id: string; name: string; driver: { name: string } };
-};
 type AdminSetting = { id: string; key: string; value: string; description?: string | null };
 type AuditLog = { id: string; action: string; entity: string; createdAt: string; actorUser?: { email: string } | null };
 
@@ -76,18 +69,56 @@ type EventPerformanceRow = {
   totalStake: number;
 };
 
-type AdminSection = 'user' | 'event' | 'driver' | 'car' | 'duel' | 'setting' | 'analytics' | 'audit';
+type MarketConfig = { marginPercent: number; minBetAmount: number };
+type LiveProfit = { totalVolume: number; totalRake: number; markets: Array<{ name: string; type: string; pool: number; rake: number }> };
+
+type AdminSection = 'config' | 'user' | 'driver' | 'car' | 'market' | 'affiliate' | 'profit' | 'setting' | 'analytics' | 'audit';
+
+type AdminMarket = {
+  id: string; name: string; type: string; status: string;
+  rakePercent?: string | number | null; bookingCloseAt?: string | null; settledAt?: string | null; winnerOddId?: string | null;
+  event: { id: string; name: string };
+  odds: Array<{ id: string; label: string; value: string | number; status: string }>;
+};
+type AdminAffiliate = {
+  id: string; name: string; code: string; commissionPct: string | number; active: boolean;
+  _count: { referredUsers: number; commissions: number };
+  commissions: Array<{ amount: string | number }>;
+};
+type ProfitByMarket = {
+  marketId: string; marketName: string; marketType: string; eventName: string; winnerLabel: string;
+  totalPool: number; rakePercent: number; rakeCollected: number; affiliatePayouts: number; netProfit: number; settledAt: string | null;
+};
+type ProfitSummary = {
+  settledMarkets: number; totalPool: number; totalRake: number; totalAffiliatePayouts: number; totalNetProfit: number; averageRakePercent: number;
+};
 
 const ADMIN_SECTIONS: { id: AdminSection; title: string; description: string }[] = [
-  { id: 'user', title: 'Cadastro de usuário', description: 'CRUD de contas, roles e ajuste de saldo.' },
-  { id: 'event', title: 'Cadastro de evento', description: 'CRUD de eventos e controle de status.' },
+  { id: 'config', title: 'Config Motor', description: 'Comissao da casa, aposta minima e lucro em tempo real.' },
+  { id: 'user', title: 'Cadastro de usuario', description: 'CRUD de contas, roles e ajuste de saldo.' },
   { id: 'driver', title: 'Cadastro de piloto', description: 'CRUD completo de pilotos.' },
   { id: 'car', title: 'Cadastro de carro', description: 'CRUD completo de carros.' },
-  { id: 'duel', title: 'Cadastro de embate', description: 'CRUD completo de embates.' },
-  { id: 'setting', title: 'Configurações globais', description: 'CRUD de parâmetros globais.' },
-  { id: 'analytics', title: 'Relatórios e Analytics', description: 'Métricas de negócio, lucratividade e exportação.' },
-  { id: 'audit', title: 'Auditoria', description: 'Rastro completo de operações administrativas.' },
+  { id: 'market', title: 'Mercados Multi-Runner', description: 'Criar, liquidar e gerenciar mercados especiais.' },
+  { id: 'affiliate', title: 'Afiliados', description: 'Gestao de afiliados e comissoes.' },
+  { id: 'profit', title: 'Lucro & Dashboard', description: 'Lucro por mercado e resumo financeiro.' },
+  { id: 'setting', title: 'Configuracoes globais', description: 'CRUD de parametros globais.' },
+  { id: 'analytics', title: 'Relatorios e Analytics', description: 'Metricas de negocio, lucratividade e exportacao.' },
+  { id: 'audit', title: 'Auditoria', description: 'Rastro completo de operacoes administrativas.' },
 ];
+
+type ModalState = {
+  open: boolean;
+  title: string;
+  message: string;
+  mode: 'confirm' | 'input' | 'select';
+  inputLabel?: string;
+  inputDefault?: string;
+  selectOptions?: string[];
+  danger?: boolean;
+  onConfirm: (value?: string) => void;
+};
+
+const MODAL_CLOSED: ModalState = { open: false, title: '', message: '', mode: 'confirm', onConfirm: () => {} };
 
 export default function AdminPage() {
   const [sessionReady, setSessionReady] = useState(false);
@@ -102,30 +133,38 @@ export default function AdminPage() {
   const [drivers, setDrivers] = useState<AdminDriver[]>([]);
   const [cars, setCars] = useState<AdminCar[]>([]);
   const [events, setEvents] = useState<AdminEvent[]>([]);
-  const [duels, setDuels] = useState<AdminDuel[]>([]);
   const [settings, setSettings] = useState<AdminSetting[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   const [analyticsOverview, setAnalyticsOverview] = useState<AnalyticsOverview | null>(null);
   const [analyticsEvents, setAnalyticsEvents] = useState<EventPerformanceRow[]>([]);
+  const [markets, setMarkets] = useState<AdminMarket[]>([]);
+  const [affiliates, setAffiliates] = useState<AdminAffiliate[]>([]);
+  const [profitByMarket, setProfitByMarket] = useState<ProfitByMarket[]>([]);
+  const [profitSummary, setProfitSummary] = useState<ProfitSummary | null>(null);
+  const [marketConfig, setMarketConfig] = useState<MarketConfig>({ marginPercent: 20, minBetAmount: 10 });
+  const [liveProfit, setLiveProfit] = useState<LiveProfit | null>(null);
 
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', cpf: '', birthDate: '', role: 'USER' });
-  const [newEvent, setNewEvent] = useState({
-    sport: 'DRAG_RACE',
-    name: '',
-    startAt: '',
-    marketName: '',
-    oddALabel: 'Carro A',
-    oddAValue: '1.80',
-    oddBLabel: 'Carro B',
-    oddBValue: '1.90',
-  });
   const [newDriver, setNewDriver] = useState({ name: '', nickname: '' });
   const [newCar, setNewCar] = useState({ driverId: '', name: '', category: '', number: '' });
-  const [newDuel, setNewDuel] = useState({ eventId: '', leftCarId: '', rightCarId: '', startsAt: '', bookingCloseAt: '', status: 'BOOKING_OPEN', notes: '' });
   const [newSetting, setNewSetting] = useState({ key: '', value: '', description: '' });
 
   const isAllowed = useMemo(() => !!sessionUser && ['ADMIN', 'OPERATOR'].includes(sessionUser.role), [sessionUser]);
+
+  const [modal, setModal] = useState<ModalState>(MODAL_CLOSED);
+
+  function askInput(title: string, label: string, defaultValue: string, cb: (val: string) => void) {
+    setModal({ open: true, title, message: '', mode: 'input', inputLabel: label, inputDefault: defaultValue, onConfirm: (v) => { if (v) cb(v); } });
+  }
+
+  function askConfirm(title: string, msg: string, cb: () => void) {
+    setModal({ open: true, title, message: msg, mode: 'confirm', danger: true, onConfirm: () => cb() });
+  }
+
+  function askSelect(title: string, options: string[], defaultValue: string, cb: (val: string) => void) {
+    setModal({ open: true, title, message: '', mode: 'select', selectOptions: options, inputDefault: defaultValue, onConfirm: (v) => { if (v) cb(v); } });
+  }
 
   useEffect(() => {
     setSessionUser(getStoredUser());
@@ -182,20 +221,41 @@ export default function AdminPage() {
     setLoading(true);
     setStatusMessage('');
     try {
-      const [dashboardRes, usersRes, driversRes, carsRes, eventsRes, duelsRes, settingsRes, auditRes, overviewRes, perfRes] = await Promise.all([
+      const [
+        dashboardRes,
+        usersRes,
+        driversRes,
+        carsRes,
+        eventsRes,
+        settingsRes,
+        auditRes,
+        overviewRes,
+        perfRes,
+        marketsRes,
+        affiliatesRes,
+        profitRes,
+        profitSumRes,
+        configRes,
+        liveProfitRes,
+      ] = await Promise.all([
         fetchWithCredentials(`${apiUrl}/admin/dashboard`, {}),
         fetchWithCredentials(`${apiUrl}/admin/users`, {}),
         fetchWithCredentials(`${apiUrl}/admin/drivers`, {}),
         fetchWithCredentials(`${apiUrl}/admin/cars`, {}),
         fetchWithCredentials(`${apiUrl}/admin/events`, {}),
-        fetchWithCredentials(`${apiUrl}/admin/duels`, {}),
         fetchWithCredentials(`${apiUrl}/admin/settings`, {}),
         fetchWithCredentials(`${apiUrl}/admin/audit-logs?limit=40`, {}),
         fetchWithCredentials(`${apiUrl}/admin/analytics/overview`, {}),
         fetchWithCredentials(`${apiUrl}/admin/analytics/events?limit=20`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/markets`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/affiliates`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/analytics/profit-by-market`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/analytics/profit-summary`, {}),
+        fetchWithCredentials(`${apiUrl}/market/config`, {}),
+        fetchWithCredentials(`${apiUrl}/market/profit-live`, {}),
       ]);
 
-      for (const res of [dashboardRes, usersRes, driversRes, carsRes, eventsRes, duelsRes, settingsRes, overviewRes, perfRes]) {
+      for (const res of [dashboardRes, usersRes, driversRes, carsRes, eventsRes, settingsRes, overviewRes, perfRes]) {
         if (!res.ok) {
           if (res.status === 401 || res.status === 403) {
             clearClientSession();
@@ -210,14 +270,17 @@ export default function AdminPage() {
       setDrivers((await driversRes.json()) as AdminDriver[]);
       setCars((await carsRes.json()) as AdminCar[]);
       setEvents((await eventsRes.json()) as AdminEvent[]);
-      setDuels((await duelsRes.json()) as AdminDuel[]);
       setSettings((await settingsRes.json()) as AdminSetting[]);
       setAnalyticsOverview((await overviewRes.json()) as AnalyticsOverview);
       setAnalyticsEvents((await perfRes.json()) as EventPerformanceRow[]);
 
-      if (auditRes.ok) {
-        setAuditLogs((await auditRes.json()) as AuditLog[]);
-      }
+      if (auditRes.ok) setAuditLogs((await auditRes.json()) as AuditLog[]);
+      if (marketsRes.ok) setMarkets((await marketsRes.json()) as AdminMarket[]);
+      if (affiliatesRes.ok) setAffiliates((await affiliatesRes.json()) as AdminAffiliate[]);
+      if (profitRes.ok) setProfitByMarket((await profitRes.json()) as ProfitByMarket[]);
+      if (profitSumRes.ok) setProfitSummary((await profitSumRes.json()) as ProfitSummary);
+      if (configRes.ok) setMarketConfig((await configRes.json()) as MarketConfig);
+      if (liveProfitRes.ok) setLiveProfit((await liveProfitRes.json()) as LiveProfit);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : 'Erro ao carregar painel');
     } finally {
@@ -319,6 +382,16 @@ export default function AdminPage() {
               <Metric label='Ledger volume' value={`R$ ${dashboard.ledgerVolume.toLocaleString('pt-BR')}`} />
             </div>
           ) : null}
+
+          <div className='mt-5 flex flex-wrap gap-2'>
+            <a
+              href='/admin/listas'
+              className='inline-flex items-center gap-2 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 px-4 py-2 text-xs font-bold text-[#d4a843] transition hover:bg-[#d4a843]/20'
+            >
+              <span>🏁 Listas Brasil</span>
+              <span className='text-[#d4a843]/70'>— cadastro de eventos, embates e gestão de listas</span>
+            </a>
+          </div>
         </section>
 
         {/* Mobile: Dropdown section selector */}
@@ -376,6 +449,89 @@ export default function AdminPage() {
           </div>
         </section>
 
+        {/* ── Config do Motor ── */}
+        {activeSection === 'config' ? (
+          <Panel title='Configurações do Motor de Odds'>
+            <div className='grid grid-cols-1 gap-6 sm:grid-cols-2'>
+              {/* Comissão da Casa */}
+              <div className='rounded-xl border border-white/10 bg-white/5 p-5'>
+                <p className='text-xs uppercase tracking-widest text-white/50 mb-3'>Comissão da Casa %</p>
+                <div className='flex gap-2'>
+                  <input
+                    id='cfgMargin'
+                    type='number'
+                    min={0}
+                    max={50}
+                    defaultValue={marketConfig.marginPercent}
+                    className='flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-2xl font-bold text-white outline-none'
+                  />
+                  <button
+                    className='rounded-lg bg-emerald-500 px-6 py-3 text-sm font-bold text-black'
+                    onClick={() => {
+                      const val = Number((document.getElementById('cfgMargin') as HTMLInputElement).value);
+                      void submit('Atualizar comissão', () => apiFetch(`${apiUrl}/admin/config/margin`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: val }) }));
+                    }}
+                  >
+                    Salvar
+                  </button>
+                </div>
+                <p className='mt-2 text-xs text-white/30'>Porcentagem retida pela casa sobre cada pote. Atual: {marketConfig.marginPercent}%</p>
+              </div>
+
+              {/* Aposta Mínima */}
+              <div className='rounded-xl border border-white/10 bg-white/5 p-5'>
+                <p className='text-xs uppercase tracking-widest text-white/50 mb-3'>Aposta Mínima R$</p>
+                <div className='flex gap-2'>
+                  <input
+                    id='cfgMinBet'
+                    type='number'
+                    min={0}
+                    defaultValue={marketConfig.minBetAmount}
+                    className='flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-2xl font-bold text-white outline-none'
+                  />
+                  <button
+                    className='rounded-lg bg-emerald-500 px-6 py-3 text-sm font-bold text-black'
+                    onClick={() => {
+                      const val = Number((document.getElementById('cfgMinBet') as HTMLInputElement).value);
+                      void submit('Atualizar aposta mínima', () => apiFetch(`${apiUrl}/admin/config/min-bet`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: val }) }));
+                    }}
+                  >
+                    Salvar
+                  </button>
+                </div>
+                <p className='mt-2 text-xs text-white/30'>Valor mínimo aceito por aposta. Atual: R$ {marketConfig.minBetAmount.toFixed(2)}</p>
+              </div>
+            </div>
+
+            {/* Lucro em Tempo Real */}
+            {liveProfit && (
+              <div className='mt-6'>
+                <p className='text-xs uppercase tracking-widest text-white/50 mb-3'>Lucro em Tempo Real (antes de liquidar)</p>
+                <div className='grid grid-cols-2 gap-3 sm:grid-cols-3 mb-4'>
+                  <Metric label='Volume Total' value={`R$ ${liveProfit.totalVolume.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                  <Metric label='Rake Total (estimado)' value={`R$ ${liveProfit.totalRake.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                  <Metric label='Mercados Ativos' value={liveProfit.markets.length} />
+                </div>
+                <div className='space-y-2 max-h-64 overflow-auto'>
+                  {liveProfit.markets.map((m, i) => (
+                    <div key={`${m.name}-${i}`} className='flex items-center justify-between rounded-lg border border-white/10 bg-white/5 p-3 text-sm'>
+                      <div>
+                        <span className='font-medium'>{m.name}</span>
+                        <span className='ml-2 text-xs text-white/30'>{m.type}</span>
+                      </div>
+                      <div className='text-right'>
+                        <span className='text-white/50'>Pool: R$ {m.pool.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                        <span className='ml-3 font-bold text-emerald-400'>Rake: R$ {m.rake.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {!liveProfit.markets.length && <p className='text-sm text-white/40'>Nenhum mercado ativo.</p>}
+                </div>
+              </div>
+            )}
+          </Panel>
+        ) : null}
+
         {activeSection === 'user' ? (
           <Panel title='Cadastro e gestão de usuários'>
             <form
@@ -385,7 +541,7 @@ export default function AdminPage() {
                 void submit('Cadastro de usuário', () =>
                   adminJson('/admin/users', {
                     method: 'POST',
-                    body: JSON.stringify({ ...newUser, cpf: newUser.cpf.replace(/\D/g, ''), status: 'ACTIVE' }),
+                    body: JSON.stringify({ ...newUser, cpf: unmaskCPF(newUser.cpf), status: 'ACTIVE' }),
                   }),
                 );
               }}
@@ -393,7 +549,7 @@ export default function AdminPage() {
               <input className='field' placeholder='Nome' value={newUser.name} onChange={(e) => setNewUser((p) => ({ ...p, name: e.target.value }))} required />
               <input className='field' placeholder='E-mail' type='email' value={newUser.email} onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))} required />
               <input className='field' placeholder='Senha forte' type='password' value={newUser.password} onChange={(e) => setNewUser((p) => ({ ...p, password: e.target.value }))} required />
-              <input className='field' placeholder='CPF (11 dígitos)' value={newUser.cpf} onChange={(e) => setNewUser((p) => ({ ...p, cpf: e.target.value.replace(/\D/g, '').slice(0, 11) }))} required />
+              <input className='field' placeholder='CPF' inputMode='numeric' value={maskCPF(newUser.cpf)} onChange={(e) => setNewUser((p) => ({ ...p, cpf: unmaskCPF(e.target.value).slice(0, 11) }))} required />
               <input className='field' type='date' value={newUser.birthDate} onChange={(e) => setNewUser((p) => ({ ...p, birthDate: e.target.value }))} required />
               <select className='field' value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
                 <option value='USER'>USER</option>
@@ -413,138 +569,53 @@ export default function AdminPage() {
                     <button
                       className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
                       type='button'
-                      onClick={() => {
-                        const role = prompt('Nova role (USER/ADMIN/OPERATOR/AUDITOR):', u.role);
-                        if (!role) return;
+                      onClick={() => askSelect('Editar role', ['USER', 'ADMIN', 'OPERATOR', 'AUDITOR'], u.role, (role) => {
                         void submit('Atualização de usuário', () =>
                           adminJson(`/admin/users/${u.id}`, {
                             method: 'PATCH',
                             body: JSON.stringify({ role }),
                           }),
                         );
-                      }}
+                      })}
                     >
                       Editar role
                     </button>
                     <button
                       className='rounded-md bg-emerald-500/20 px-2 py-1 text-xs text-emerald-200 hover:bg-emerald-500/30'
                       type='button'
-                      onClick={() => {
-                        const amount = prompt('Valor para adicionar no saldo:');
-                        if (!amount) return;
+                      onClick={() => askInput('Adicionar saldo', 'Valor em R$', '', (amount) => {
                         void submit('Adicionar saldo', () =>
                           adminJson(`/admin/users/${u.id}/wallet-adjust`, {
                             method: 'POST',
                             body: JSON.stringify({ operation: 'ADD', amount: Number(amount), reason: 'admin-credit' }),
                           }),
                         );
-                      }}
+                      })}
                     >
                       + Saldo
                     </button>
                     <button
                       className='rounded-md bg-amber-500/20 px-2 py-1 text-xs text-amber-200 hover:bg-amber-500/30'
                       type='button'
-                      onClick={() => {
-                        const amount = prompt('Valor para remover do saldo:');
-                        if (!amount) return;
+                      onClick={() => askInput('Remover saldo', 'Valor em R$', '', (amount) => {
                         void submit('Remover saldo', () =>
                           adminJson(`/admin/users/${u.id}/wallet-adjust`, {
                             method: 'POST',
                             body: JSON.stringify({ operation: 'REMOVE', amount: Number(amount), reason: 'admin-debit' }),
                           }),
                         );
-                      }}
+                      })}
                     >
                       - Saldo
                     </button>
                     <button
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
                       type='button'
-                      onClick={() => {
-                        if (!confirm(`Desativar usuário ${u.email}?`)) return;
+                      onClick={() => askConfirm('Desativar usuário', `Desativar ${u.email}?`, () => {
                         void submit('Desativação de usuário', () => adminJson(`/admin/users/${u.id}`, { method: 'DELETE' }));
-                      }}
+                      })}
                     >
                       Desativar
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </Panel>
-        ) : null}
-
-        {activeSection === 'event' ? (
-          <Panel title='Cadastro e CRUD de eventos'>
-            <form
-              className='space-y-2'
-              onSubmit={(e) => {
-                e.preventDefault();
-                void submit('Cadastro de evento', () =>
-                  adminJson('/admin/events', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                      sport: newEvent.sport,
-                      name: newEvent.name,
-                      startAt: new Date(newEvent.startAt).toISOString(),
-                      status: 'SCHEDULED',
-                      markets: [
-                        {
-                          name: newEvent.marketName,
-                          status: 'OPEN',
-                          odds: [
-                            { label: newEvent.oddALabel, value: Number(newEvent.oddAValue), status: 'ACTIVE' },
-                            { label: newEvent.oddBLabel, value: Number(newEvent.oddBValue), status: 'ACTIVE' },
-                          ],
-                        },
-                      ],
-                    }),
-                  }),
-                );
-              }}
-            >
-              <input className='field' placeholder='Esporte (DRAG_RACE)' value={newEvent.sport} onChange={(e) => setNewEvent((p) => ({ ...p, sport: e.target.value }))} required />
-              <input className='field' placeholder='Nome do evento' value={newEvent.name} onChange={(e) => setNewEvent((p) => ({ ...p, name: e.target.value }))} required />
-              <input className='field' type='datetime-local' value={newEvent.startAt} onChange={(e) => setNewEvent((p) => ({ ...p, startAt: e.target.value }))} required />
-              <input className='field' placeholder='Nome do mercado' value={newEvent.marketName} onChange={(e) => setNewEvent((p) => ({ ...p, marketName: e.target.value }))} required />
-              <div className='grid grid-cols-2 gap-2'>
-                <input className='field' placeholder='Label odd A' value={newEvent.oddALabel} onChange={(e) => setNewEvent((p) => ({ ...p, oddALabel: e.target.value }))} required />
-                <input className='field' placeholder='Valor odd A' value={newEvent.oddAValue} onChange={(e) => setNewEvent((p) => ({ ...p, oddAValue: e.target.value }))} required />
-              </div>
-              <div className='grid grid-cols-2 gap-2'>
-                <input className='field' placeholder='Label odd B' value={newEvent.oddBLabel} onChange={(e) => setNewEvent((p) => ({ ...p, oddBLabel: e.target.value }))} required />
-                <input className='field' placeholder='Valor odd B' value={newEvent.oddBValue} onChange={(e) => setNewEvent((p) => ({ ...p, oddBValue: e.target.value }))} required />
-              </div>
-              <button className='btn-primary' disabled={loading}>Salvar evento</button>
-            </form>
-
-            <div className='mt-5 space-y-2'>
-              {events.map((event) => (
-                <article key={event.id} className='rounded-lg border border-white/10 bg-white/5 p-3'>
-                  <p className='font-semibold'>{event.name}</p>
-                  <p className='text-xs text-white/70'>{event.sport} • {new Date(event.startAt).toLocaleString('pt-BR')} • {event.status}</p>
-                  <div className='mt-2 flex gap-2'>
-                    <button
-                      type='button'
-                      className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
-                      onClick={() => {
-                        const name = prompt('Novo nome do evento:', event.name);
-                        if (!name) return;
-                        void submit('Atualização de evento', () => adminJson(`/admin/events/${event.id}`, { method: 'PATCH', body: JSON.stringify({ name }) }));
-                      }}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type='button'
-                      className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
-                      onClick={() => {
-                        if (!confirm(`Cancelar evento ${event.name}?`)) return;
-                        void submit('Cancelamento de evento', () => adminJson(`/admin/events/${event.id}`, { method: 'DELETE' }));
-                      }}
-                    >
-                      Cancelar
                     </button>
                   </div>
                 </article>
@@ -576,21 +647,18 @@ export default function AdminPage() {
                     <button
                       type='button'
                       className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
-                      onClick={() => {
-                        const name = prompt('Novo nome:', driver.name);
-                        if (!name) return;
+                      onClick={() => askInput('Editar piloto', 'Nome', driver.name, (name) => {
                         void submit('Atualização de piloto', () => adminJson(`/admin/drivers/${driver.id}`, { method: 'PATCH', body: JSON.stringify({ name }) }));
-                      }}
+                      })}
                     >
                       Editar
                     </button>
                     <button
                       type='button'
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
-                      onClick={() => {
-                        if (!confirm(`Desativar piloto ${driver.name}?`)) return;
+                      onClick={() => askConfirm('Desativar piloto', `Desativar ${driver.name}?`, () => {
                         void submit('Desativação de piloto', () => adminJson(`/admin/drivers/${driver.id}`, { method: 'DELETE' }));
-                      }}
+                      })}
                     >
                       Desativar
                     </button>
@@ -631,98 +699,20 @@ export default function AdminPage() {
                     <button
                       type='button'
                       className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
-                      onClick={() => {
-                        const category = prompt('Nova categoria:', car.category);
-                        if (!category) return;
+                      onClick={() => askInput('Editar carro', 'Categoria', car.category, (category) => {
                         void submit('Atualização de carro', () => adminJson(`/admin/cars/${car.id}`, { method: 'PATCH', body: JSON.stringify({ category }) }));
-                      }}
+                      })}
                     >
                       Editar
                     </button>
                     <button
                       type='button'
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
-                      onClick={() => {
-                        if (!confirm(`Desativar carro ${car.name}?`)) return;
+                      onClick={() => askConfirm('Desativar carro', `Desativar ${car.name}?`, () => {
                         void submit('Desativação de carro', () => adminJson(`/admin/cars/${car.id}`, { method: 'DELETE' }));
-                      }}
+                      })}
                     >
                       Desativar
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </Panel>
-        ) : null}
-
-        {activeSection === 'duel' ? (
-          <Panel title='Cadastro e CRUD de embates'>
-            <form
-              className='space-y-2'
-              onSubmit={(e) => {
-                e.preventDefault();
-                void submit('Cadastro de embate', () =>
-                  adminJson('/admin/duels', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                      ...newDuel,
-                      startsAt: new Date(newDuel.startsAt).toISOString(),
-                      bookingCloseAt: new Date(newDuel.bookingCloseAt).toISOString(),
-                    }),
-                  }),
-                );
-              }}
-            >
-              <select className='field' value={newDuel.eventId} onChange={(e) => setNewDuel((p) => ({ ...p, eventId: e.target.value }))} required>
-                <option value=''>Selecione o evento</option>
-                {events.map((event) => (
-                  <option key={event.id} value={event.id}>{event.name}</option>
-                ))}
-              </select>
-              <select className='field' value={newDuel.leftCarId} onChange={(e) => setNewDuel((p) => ({ ...p, leftCarId: e.target.value }))} required>
-                <option value=''>Carro lado A</option>
-                {cars.map((car) => (
-                  <option key={car.id} value={car.id}>{car.name} ({car.driver.name})</option>
-                ))}
-              </select>
-              <select className='field' value={newDuel.rightCarId} onChange={(e) => setNewDuel((p) => ({ ...p, rightCarId: e.target.value }))} required>
-                <option value=''>Carro lado B</option>
-                {cars.map((car) => (
-                  <option key={car.id} value={car.id}>{car.name} ({car.driver.name})</option>
-                ))}
-              </select>
-              <input className='field' type='datetime-local' value={newDuel.startsAt} onChange={(e) => setNewDuel((p) => ({ ...p, startsAt: e.target.value }))} required />
-              <input className='field' type='datetime-local' value={newDuel.bookingCloseAt} onChange={(e) => setNewDuel((p) => ({ ...p, bookingCloseAt: e.target.value }))} required />
-              <button className='btn-primary' disabled={loading}>Salvar embate</button>
-            </form>
-
-            <div className='mt-5 space-y-2'>
-              {duels.map((duel) => (
-                <article key={duel.id} className='rounded-lg border border-white/10 bg-white/5 p-3'>
-                  <p className='font-semibold'>{duel.leftCar.name} x {duel.rightCar.name}</p>
-                  <p className='text-xs text-white/70'>{duel.event.name} • {new Date(duel.startsAt).toLocaleString('pt-BR')} • {duel.status}</p>
-                  <div className='mt-2 flex gap-2'>
-                    <button
-                      type='button'
-                      className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
-                      onClick={() => {
-                        const status = prompt('Novo status (SCHEDULED/BOOKING_OPEN/BOOKING_CLOSED/FINISHED/CANCELED):', duel.status);
-                        if (!status) return;
-                        void submit('Atualização de embate', () => adminJson(`/admin/duels/${duel.id}`, { method: 'PATCH', body: JSON.stringify({ status }) }));
-                      }}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type='button'
-                      className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
-                      onClick={() => {
-                        if (!confirm('Cancelar este embate?')) return;
-                        void submit('Cancelamento de embate', () => adminJson(`/admin/duels/${duel.id}`, { method: 'DELETE' }));
-                      }}
-                    >
-                      Cancelar
                     </button>
                   </div>
                 </article>
@@ -755,26 +745,23 @@ export default function AdminPage() {
                     <button
                       type='button'
                       className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
-                      onClick={() => {
-                        const value = prompt('Novo valor:', setting.value);
-                        if (!value) return;
+                      onClick={() => askInput('Editar configuração', `Valor para ${setting.key}`, setting.value, (value) => {
                         void submit('Atualização de configuração', () =>
                           adminJson('/admin/settings', {
                             method: 'POST',
                             body: JSON.stringify({ key: setting.key, value, description: setting.description }),
                           }),
                         );
-                      }}
+                      })}
                     >
                       Editar
                     </button>
                     <button
                       type='button'
                       className='rounded-md bg-red-500/20 px-2 py-1 text-xs text-red-200 hover:bg-red-500/30'
-                      onClick={() => {
-                        if (!confirm(`Excluir configuração ${setting.key}?`)) return;
+                      onClick={() => askConfirm('Excluir configuração', `Excluir ${setting.key}?`, () => {
                         void submit('Exclusão de configuração', () => adminJson(`/admin/settings/${setting.id}`, { method: 'DELETE' }));
-                      }}
+                      })}
                     >
                       Excluir
                     </button>
@@ -825,12 +812,186 @@ export default function AdminPage() {
           </Panel>
         ) : null}
 
+        {/* ── Mercados Multi-Runner ── */}
+        {activeSection === 'market' ? (
+          <Panel title='Mercados Multi-Runner'>
+            <div className='mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4'>
+              <input id='mrName' placeholder='Nome do mercado' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+              <select id='mrType' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none'>
+                <option value='WINNER'>Vencedor Geral</option>
+                <option value='BEST_REACTION'>Melhor Reacao</option>
+                <option value='FALSE_START'>Queimada</option>
+              </select>
+              <select id='mrEvent' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none'>
+                {events.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+              <input id='mrRunners' placeholder='Opcoes (separar por virgula)' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+            </div>
+            <div className='mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3'>
+              <input id='mrRake' type='number' placeholder='Rake % (padrao 6)' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+              <input id='mrClose' type='datetime-local' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+              <button
+                className='rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black'
+                onClick={() => {
+                  const name = (document.getElementById('mrName') as HTMLInputElement).value;
+                  const type = (document.getElementById('mrType') as HTMLSelectElement).value;
+                  const eventId = (document.getElementById('mrEvent') as HTMLSelectElement).value;
+                  const runners = (document.getElementById('mrRunners') as HTMLInputElement).value.split(',').map((s) => s.trim()).filter(Boolean);
+                  const rakePercent = Number((document.getElementById('mrRake') as HTMLInputElement).value) || undefined;
+                  const bookingCloseAt = (document.getElementById('mrClose') as HTMLInputElement).value || undefined;
+                  if (!name || !eventId || runners.length < 2) { setStatusMessage('Informe nome, evento e pelo menos 2 opcoes'); return; }
+                  void submit('Criar mercado', () => apiFetch(`${apiUrl}/admin/markets`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, type, eventId, runners, rakePercent, bookingCloseAt }) }));
+                }}
+              >
+                + Criar Mercado
+              </button>
+            </div>
+            <div className='space-y-3 max-h-96 overflow-auto'>
+              {markets.map((m) => (
+                <div key={m.id} className='rounded-xl border border-white/10 bg-white/5 p-4'>
+                  <div className='flex items-start justify-between mb-2'>
+                    <div>
+                      <p className='font-semibold'>{m.name}</p>
+                      <p className='text-xs text-white/40'>{m.type} - {m.event.name} - Status: {m.status}</p>
+                    </div>
+                    <div className='flex gap-2'>
+                      {m.status !== 'SETTLED' && (
+                        <>
+                          <select
+                            id={`settle-${m.id}`}
+                            className='rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white outline-none'
+                          >
+                            {m.odds.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+                          </select>
+                          <button
+                            className='rounded-lg bg-emerald-500/80 px-3 py-1 text-xs font-bold text-black'
+                            onClick={() => {
+                              const winnerOddId = (document.getElementById(`settle-${m.id}`) as HTMLSelectElement).value;
+                              if (!winnerOddId) return;
+                              void submit('Liquidar mercado', () => apiFetch(`${apiUrl}/admin/markets/${m.id}/settle`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ winnerOddId }) }));
+                            }}
+                          >
+                            Liquidar
+                          </button>
+                          <button
+                            className='rounded-lg bg-red-500/80 px-3 py-1 text-xs font-bold text-white'
+                            onClick={() => void submit('Anular mercado', () => apiFetch(`${apiUrl}/admin/markets/${m.id}/void`, { method: 'POST' }))}
+                          >
+                            Anular
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className='flex flex-wrap gap-2'>
+                    {m.odds.map((o) => (
+                      <span key={o.id} className={`rounded-full px-3 py-1 text-xs border ${o.id === m.winnerOddId ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-white/5 border-white/10 text-white/60'}`}>
+                        {o.label} {o.id === m.winnerOddId && '(Vencedor)'}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {!markets.length && <p className='text-sm text-white/40'>Nenhum mercado multi-runner criado.</p>}
+            </div>
+          </Panel>
+        ) : null}
+
+        {/* ── Afiliados ── */}
+        {activeSection === 'affiliate' ? (
+          <Panel title='Gestao de Afiliados'>
+            <div className='mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4'>
+              <input id='afName' placeholder='Nome' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+              <input id='afCode' placeholder='Codigo' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+              <input id='afPct' type='number' placeholder='Comissao %' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
+              <button
+                className='rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black'
+                onClick={() => {
+                  const name = (document.getElementById('afName') as HTMLInputElement).value;
+                  const code = (document.getElementById('afCode') as HTMLInputElement).value;
+                  const commissionPct = Number((document.getElementById('afPct') as HTMLInputElement).value);
+                  if (!name || !code || !commissionPct) { setStatusMessage('Preencha todos os campos'); return; }
+                  void submit('Criar afiliado', () => apiFetch(`${apiUrl}/admin/affiliates`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, code, commissionPct }) }));
+                }}
+              >
+                + Criar Afiliado
+              </button>
+            </div>
+            <div className='space-y-3 max-h-96 overflow-auto'>
+              {affiliates.map((af) => {
+                const totalCommission = af.commissions.reduce((s, c) => s + Number(c.amount), 0);
+                return (
+                  <div key={af.id} className='rounded-xl border border-white/10 bg-white/5 p-4 flex items-center justify-between'>
+                    <div>
+                      <p className='font-semibold'>{af.name} <span className='text-xs text-white/40'>({af.code})</span></p>
+                      <p className='text-xs text-white/40'>
+                        Comissao: {Number(af.commissionPct)}% - Usuarios: {af._count.referredUsers} - Pagamentos: {af._count.commissions}
+                      </p>
+                      <p className='text-xs text-yellow-400'>Total comissoes: R$ {totalCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className='flex gap-2'>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${af.active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                        {af.active ? 'ATIVO' : 'INATIVO'}
+                      </span>
+                      {af.active && (
+                        <button
+                          className='rounded-lg bg-red-500/60 px-3 py-1 text-xs font-bold text-white'
+                          onClick={() => void submit('Desativar afiliado', () => apiFetch(`${apiUrl}/admin/affiliates/${af.id}`, { method: 'DELETE' }))}
+                        >
+                          Desativar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {!affiliates.length && <p className='text-sm text-white/40'>Nenhum afiliado cadastrado.</p>}
+            </div>
+          </Panel>
+        ) : null}
+
+        {/* ── Lucro & Dashboard ── */}
+        {activeSection === 'profit' ? (
+          <Panel title='Lucro & Dashboard'>
+            {profitSummary && (
+              <div className='mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6'>
+                <Metric label='Mercados Liquidados' value={profitSummary.settledMarkets} />
+                <Metric label='Volume Total' value={`R$ ${profitSummary.totalPool.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                <Metric label='Rake Total' value={`R$ ${profitSummary.totalRake.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                <Metric label='Comissoes Afiliados' value={`R$ ${profitSummary.totalAffiliatePayouts.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                <Metric label='Lucro Liquido' value={`R$ ${profitSummary.totalNetProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                <Metric label='Margem Media' value={`${profitSummary.averageRakePercent.toFixed(1)}%`} />
+              </div>
+            )}
+            <div className='space-y-3 max-h-96 overflow-auto'>
+              {profitByMarket.map((m) => (
+                <div key={m.marketId} className='rounded-xl border border-white/10 bg-white/5 p-4'>
+                  <div className='flex items-start justify-between'>
+                    <div>
+                      <p className='font-semibold'>{m.marketName}</p>
+                      <p className='text-xs text-white/40'>{m.marketType} - {m.eventName} - Vencedor: {m.winnerLabel}</p>
+                    </div>
+                    <p className='text-sm font-bold text-emerald-400'>R$ {m.netProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                  <div className='mt-2 flex gap-4 text-xs text-white/50'>
+                    <span>Pool: R$ {m.totalPool.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    <span>Rake ({m.rakePercent}%): R$ {m.rakeCollected.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    <span>Afiliados: R$ {m.affiliatePayouts.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+              ))}
+              {!profitByMarket.length && <p className='text-sm text-white/40'>Nenhum mercado liquidado ainda.</p>}
+            </div>
+          </Panel>
+        ) : null}
+
         {activeSection === 'audit' ? (
           <Panel title='Auditoria'>
             <ListBlock items={auditLogs.map((a) => `${a.action} • ${a.entity} • ${new Date(a.createdAt).toLocaleString('pt-BR')} • ${a.actorUser?.email ?? 'sistema'}`)} />
           </Panel>
         ) : null}
       </div>
+      {modal.open && <AdminModal state={modal} onClose={() => setModal(MODAL_CLOSED)} />}
     </main>
   );
 }
@@ -865,6 +1026,79 @@ function ListBlock({ items }: { items: string[] }) {
           {item}
         </p>
       ))}
+    </div>
+  );
+}
+
+function AdminModal({ state, onClose }: { state: ModalState; onClose: () => void }) {
+  const [inputValue, setInputValue] = useState(state.inputDefault ?? '');
+
+  return (
+    <div className='fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4' onClick={onClose}>
+      <div
+        className='w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl border border-white/10 bg-[#101525] p-6 shadow-2xl'
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className='flex items-center justify-between mb-4'>
+          <h3 className='text-lg font-bold'>{state.title}</h3>
+          <button type='button' onClick={onClose} className='flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-white/40 hover:bg-white/10 hover:text-white transition-colors'>
+            <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.5' strokeLinecap='round' strokeLinejoin='round'>
+              <line x1='18' y1='6' x2='6' y2='18' /><line x1='6' y1='6' x2='18' y2='18' />
+            </svg>
+          </button>
+        </div>
+
+        {state.message && <p className='text-sm text-white/60 mb-4'>{state.message}</p>}
+
+        {state.mode === 'input' && (
+          <div className='mb-5'>
+            {state.inputLabel && <label className='block text-xs font-medium text-white/50 mb-1.5'>{state.inputLabel}</label>}
+            <input
+              className='field text-lg'
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') { state.onConfirm(inputValue); onClose(); } }}
+            />
+          </div>
+        )}
+
+        {state.mode === 'select' && (
+          <div className='mb-5 flex flex-col gap-1.5'>
+            {state.selectOptions?.map((opt) => (
+              <button
+                key={opt}
+                type='button'
+                className={`rounded-xl px-4 py-3 text-left text-sm font-medium transition-all ${inputValue === opt ? 'bg-white text-black' : 'bg-white/5 text-white/70 hover:bg-white/10'}`}
+                onClick={() => setInputValue(opt)}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className='flex gap-3 mt-2'>
+          <button
+            type='button'
+            className='flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3.5 text-sm font-semibold text-white/70 hover:bg-white/10 transition-colors touch-manipulation'
+            onClick={onClose}
+          >
+            Cancelar
+          </button>
+          <button
+            type='button'
+            className={`flex-1 rounded-xl px-4 py-3.5 text-sm font-bold transition-colors touch-manipulation ${
+              state.danger
+                ? 'bg-red-500 text-white hover:bg-red-400'
+                : 'bg-white text-black hover:bg-white/90'
+            }`}
+            onClick={() => { state.onConfirm(state.mode === 'confirm' ? undefined : inputValue); onClose(); }}
+          >
+            Confirmar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Inter, Roboto_Mono } from 'next/font/google';
+import { SiteFooter } from '@/components/site/site-footer';
 import './globals.css';
 
 const fontSans = Inter({
@@ -24,7 +25,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang='pt-BR'>
-      <body className={`${fontSans.variable} ${fontMono.variable} antialiased`}>{children}</body>
+      <body className={`${fontSans.variable} ${fontMono.variable} antialiased`}>
+        {children}
+        <SiteFooter />
+      </body>
     </html>
   );
 }

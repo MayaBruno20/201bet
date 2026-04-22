@@ -15,6 +15,7 @@ const sampleUser: SessionUser = {
   name: 'User',
   role: 'USER',
   status: 'ACTIVE',
+  emailVerified: true,
 };
 
 describe('auth (client session cache)', () => {
