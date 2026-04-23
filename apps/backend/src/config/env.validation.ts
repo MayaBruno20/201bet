@@ -25,6 +25,7 @@ export const envValidationSchema = Joi.object({
   VALUT_USERNAME: Joi.string().allow('').optional(),
   VALUT_PASSWORD: Joi.string().allow('').optional(),
   VALUT_WEBHOOK_SECRET: Joi.string().allow('').optional(),
+  QUOTAGUARDSTATIC_URL: Joi.string().uri({ scheme: ['http', 'https'] }).allow('').optional(),
 
   MARKET_SIMULATION_LEADER: Joi.string().valid('true', 'false').optional(),
 
@@ -87,6 +88,7 @@ export interface AppEnv {
   VALUT_USERNAME?: string;
   VALUT_PASSWORD?: string;
   VALUT_WEBHOOK_SECRET?: string;
+  QUOTAGUARDSTATIC_URL?: string;
 
   MARKET_SIMULATION_LEADER?: 'true' | 'false';
 

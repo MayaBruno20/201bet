@@ -3,6 +3,7 @@ import {
   Logger,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { ProxyAgent } from 'undici';
 
 const VALUT_BASE_URL = 'https://api.valut.app/openbanking';
 
@@ -11,6 +12,7 @@ export class ValutService {
   private readonly logger = new Logger(ValutService.name);
   private accessToken: string | null = null;
   private tokenExpiresAt: Date | null = null;
+  private proxyAgent: ProxyAgent | null = null;
 
   private get apiKey() {
     return process.env.VALUT_API_KEY ?? '';
@@ -23,6 +25,18 @@ export class ValutService {
   }
   private get password() {
     return process.env.VALUT_PASSWORD ?? '';
+  }
+  private get proxyUrl() {
+    return process.env.QUOTAGUARDSTATIC_URL?.trim() ?? '';
+  }
+
+  private getDispatcher() {
+    if (!this.proxyUrl) return undefined;
+    if (!this.proxyAgent) {
+      this.proxyAgent = new ProxyAgent(this.proxyUrl);
+      this.logger.log('Using QuotaGuard proxy for Valut outbound requests');
+    }
+    return this.proxyAgent;
   }
 
   private async authenticate(): Promise<string> {
@@ -48,7 +62,8 @@ export class ValutService {
         username: this.username,
         password: this.password,
       }),
-    });
+      dispatcher: this.getDispatcher(),
+    } as RequestInit & { dispatcher?: ProxyAgent });
 
     if (!res.ok) {
       const text = await res.text();
@@ -95,7 +110,8 @@ export class ValutService {
         'Content-Type': 'application/json',
       },
       body: body ? JSON.stringify(body) : undefined,
-    });
+      dispatcher: this.getDispatcher(),
+    } as RequestInit & { dispatcher?: ProxyAgent });
 
     if (!res.ok) {
       const text = await res.text();

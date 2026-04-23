@@ -24,6 +24,7 @@ locals {
       EMAIL_VERIFICATION_TTL_HOURS = tostring(var.email_verification_ttl_hours)
       PASSWORD_RESET_TTL_MINUTES   = tostring(var.password_reset_ttl_minutes)
       EMAIL_LOGO_URL           = var.email_logo_url
+      QUOTAGUARDSTATIC_URL     = var.quotaguardstatic_url
     },
     var.render_additional_env,
   )
@@ -121,6 +122,7 @@ module "gha" {
       EMAIL_VERIFICATION_TTL_HOURS_STAGING = tostring(var.email_verification_ttl_hours)
       PASSWORD_RESET_TTL_MINUTES_STAGING   = tostring(var.password_reset_ttl_minutes)
       EMAIL_LOGO_URL_STAGING           = var.email_logo_url
+      QUOTAGUARDSTATIC_URL_STAGING     = var.quotaguardstatic_url
       BACKEND_HTTP_ORIGIN_STAGING      = local.backend_http_origin
     },
     var.enable_render_web_service && var.render_api_key != "" && var.render_owner_id != "" ? {
