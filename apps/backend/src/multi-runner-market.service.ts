@@ -1,4 +1,11 @@
-import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { MarketStatus, MarketType, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from './database/prisma.service';
@@ -101,6 +108,16 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
   }
 
   async placeBet(input: { userId: string; marketId: string; oddId: string; amount: number }) {
+    const prof = await this.prisma.user.findUnique({
+      where: { id: input.userId },
+      select: { cpf: true, birthDate: true },
+    });
+    if (!prof?.cpf || !prof?.birthDate) {
+      throw new BadRequestException(
+        'Conclua CPF e data de nascimento (Completar cadastro) antes de apostar.',
+      );
+    }
+
     const state = this.states.get(input.marketId);
     if (!state) {
       throw new NotFoundException('Mercado não encontrado');

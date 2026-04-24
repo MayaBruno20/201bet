@@ -17,8 +17,11 @@ import type { AppEnv } from '../config/env.validation';
             config.get('REDIS_TLS', { infer: true }) === 'true'
               ? {}
               : undefined,
+          lazyConnect: true,
+          enableOfflineQueue: false,
           maxRetriesPerRequest: null,
         },
+        skipWaitingForReady: true,
         defaultJobOptions: {
           attempts: 5,
           backoff: {

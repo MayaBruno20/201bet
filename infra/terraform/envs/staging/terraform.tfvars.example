@@ -25,6 +25,7 @@ email_daily_limit = 295
 email_verification_ttl_hours = 24
 password_reset_ttl_minutes = 30
 email_logo_url    = ""
+quotaguardstatic_url = ""
 
 # Se enable_render_web_service = true, use backend_public_url = "" (URL vem do Render).
 backend_public_url = "https://<backend-staging>.onrender.com"

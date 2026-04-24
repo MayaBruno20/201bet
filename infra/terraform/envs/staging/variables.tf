@@ -80,6 +80,11 @@ variable "email_logo_url" {
   description = "URL pública opcional da logo usada nos e-mails."
   default     = ""
 }
+variable "quotaguardstatic_url" {
+  type        = string
+  description = "Proxy URL do QuotaGuard Static para saídas da Valut."
+  default     = ""
+}
 
 variable "backend_public_url" {
   type        = string

@@ -37,6 +37,11 @@ export class PaymentsService {
       select: { cpf: true },
     });
     if (!user) throw new NotFoundException('Usuário não encontrado');
+    if (!user.cpf) {
+      throw new BadRequestException(
+        'Conclua CPF e data de nascimento (Completar cadastro) antes de depositar.',
+      );
+    }
 
     const amountCents = Math.round(payload.amount * 100);
     const idempotencyKey = `dep-${userId}-${Date.now()}`;
@@ -216,6 +221,11 @@ export class PaymentsService {
       select: { cpf: true },
     });
     if (!user) throw new NotFoundException('Usuário não encontrado');
+    if (!user.cpf) {
+      throw new BadRequestException(
+        'Conclua CPF e data de nascimento (Completar cadastro) antes de sacar.',
+      );
+    }
 
     const amount = new Prisma.Decimal(payload.amount);
     const amountCents = Math.round(payload.amount * 100);
