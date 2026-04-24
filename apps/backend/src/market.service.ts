@@ -221,6 +221,16 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     side: Side;
     amount: number;
   }) {
+    const prof = await this.prisma.user.findUnique({
+      where: { id: input.userId },
+      select: { cpf: true, birthDate: true },
+    });
+    if (!prof?.cpf || !prof?.birthDate) {
+      throw new BadRequestException(
+        'Conclua CPF e data de nascimento (Completar cadastro) antes de apostar.',
+      );
+    }
+
     const amount = Number(input.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('Informe um valor de aposta válido');

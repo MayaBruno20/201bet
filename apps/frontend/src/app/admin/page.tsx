@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { BirthdateInput } from '@/components/forms/birthdate-input';
 import { MainNav } from '@/components/site/main-nav';
 import { apiFetch } from '@/lib/api-request';
 const fetchWithCredentials = apiFetch;
@@ -550,7 +551,13 @@ export default function AdminPage() {
               <input className='field' placeholder='E-mail' type='email' value={newUser.email} onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))} required />
               <input className='field' placeholder='Senha forte' type='password' value={newUser.password} onChange={(e) => setNewUser((p) => ({ ...p, password: e.target.value }))} required />
               <input className='field' placeholder='CPF' inputMode='numeric' value={maskCPF(newUser.cpf)} onChange={(e) => setNewUser((p) => ({ ...p, cpf: unmaskCPF(e.target.value).slice(0, 11) }))} required />
-              <input className='field' type='date' value={newUser.birthDate} onChange={(e) => setNewUser((p) => ({ ...p, birthDate: e.target.value }))} required />
+              <div className='md:col-span-2'>
+                <BirthdateInput
+                  value={newUser.birthDate}
+                  onChange={(iso) => setNewUser((p) => ({ ...p, birthDate: iso }))}
+                  id='admin-new-user-birth'
+                />
+              </div>
               <select className='field' value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
                 <option value='USER'>USER</option>
                 <option value='OPERATOR'>OPERATOR</option>

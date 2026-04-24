@@ -136,8 +136,8 @@ model User {
   name          String
   firstName     String?
   lastName      String?
-  cpf           String     @unique
-  birthDate     DateTime
+  cpf           String?    @unique
+  birthDate     DateTime?
   phone         String?
   country       String?
   state         String?

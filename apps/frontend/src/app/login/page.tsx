@@ -4,9 +4,11 @@ import Link from 'next/link';
 import Script from 'next/script';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { BirthdateInput } from '@/components/forms/birthdate-input';
+import { isAdult } from '@/lib/birthdate';
 import { MainNav } from '@/components/site/main-nav';
 import { getPostAuthPath, setStoredAccessToken, setStoredUser, type SessionUser } from '@/lib/auth';
-import { apiFetch } from '@/lib/api-request';
+import { apiFetch, parseApiErrorMessage } from '@/lib/api-request';
 import { getPublicApiUrl } from '@/lib/env-public';
 import { maskCPF, unmaskCPF } from '@/lib/masks';
 
@@ -45,6 +47,17 @@ export default function LoginPage() {
   const [name, setName] = useState('');
   const [googleReady, setGoogleReady] = useState(false);
 
+  function clearSensitiveFields() {
+    setPassword('');
+    setConfirmPassword('');
+  }
+
+  function switchMode(nextMode: AuthMode) {
+    setMode(nextMode);
+    setError(null);
+    clearSensitiveFields();
+  }
+
   async function authenticate(endpoint: 'login' | 'register', payload: Record<string, unknown>) {
     const response = await apiFetch(`${apiUrl}/auth/${endpoint}`, {
       method: 'POST',
@@ -53,8 +66,8 @@ export default function LoginPage() {
     });
 
     if (!response.ok) {
-      const message = await response.text();
-      throw new Error(message || 'Falha na autenticação.');
+      const text = await response.text();
+      throw new Error(parseApiErrorMessage(text, 'Falha na autenticação.'));
     }
 
     const data = (await response.json()) as { user: SessionUser; accessToken?: string };
@@ -103,6 +116,9 @@ export default function LoginPage() {
         });
       }
     } catch (err) {
+      if (mode === 'register') {
+        clearSensitiveFields();
+      }
       setError(err instanceof Error ? err.message : 'Erro inesperado na autenticação.');
     } finally {
       setLoading(false);
@@ -133,8 +149,8 @@ export default function LoginPage() {
           });
 
           if (!response.ok) {
-            const message = await response.text();
-            throw new Error(message || 'Falha no login Google');
+            const text = await response.text();
+            throw new Error(parseApiErrorMessage(text, 'Falha no login Google'));
           }
 
           const data = (await response.json()) as { user: SessionUser; accessToken?: string };
@@ -157,11 +173,13 @@ export default function LoginPage() {
       shape: 'pill',
       width: '360',
     });
-  }, [googleReady, router]);
+  }, [googleReady, router, mode]);
 
   return (
     <main className='min-h-screen bg-[#090b11] text-white'>
-      <Script src='https://accounts.google.com/gsi/client' strategy='afterInteractive' onLoad={() => setGoogleReady(true)} />
+      {googleClientId ? (
+        <Script src='https://accounts.google.com/gsi/client' strategy='afterInteractive' onLoad={() => setGoogleReady(true)} />
+      ) : null}
 
       <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
         <MainNav />
@@ -172,21 +190,21 @@ export default function LoginPage() {
           <div className='mt-5 flex gap-2'>
             <button
               className={`flex-1 rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-300 ${mode === 'login' ? 'bg-white text-black shadow-lg' : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'}`}
-              onClick={() => setMode('login')}
+              onClick={() => switchMode('login')}
               type='button'
             >
               Login
             </button>
             <button
               className={`flex-1 rounded-full px-4 py-2.5 text-sm font-medium transition-all duration-300 ${mode === 'register' ? 'bg-white text-black shadow-lg' : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white'}`}
-              onClick={() => setMode('register')}
+              onClick={() => switchMode('register')}
               type='button'
             >
               Cadastro
             </button>
           </div>
 
-          <form className='mt-5 space-y-3' onSubmit={handleSubmit}>
+          <form className='mt-5 space-y-4' onSubmit={handleSubmit}>
             {mode === 'register' ? (
               <input
                 className='w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm text-white placeholder:text-white/30 outline-none transition-all focus:border-white/20 focus:ring-4 focus:ring-white/5'
@@ -236,13 +254,7 @@ export default function LoginPage() {
                   onChange={(e) => setCpf(unmaskCPF(e.target.value).slice(0, 11))}
                   required
                 />
-                <input
-                  className='w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 text-sm text-white placeholder:text-white/30 outline-none transition-all focus:border-white/20 focus:ring-4 focus:ring-white/5'
-                  type='date'
-                  value={birthDate}
-                  onChange={(e) => setBirthDate(e.target.value)}
-                  required
-                />
+                <BirthdateInput value={birthDate} onChange={setBirthDate} id='register-birth' />
               </>
             ) : null}
             <button disabled={loading} className='w-full rounded-2xl bg-white px-4 py-3.5 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] hover:scale-[1.01] disabled:opacity-50 disabled:pointer-events-none'>
@@ -257,15 +269,21 @@ export default function LoginPage() {
             ) : null}
           </form>
 
-          <div className='mt-4 flex items-center gap-3'>
-            <span className='h-px flex-1 bg-white/15' />
-            <span className='text-xs text-white/60'>ou</span>
-            <span className='h-px flex-1 bg-white/15' />
-          </div>
+          {mode === 'register' && googleClientId ? (
+            <p className='mt-4 text-center text-xs text-white/50'>
+              Ou crie a conta com Google; depois informe CPF e data de nascimento.
+            </p>
+          ) : null}
 
-          <div id='google-signin-button' className='mt-4 flex justify-center' />
-          {!googleClientId ? (
-            <p className='mt-2 text-center text-xs text-amber-200'>Configure `NEXT_PUBLIC_GOOGLE_CLIENT_ID` para habilitar Google Login.</p>
+          {googleClientId ? (
+            <>
+              <div className='mt-4 flex items-center gap-3'>
+                <span className='h-px flex-1 bg-white/15' />
+                <span className='text-xs text-white/60'>ou</span>
+                <span className='h-px flex-1 bg-white/15' />
+              </div>
+              <div id='google-signin-button' className='mt-4 flex justify-center' />
+            </>
           ) : null}
 
           {error ? <p className='mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-200'>{error}</p> : null}
@@ -280,21 +298,6 @@ export default function LoginPage() {
       </div>
     </main>
   );
-}
-
-function isAdult(isoDate: string) {
-  if (!isoDate) return false;
-
-  const dob = new Date(`${isoDate}T00:00:00`);
-  if (Number.isNaN(dob.getTime())) return false;
-
-  const now = new Date();
-  let age = now.getFullYear() - dob.getFullYear();
-  const monthDiff = now.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) {
-    age--;
-  }
-  return age >= 18;
 }
 
 /** Espelha regras de `RegisterDto` / `AuthService.register` para erro amigável antes do POST. */

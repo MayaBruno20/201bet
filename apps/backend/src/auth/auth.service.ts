@@ -12,6 +12,8 @@ import type { AppEnv } from '../config/env.validation';
 import { PrismaService } from '../database/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { TokensService } from '../tokens/tokens.service';
+import { randomBytes } from 'node:crypto';
+import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
@@ -49,15 +51,12 @@ export class AuthService {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
-    return this.issueToken(user.id, user.email, user.role, {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      status: user.status,
-      emailVerified: user.emailVerified,
-      walletBalance: user.wallet?.balance ?? 0,
-    });
+    return this.issueToken(
+      user.id,
+      user.email,
+      user.role,
+      this.buildAuthUserPayload(user),
+    );
   }
 
   async register(payload: RegisterDto) {
@@ -106,15 +105,12 @@ export class AuthService {
 
     await this.dispatchVerificationEmail(user.id, user.email, user.name);
 
-    return this.issueToken(user.id, user.email, user.role, {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      status: user.status,
-      emailVerified: user.emailVerified,
-      walletBalance: user.wallet?.balance ?? 0,
-    });
+    return this.issueToken(
+      user.id,
+      user.email,
+      user.role,
+      this.buildAuthUserPayload(user),
+    );
   }
 
   async verifyEmail(rawToken: string) {
@@ -332,20 +328,64 @@ export class AuthService {
         return updated;
       }
 
-      throw new BadRequestException(
-        'Conta Google ainda não vinculada. Faça cadastro padrão com CPF e depois entre com Google.',
-      );
+      const passwordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 12);
+      return tx.user.create({
+        data: {
+          email,
+          name: displayName,
+          password: passwordHash,
+          cpf: null,
+          birthDate: null,
+          googleSub: ticketPayload.sub,
+          status: 'ACTIVE',
+          emailVerified: true,
+          wallet: { create: { balance: 0, currency: 'BRL' } },
+        },
+        include: { wallet: true },
+      });
     });
 
-    return this.issueToken(user.id, user.email, user.role, {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      status: user.status,
-      emailVerified: user.emailVerified,
-      walletBalance: user.wallet?.balance ?? 0,
+    return this.issueToken(
+      user.id,
+      user.email,
+      user.role,
+      this.buildAuthUserPayload(user),
+    );
+  }
+
+  /**
+   * Após Google: grava CPF e data (maior de 18) antes de apostar/PIX.
+   */
+  async completeProfile(userId: string, payload: CompleteProfileDto) {
+    const current = await this.prisma.user.findUnique({
+      where: { id: userId },
     });
+    if (!current) {
+      throw new UnauthorizedException('Sessão inválida');
+    }
+    if (current.cpf) {
+      throw new BadRequestException(
+        'O cadastro já foi concluído. Use Minha conta para alterar dados.',
+      );
+    }
+    const cpf = this.normalizeCpf(payload.cpf);
+    const other = await this.prisma.user.findFirst({
+      where: { cpf, NOT: { id: userId } },
+    });
+    if (other) {
+      throw new BadRequestException('CPF já cadastrado');
+    }
+    if (!this.isAdult(payload.birthDate)) {
+      throw new BadRequestException(
+        'Cadastro permitido apenas para maiores de 18 anos',
+      );
+    }
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { cpf, birthDate: new Date(payload.birthDate) },
+      include: { wallet: true },
+    });
+    return { user: this.buildAuthUserPayload(updated) };
   }
 
   async me(userId: string) {
@@ -385,11 +425,23 @@ export class AuthService {
       throw new UnauthorizedException('Sessão inválida');
     }
 
-    return user;
+    return {
+      ...user,
+      profileComplete: !!user.cpf && !!user.birthDate,
+    };
   }
 
   async updateMe(userId: string, payload: UpdateProfileDto) {
     if (payload.cpf) {
+      const row = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { cpf: true },
+      });
+      if (row && !row.cpf) {
+        throw new BadRequestException(
+          'Use POST /api/auth/complete-profile para informar CPF e data de nascimento (primeiro cadastro).',
+        );
+      }
       const cpf = this.normalizeCpf(payload.cpf);
       const existing = await this.prisma.user.findUnique({ where: { cpf } });
       if (existing && existing.id !== userId) {
@@ -442,7 +494,10 @@ export class AuthService {
       },
     });
 
-    return updated;
+    return {
+      ...updated,
+      profileComplete: !!updated.cpf && !!updated.birthDate,
+    };
   }
 
   async listMyBets(userId: string) {
@@ -568,6 +623,32 @@ export class AuthService {
         status: item.status,
         createdAt: item.createdAt,
       })),
+    };
+  }
+
+  private buildAuthUserPayload(
+    user: {
+      id: string;
+      email: string;
+      name: string;
+      role: string;
+      status: string;
+      emailVerified: boolean;
+      cpf: string | null;
+      birthDate: Date | null;
+      wallet?: { balance: unknown } | null;
+    },
+  ) {
+    const b = user.wallet?.balance;
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      status: user.status,
+      emailVerified: user.emailVerified,
+      profileComplete: !!user.cpf && !!user.birthDate,
+      walletBalance: b !== undefined && b !== null ? Number(b) : 0,
     };
   }
 

@@ -9,6 +9,7 @@ import { GoogleLoginDto } from './dto/google-login.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { CompleteProfileDto } from './dto/complete-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -85,6 +86,17 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   verifyResetPasswordToken(@Query('token') token?: string) {
     return this.authService.verifyResetPasswordToken(token ?? '');
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('complete-profile')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  completeProfile(
+    @CurrentUser() user: { userId: string },
+    @Body() payload: CompleteProfileDto,
+  ) {
+    return this.authService.completeProfile(user.userId, payload);
   }
 
   @UseGuards(JwtAuthGuard)

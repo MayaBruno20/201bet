@@ -13,6 +13,8 @@ export type SessionUser = {
   role: 'USER' | 'ADMIN' | 'OPERATOR' | 'AUDITOR';
   status: string;
   emailVerified: boolean;
+  /** Só true após CPF + data (cadastro clássico ou “Completar cadastro” pós-Google). */
+  profileComplete?: boolean;
   avatarUrl?: string | null;
 };
 
@@ -67,7 +69,12 @@ export function getAuthRole(): SessionUser['role'] | null {
 }
 
 /** Só admin e operador usam o painel /admin; USER, AUDITOR e perfis desconhecidos vão para a área do apostador. */
-export function getPostAuthPath(user: { role?: SessionUser['role'] | null }): '/admin' | '/carteira' {
+export function getPostAuthPath(
+  user: { role?: SessionUser['role'] | null; profileComplete?: boolean | null },
+): '/admin' | '/carteira' | '/completar-cadastro' {
+  if (user.profileComplete === false) {
+    return '/completar-cadastro';
+  }
   const r = user.role;
   if (r === 'ADMIN' || r === 'OPERATOR') return '/admin';
   return '/carteira';
