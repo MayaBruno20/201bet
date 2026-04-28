@@ -172,7 +172,8 @@ export default function ApostasPage() {
       const [boardRes, snapshotRes] = await Promise.all([fetch(`${apiUrl}/market/board`), fetch(`${apiUrl}/market/snapshot`)]);
       if (!boardRes.ok || !snapshotRes.ok) throw new Error('Não foi possível carregar os mercados');
       const boardData = (await boardRes.json()) as BettingBoard;
-      const firstSnapshot = (await snapshotRes.json()) as MarketSnapshot | null;
+      const snapText = await snapshotRes.text();
+      const firstSnapshot = snapText.trim() ? (JSON.parse(snapText) as MarketSnapshot | null) : null;
       setBoard(boardData);
       if (firstSnapshot) {
         setSnapshots({ [firstSnapshot.duelId]: firstSnapshot });

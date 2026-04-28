@@ -163,6 +163,14 @@ enum CategoryMatchupStatus {
   INVALIDATED
 }
 
+enum ArmageddonStatus {
+  DRAFT
+  ROSTER_OPEN
+  IN_PROGRESS
+  FINISHED
+  CANCELED
+}
+
 model User {
   id            String     @id @default(uuid())
   email         String     @unique
@@ -277,12 +285,15 @@ model Driver {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  cars                Car[]
-  rosters             ListRoster[]
-  leftMatchups        ListMatchup[]        @relation("matchupLeftDriver")
-  rightMatchups       ListMatchup[]        @relation("matchupRightDriver")
-  sharkTankEntries    SharkTankEntry[]     @relation("sharkTankDriver")
-  categoryCompetitors CategoryCompetitor[]
+  cars                   Car[]
+  rosters                ListRoster[]
+  leftMatchups           ListMatchup[]        @relation("matchupLeftDriver")
+  rightMatchups          ListMatchup[]        @relation("matchupRightDriver")
+  sharkTankEntries       SharkTankEntry[]     @relation("sharkTankDriver")
+  categoryCompetitors    CategoryCompetitor[]
+  armageddonRoster       ArmageddonRoster[]
+  armageddonLeftMatches  ArmageddonMatchup[]  @relation("armageddonMatchupLeft")
+  armageddonRightMatches ArmageddonMatchup[]  @relation("armageddonMatchupRight")
 
   @@index([active])
 }
@@ -683,8 +694,8 @@ model CategoryMatchup {
   isSuperFinal Boolean @default(false)
 
   // Link com sistema de apostas (criado quando admin abre o mercado)
-  duelId     String?  @unique
-  marketOpen Boolean  @default(false)
+  duelId     String? @unique
+  marketOpen Boolean @default(false)
 
   leftCompetitorId  String?
   rightCompetitorId String?
@@ -713,4 +724,83 @@ model CategoryMatchup {
 
   @@unique([bracketId, roundNumber, position])
   @@index([bracketId, roundNumber])
+}
+
+// ─── Armageddon ─────────────────────────────────────
+// Evento nacional standalone que importa pilotos de multiplas listas
+// como snapshot. Roster eh independente do ListRoster de origem.
+// Item 70 do regulamento: listas mais antigas com teto de 50% do TOP.
+
+model ArmageddonEvent {
+  id          String           @id @default(uuid())
+  name        String
+  description String?
+  bannerUrl   String?
+  featured    Boolean          @default(false)
+  format      ListFormat       @default(TOP_20)
+  scheduledAt DateTime
+  endsAt      DateTime?
+  status      ArmageddonStatus @default(DRAFT)
+  // Link com Event (criado uma vez, reusado em todos os matchups que abrirem mercado)
+  eventId     String?
+  notes       String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  roster   ArmageddonRoster[]
+  matchups ArmageddonMatchup[]
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([featured])
+}
+
+model ArmageddonRoster {
+  id           String   @id @default(uuid())
+  eventId      String
+  driverId     String
+  position     Int
+  isKing       Boolean  @default(false)
+  // Snapshot de origem - apenas referencia historica, sem alterar a lista de origem
+  fromListId   String?
+  fromAreaCode Int?
+  fromPosition Int?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  event  ArmageddonEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  driver Driver          @relation(fields: [driverId], references: [id], onDelete: Restrict)
+
+  @@unique([eventId, position])
+  @@unique([eventId, driverId])
+  @@index([eventId])
+  @@index([driverId])
+}
+
+model ArmageddonMatchup {
+  id               String        @id @default(uuid())
+  eventId          String
+  roundNumber      Int
+  roundType        ListRoundType
+  order            Int
+  leftPosition     Int?
+  rightPosition    Int?
+  leftDriverId     String?
+  rightDriverId    String?
+  winnerSide       MatchupSide?
+  isManualOverride Boolean       @default(false)
+  marketOpen       Boolean       @default(false)
+  duelId           String?       @unique
+  settledAt        DateTime?
+  notes            String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  event       ArmageddonEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  leftDriver  Driver?         @relation("armageddonMatchupLeft", fields: [leftDriverId], references: [id], onDelete: SetNull)
+  rightDriver Driver?         @relation("armageddonMatchupRight", fields: [rightDriverId], references: [id], onDelete: SetNull)
+
+  @@index([eventId, roundNumber, order])
+  @@index([marketOpen])
 }

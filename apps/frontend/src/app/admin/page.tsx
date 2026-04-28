@@ -408,6 +408,13 @@ export default function AdminPage() {
               <span>🏆 Copa Categorias</span>
               <span className='text-emerald-300/70 hidden sm:inline'>— eventos por tempo, inscritos e chaves</span>
             </a>
+            <a
+              href='/admin/armageddon'
+              className='inline-flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs font-bold text-rose-300 transition hover:bg-rose-500/20'
+            >
+              <span>💀 Armageddon</span>
+              <span className='text-rose-300/70 hidden sm:inline'>— evento nacional, importa pilotos das listas</span>
+            </a>
           </div>
         </section>
 

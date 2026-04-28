@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { CacheModule } from './cache/cache.module';
 import { AppConfigModule } from './config/config.module';
 import { PrismaModule } from './database/prisma.module';
+import { ArmageddonModule } from './armageddon/armageddon.module';
 import { BrazilListsModule } from './brazil-lists/brazil-lists.module';
 import { CategoryEventsModule } from './category-events/category-events.module';
 import { EventsModule } from './events/events.module';
@@ -31,6 +32,7 @@ import { SettlementService } from './settlement.service';
     EventsModule,
     BrazilListsModule,
     CategoryEventsModule,
+    ArmageddonModule,
     AdminModule,
     PaymentsModule,
     ThrottlerModule.forRoot({
