@@ -391,6 +391,9 @@ export class AdminService {
         data: {
           sport: payload.sport,
           name: payload.name,
+          description: payload.description,
+          bannerUrl: payload.bannerUrl,
+          featured: payload.featured ?? false,
           startAt: new Date(payload.startAt),
           status: payload.status,
           markets: {
@@ -438,6 +441,9 @@ export class AdminService {
         data: {
           sport: payload.sport,
           name: payload.name,
+          description: payload.description,
+          bannerUrl: payload.bannerUrl,
+          featured: payload.featured,
           startAt: payload.startAt ? new Date(payload.startAt) : undefined,
           status: payload.status,
         },

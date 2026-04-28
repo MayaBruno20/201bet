@@ -287,7 +287,7 @@ export default function CarteiraPage() {
   if (loading) {
     return (
       <main className='min-h-screen bg-[#090b11] text-white'>
-        <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+        <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
           <MainNav />
           <p className='mt-10 text-center text-white/50'>Carregando…</p>
         </div>
@@ -298,9 +298,9 @@ export default function CarteiraPage() {
   if (!user) {
     return (
       <main className='min-h-screen bg-[#090b11] text-white'>
-        <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+        <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
           <MainNav />
-          <section className='mt-8 rounded-3xl border border-white/10 bg-amber-500/5 p-6 backdrop-blur-md'>
+          <section className='mt-8 rounded-3xl border border-white/10 bg-amber-500/5 p-4 sm:p-6 backdrop-blur-md'>
             <h1 className='text-2xl font-semibold'>Login necessário</h1>
             <p className='mt-2 text-white/50'>Entre com sua conta para acessar o painel do usuário.</p>
             <a href='/login' className='mt-4 inline-flex rounded-2xl bg-white px-5 py-3 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]'>Ir para login</a>
@@ -312,7 +312,7 @@ export default function CarteiraPage() {
 
   return (
     <main className='min-h-screen bg-[#090b11] pb-10 text-white'>
-      <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+      <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
         <MainNav />
 
         <VerificationBanner hidden={user?.emailVerified === true} />
@@ -457,7 +457,7 @@ export default function CarteiraPage() {
         ) : null}
 
         {activeTab === 'saldo' ? (
-          <section className='mt-6 rounded-3xl border border-white/10 bg-[#101525] p-6 backdrop-blur-md'>
+          <section className='mt-6 rounded-3xl border border-white/10 bg-[#101525] p-4 sm:p-6 backdrop-blur-md'>
             <h2 className='text-2xl font-semibold tracking-tight'>Meu saldo</h2>
             <div className='mt-6 grid gap-4 md:grid-cols-2'>
               <div className='rounded-2xl border border-white/10 bg-white/[0.04] p-5'>
@@ -478,7 +478,7 @@ export default function CarteiraPage() {
         ) : null}
 
         {activeTab === 'historico' ? (
-          <section className='mt-6 rounded-3xl border border-white/10 bg-[#101525] p-6 backdrop-blur-md'>
+          <section className='mt-6 rounded-3xl border border-white/10 bg-[#101525] p-4 sm:p-6 backdrop-blur-md'>
             <h2 className='text-2xl font-semibold tracking-tight'>Histórico de apostas</h2>
             {!bets.length ? (
               <div className='mt-10 rounded-2xl border border-dashed border-white/10 p-8 text-center'>
@@ -531,13 +531,13 @@ export default function CarteiraPage() {
 
             {/* Ledger & Payments */}
             <div className='rounded-3xl border border-white/10 bg-[#101525] overflow-hidden'>
-              <div className='p-6'>
+              <div className='p-4 sm:p-6'>
                 <h2 className='text-xl font-semibold tracking-tight'>Extrato</h2>
               </div>
               
               <div className='grid gap-0 md:grid-cols-2'>
                 {/* Ledger */}
-                <div className='border-t border-white/5 md:border-r md:border-t-0 p-6'>
+                <div className='border-t border-white/5 md:border-r md:border-t-0 p-4 sm:p-6'>
                   <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-4'>Lançamentos</p>
                   <div className='max-h-80 space-y-2 overflow-auto pr-1'>
                     {transactions?.ledger.length ? (
@@ -559,7 +559,7 @@ export default function CarteiraPage() {
                 </div>
 
                 {/* Payments */}
-                <div className='border-t border-white/5 p-6'>
+                <div className='border-t border-white/5 p-4 sm:p-6'>
                   <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-4'>Pagamentos</p>
                   <div className='max-h-80 space-y-2 overflow-auto pr-1'>
                     {transactions?.payments.length ? (

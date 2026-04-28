@@ -71,22 +71,9 @@ export default function LoginPage() {
     }
 
     const data = (await response.json()) as { user: SessionUser; accessToken?: string };
-    console.log('[login] auth response', {
-      endpoint,
-      hasAccessToken: !!data.accessToken,
-      userRole: data.user?.role,
-      userEmail: data.user?.email,
-    });
     setStoredUser(data.user);
     if (data.accessToken) {
       setStoredAccessToken(data.accessToken);
-      console.log('[login] stored access token', {
-        tokenLength: data.accessToken.length,
-        storageHasToken:
-          typeof window !== 'undefined' ? !!window.sessionStorage.getItem('201bet_access_token') : false,
-      });
-    } else {
-      console.log('[login] no access token returned in auth response');
     }
     router.push(getPostAuthPath(data.user));
   }
@@ -181,7 +168,7 @@ export default function LoginPage() {
         <Script src='https://accounts.google.com/gsi/client' strategy='afterInteractive' onLoad={() => setGoogleReady(true)} />
       ) : null}
 
-      <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+      <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
         <MainNav />
         <section className='mx-auto mt-12 max-w-md rounded-3xl border border-white/10 bg-[#101525] p-8 backdrop-blur-md'>
           <h1 className='text-2xl font-semibold tracking-tight'>Entrar na plataforma</h1>

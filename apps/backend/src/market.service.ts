@@ -54,6 +54,13 @@ type EngineState = {
     lockedSide: Side | 'BOTH' | 'NONE';
     reason?: string;
   }>;
+  settlement?: {
+    winnerSide: Side;
+    winnerLabel: string;
+    finalPool: number;
+    finalOdd: number;
+    settledAt: string;
+  };
 };
 
 export type MarketSnapshot = {
@@ -99,6 +106,13 @@ export type MarketSnapshot = {
     lockedSide: Side | 'BOTH' | 'NONE';
     reason?: string;
   }>;
+  settlement?: {
+    winnerSide: Side;
+    winnerLabel: string;
+    finalPool: number;
+    finalOdd: number;
+    settledAt: string;
+  };
 };
 
 export type BettingBoard = {
@@ -204,7 +218,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           currentDuelId: current?.id ?? null,
           stages: event.duels.map((duel, index) => ({
             duelId: duel.id,
-            label: `Etapa ${index + 1}`,
+            label: `Rodada ${index + 1}`,
             startsAt: duel.startsAt.toISOString(),
             bookingCloseAt: duel.bookingCloseAt.toISOString(),
             status: duel.status,
@@ -236,8 +250,9 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Informe um valor de aposta válido');
     }
 
-    if (amount < 5) {
-      throw new BadRequestException('A aposta mínima é de R$ 5,00');
+    const minBet = this.getMinBetAmount();
+    if (amount < minBet) {
+      throw new BadRequestException(`A aposta mínima é de R$ ${minBet.toFixed(2).replace('.', ',')}`);
     }
 
     const amountDecimal = new Prisma.Decimal(amount.toFixed(4));
@@ -455,7 +470,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       eventDuels
         .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
         .forEach((duel, index) =>
-          stageByDuelId.set(duel.id, `Etapa ${index + 1}`),
+          stageByDuelId.set(duel.id, `Rodada ${index + 1}`),
         );
     }
 
@@ -475,13 +490,39 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         });
       }
 
+      // Load settlement details if either Duel is FINISHED OR there's any SETTLED market for this duel
+      let settlement: EngineState['settlement'];
+      const settledMarket = await this.prisma.market.findFirst({
+        where: { duelId: duel.id, status: MarketStatus.SETTLED },
+        include: { odds: { orderBy: { createdAt: 'asc' } } },
+      });
+      if (settledMarket || duel.status === DuelStatus.FINISHED) {
+        if (settledMarket && settledMarket.winnerOddId && settledMarket.settledAt) {
+          const winnerIndex = settledMarket.odds.findIndex((o) => o.id === settledMarket.winnerOddId);
+          const winnerSide: Side = winnerIndex === 0 ? 'LEFT' : 'RIGHT';
+          const finalPool = Number(pool.leftPool) + Number(pool.rightPool);
+          const winnerPool = winnerSide === 'LEFT' ? Number(pool.leftPool) : Number(pool.rightPool);
+          const margin = this.getMarginPercent() / 100;
+          const finalOdd = winnerPool > 0 ? (finalPool * (1 - margin)) / winnerPool : 0;
+          settlement = {
+            winnerSide,
+            winnerLabel: winnerSide === 'LEFT'
+              ? `${duel.leftCar.name} (${duel.leftCar.driver.name})`
+              : `${duel.rightCar.name} (${duel.rightCar.driver.name})`,
+            finalPool,
+            finalOdd: Number(finalOdd.toFixed(2)),
+            settledAt: settledMarket.settledAt.toISOString(),
+          };
+        }
+      }
+
       const state: EngineState = {
         duelId: duel.id,
         eventId: duel.eventId,
         eventName: duel.event.name,
         eventStartAt: duel.event.startAt,
         marketNames: duel.event.markets.map((m) => m.name),
-        stageLabel: stageByDuelId.get(duel.id) ?? 'Etapa 1',
+        stageLabel: stageByDuelId.get(duel.id) ?? 'Rodada 1',
         status: duel.status,
         bookingCloseAt: duel.bookingCloseAt,
         left: {
@@ -503,6 +544,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           locked: false,
         },
         history: existing?.history ?? [],
+        settlement,
       };
 
       this.recalculateOdds(state);
@@ -739,6 +781,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         },
       },
       history: state.history.slice(-20),
+      settlement: state.settlement,
     };
   }
 
@@ -857,8 +900,13 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
   }
 
   private getMarginPercent() {
-    const env = Number(process.env.MARKET_MARGIN_PERCENT ?? '6');
-    return Number.isFinite(env) ? this.clamp(env, 0, 20) : 6;
+    const env = Number(process.env.MARKET_MARGIN_PERCENT ?? '20');
+    return Number.isFinite(env) ? this.clamp(env, 0, 50) : 20;
+  }
+
+  private getMinBetAmount() {
+    const env = Number(process.env.MIN_BET_AMOUNT ?? '10');
+    return Number.isFinite(env) ? Math.max(1, env) : 10;
   }
 
   private getLockThresholdPercent() {

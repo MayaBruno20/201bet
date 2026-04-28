@@ -7,6 +7,16 @@ import { ProxyAgent } from 'undici';
 
 const VALUT_BASE_URL = 'https://api.valut.app/openbanking';
 
+/** Erro de rede/timeout - estado UNKNOWN, nao deve refund automatico */
+export class ValutNetworkError extends Error {
+  constructor(message: string) { super(message); this.name = 'ValutNetworkError'; }
+}
+
+/** Erro 4xx do gateway - pagamento rejeitado de forma definitiva, pode refund */
+export class ValutRejectedError extends Error {
+  constructor(message: string) { super(message); this.name = 'ValutRejectedError'; }
+}
+
 @Injectable()
 export class ValutService {
   private readonly logger = new Logger(ValutService.name);
@@ -40,12 +50,8 @@ export class ValutService {
   }
 
   private async authenticate(): Promise<string> {
-    if (
-      this.accessToken &&
-      this.tokenExpiresAt &&
-      new Date() < this.tokenExpiresAt
-    ) {
-      return this.accessToken;
+    if (this.isTokenValid()) {
+      return this.accessToken!;
     }
 
     const basicAuth = Buffer.from(`${this.apiKey}:${this.apiSecret}`).toString(
@@ -75,18 +81,17 @@ export class ValutService {
 
     const data = await res.json();
     this.accessToken = data.access_token;
-    this.tokenExpiresAt = new Date(data.expires_in);
-
-    // Refresh 5 minutes before expiry
-    const expiresMs = this.tokenExpiresAt.getTime() - Date.now() - 5 * 60_000;
-    if (expiresMs > 0) {
-      setTimeout(() => {
-        this.accessToken = null;
-        this.tokenExpiresAt = null;
-      }, expiresMs);
-    }
+    // expires_in vem em SEGUNDOS, precisamos converter para timestamp absoluto
+    const expiresInSec = Number(data.expires_in) || 3600;
+    this.tokenExpiresAt = new Date(Date.now() + expiresInSec * 1000);
 
     return this.accessToken!;
+  }
+
+  private isTokenValid(): boolean {
+    if (!this.accessToken || !this.tokenExpiresAt) return false;
+    // Considera invalido se vai expirar em menos de 60s
+    return this.tokenExpiresAt.getTime() - Date.now() > 60_000;
   }
 
   private async request<T>(
@@ -103,24 +108,33 @@ export class ValutService {
       }
     }
 
-    const res = await fetch(url.toString(), {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: body ? JSON.stringify(body) : undefined,
-      dispatcher: this.getDispatcher(),
-    } as RequestInit & { dispatcher?: ProxyAgent });
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        dispatcher: this.getDispatcher(),
+      } as RequestInit & { dispatcher?: ProxyAgent });
+    } catch (err) {
+      // Network/timeout/connection errors - estado UNKNOWN, NAO refund
+      this.logger.error(`Valut ${method} ${path} network error: ${err instanceof Error ? err.message : err}`);
+      throw new ValutNetworkError(`Erro de rede no gateway de pagamento: ${err instanceof Error ? err.message : 'desconhecido'}`);
+    }
 
     if (!res.ok) {
       const text = await res.text();
       this.logger.error(
         `Valut ${method} ${path} failed: ${res.status} ${text}`,
       );
-      throw new InternalServerErrorException(
-        `Falha no gateway de pagamento: ${res.status}`,
-      );
+      // 4xx = rejeicao definitiva; 5xx = pode ter processado, estado incerto
+      if (res.status >= 400 && res.status < 500) {
+        throw new ValutRejectedError(`Pagamento rejeitado pelo gateway: ${res.status} ${text.slice(0, 200)}`);
+      }
+      throw new ValutNetworkError(`Falha temporaria no gateway: ${res.status} ${text.slice(0, 200)}`);
     }
 
     return res.json() as Promise<T>;

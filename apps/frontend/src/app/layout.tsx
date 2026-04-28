@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, Roboto_Mono } from 'next/font/google';
 import { SiteFooter } from '@/components/site/site-footer';
+import { ConfirmProvider } from '@/components/confirm-dialog';
 import './globals.css';
 
 const fontSans = Inter({
@@ -26,8 +27,10 @@ export default function RootLayout({
   return (
     <html lang='pt-BR'>
       <body className={`${fontSans.variable} ${fontMono.variable} antialiased`}>
-        {children}
-        <SiteFooter />
+        <ConfirmProvider>
+          {children}
+          <SiteFooter />
+        </ConfirmProvider>
       </body>
     </html>
   );

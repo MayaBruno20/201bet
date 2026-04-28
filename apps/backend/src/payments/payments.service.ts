@@ -11,7 +11,7 @@ import {
   WalletTransactionType,
 } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
-import { ValutService } from './valut.service';
+import { ValutService, ValutRejectedError } from './valut.service';
 import { CreateDepositDto } from './dto/create-deposit.dto';
 import { CreateWithdrawDto } from './dto/create-withdraw.dto';
 
@@ -118,17 +118,22 @@ export class PaymentsService {
         return this.confirmDeposit(payment.id, userId);
       }
 
+      // Sempre retorna balance atual para frontend nao mostrar "Confirmado, R$0"
+      const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
       return {
         paymentId: payment.id,
         status: payment.status,
         paid: pix.paid,
         amount: Number(payment.amount),
+        balance: Number(wallet?.balance ?? 0),
       };
     } catch {
+      const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
       return {
         paymentId: payment.id,
         status: payment.status,
         amount: Number(payment.amount),
+        balance: Number(wallet?.balance ?? 0),
       };
     }
   }
@@ -227,8 +232,22 @@ export class PaymentsService {
       );
     }
 
+    // AML: requer pelo menos 1 deposito APPROVED antes de sacar
+    const confirmedDeposits = await this.prisma.payment.count({
+      where: { userId, type: PaymentType.DEPOSIT, status: PaymentStatus.APPROVED },
+    });
+    if (confirmedDeposits === 0) {
+      throw new BadRequestException(
+        'Voce precisa fazer pelo menos 1 deposito confirmado antes de solicitar saque.',
+      );
+    }
+
     const amount = new Prisma.Decimal(payload.amount);
     const amountCents = Math.round(payload.amount * 100);
+
+    // Auto-hold para valores acima do threshold (review manual pelo admin)
+    const autoHoldThreshold = Number(process.env.WITHDRAW_AUTO_HOLD_THRESHOLD ?? '5000');
+    const requiresManualReview = payload.amount >= autoHoldThreshold;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const dec = await tx.wallet.updateMany({
@@ -247,6 +266,11 @@ export class PaymentsService {
           amount,
           status: PaymentStatus.PENDING,
           provider: 'VALUT_PIX',
+          // Para valores >= threshold, marcamos para review manual via providerRef temporario
+          providerRef: requiresManualReview ? 'PENDING_MANUAL_REVIEW' : null,
+          // Persiste destino do PIX para review manual e retry posterior
+          pixKey: payload.pixKey,
+          pixKeyType: payload.pixKeyType,
         },
       });
 
@@ -261,6 +285,19 @@ export class PaymentsService {
 
       return payment;
     });
+
+    // Se requer review manual, NAO chama Valut. Admin precisa aprovar antes.
+    if (requiresManualReview) {
+      this.logger.log(`Withdraw ${result.id} held for manual review (amount R$${payload.amount} >= threshold R$${autoHoldThreshold})`);
+      const updatedWallet = await this.prisma.wallet.findUnique({ where: { userId } });
+      return {
+        paymentId: result.id,
+        amount: Number(amount),
+        status: 'PENDING_MANUAL_REVIEW',
+        balance: Number(updatedWallet!.balance),
+        message: `Saque acima de R$ ${autoHoldThreshold.toFixed(2)} requer aprovacao manual. Aguarde contato do suporte.`,
+      };
+    }
 
     try {
       const pix = await this.valut.performPixCashout({
@@ -277,31 +314,40 @@ export class PaymentsService {
         data: { providerRef: pix.pix_id },
       });
     } catch (err) {
-      // Rollback: refund wallet and mark payment as failed
+      // Diferencia rejeicao definitiva (4xx) de timeout/network (estado UNKNOWN)
+      const isDefiniteRejection = err instanceof ValutRejectedError;
+
+      if (isDefiniteRejection) {
+        // Pode reverter com seguranca
+        this.logger.error(`Valut REJECTED payment ${result.id}, refunding wallet`, err);
+        await this.prisma.$transaction(async (tx) => {
+          await tx.payment.update({
+            where: { id: result.id },
+            data: { status: PaymentStatus.FAILED },
+          });
+          await tx.wallet.update({
+            where: { id: wallet.id },
+            data: { balance: { increment: amount } },
+          });
+          await tx.walletTransaction.create({
+            data: {
+              walletId: wallet.id,
+              type: WalletTransactionType.ADJUSTMENT,
+              amount,
+              reference: `cashout-refund-${result.id}`,
+            },
+          });
+        });
+        throw new BadRequestException('Saque rejeitado pelo gateway. Saldo devolvido.');
+      }
+
+      // Network/timeout: NAO refunda - estado incerto. Mantem PENDING para reconciliacao.
       this.logger.error(
-        `Valut cashout failed for payment ${result.id}, refunding wallet`,
+        `Valut UNKNOWN state for payment ${result.id} (network/timeout) - keeping PENDING for reconciliation`,
         err,
       );
-      await this.prisma.$transaction(async (tx) => {
-        await tx.payment.update({
-          where: { id: result.id },
-          data: { status: PaymentStatus.FAILED },
-        });
-        await tx.wallet.update({
-          where: { id: wallet.id },
-          data: { balance: { increment: amount } },
-        });
-        await tx.walletTransaction.create({
-          data: {
-            walletId: wallet.id,
-            type: WalletTransactionType.ADJUSTMENT,
-            amount,
-            reference: `cashout-refund-${result.id}`,
-          },
-        });
-      });
       throw new BadRequestException(
-        'Falha ao processar saque. Saldo foi devolvido.',
+        'Saque solicitado mas confirmação demorou. Aguarde — se não receber em 1h, contate o suporte. NÃO tente sacar novamente.',
       );
     }
 
@@ -328,8 +374,133 @@ export class PaymentsService {
       id: p.id,
       amount: Number(p.amount),
       status: p.status,
+      providerRef: p.providerRef,
       createdAt: p.createdAt,
     }));
+  }
+
+  // ── Admin: review de saques pendentes ───────────────────────
+
+  async adminListPendingWithdrawals() {
+    const payments = await this.prisma.payment.findMany({
+      where: { type: PaymentType.WITHDRAW, status: PaymentStatus.PENDING },
+      orderBy: { createdAt: 'asc' },
+      include: { user: { select: { id: true, email: true, name: true, cpf: true } } },
+      take: 100,
+    });
+    return payments.map((p) => ({
+      id: p.id,
+      amount: Number(p.amount),
+      status: p.status,
+      providerRef: p.providerRef,
+      createdAt: p.createdAt,
+      requiresManualReview: p.providerRef === 'PENDING_MANUAL_REVIEW',
+      user: p.user,
+    }));
+  }
+
+  async adminApproveWithdraw(paymentId: string, adminUserId: string) {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment || payment.type !== PaymentType.WITHDRAW) throw new NotFoundException('Saque não encontrado');
+    if (payment.status !== PaymentStatus.PENDING) throw new BadRequestException('Saque não está pendente');
+    if (payment.providerRef !== 'PENDING_MANUAL_REVIEW') {
+      throw new BadRequestException('Saque não requer review manual');
+    }
+    if (!payment.pixKey || !payment.pixKeyType) {
+      throw new BadRequestException('Saque não tem chave PIX cadastrada (registro antigo). Rejeite e peça ao usuário criar nova solicitação.');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: payment.userId }, select: { cpf: true } });
+    if (!user?.cpf) throw new BadRequestException('Usuario sem CPF para validacao Valut');
+
+    const amountCents = Math.round(Number(payment.amount) * 100);
+    let pixId: string;
+    try {
+      const pix = await this.valut.performPixCashout({
+        amountCents,
+        keyType: payment.pixKeyType as 'document' | 'phone' | 'email' | 'evp',
+        key: payment.pixKey,
+        externalId: payment.id,
+        documentValidation: user.cpf,
+        idempotencyKey: `wd-manual-${payment.id}`,
+      });
+      pixId = pix.pix_id;
+    } catch (err) {
+      if (err instanceof ValutRejectedError) {
+        // Rejeicao definitiva pelo gateway - reembolsa
+        const fullUser = await this.prisma.user.findUnique({ where: { id: payment.userId }, include: { wallet: true } });
+        if (fullUser?.wallet) {
+          await this.prisma.$transaction(async (tx) => {
+            await tx.payment.update({ where: { id: paymentId }, data: { status: PaymentStatus.FAILED, providerRef: `valut-rejected-on-approve-${adminUserId}` } });
+            await tx.wallet.update({ where: { id: fullUser.wallet!.id }, data: { balance: { increment: payment.amount } } });
+            await tx.walletTransaction.create({
+              data: {
+                walletId: fullUser.wallet!.id,
+                type: WalletTransactionType.ADJUSTMENT,
+                amount: payment.amount,
+                reference: `withdraw-rejected-on-approve-${paymentId}`,
+              },
+            });
+          });
+        }
+        throw new BadRequestException(`Gateway rejeitou: ${err.message}. Saque revertido e usuário reembolsado.`);
+      }
+      // Network/timeout: NAO mexe no estado, fica PENDING para retry
+      this.logger.error(`Valut UNKNOWN state on approve ${paymentId}`, err);
+      throw new BadRequestException('Falha de rede com gateway. Tente novamente em alguns minutos.');
+    }
+
+    await this.prisma.payment.update({
+      where: { id: paymentId },
+      data: { status: PaymentStatus.APPROVED, providerRef: pixId },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: adminUserId,
+        action: 'WITHDRAW_MANUAL_APPROVE',
+        entity: 'Payment',
+        entityId: paymentId,
+        payload: { amount: Number(payment.amount), pixId } as Prisma.InputJsonValue,
+      },
+    }).catch(() => undefined);
+    return { id: paymentId, status: 'APPROVED', pixId };
+  }
+
+  async adminRejectWithdraw(paymentId: string, adminUserId: string, reason?: string) {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId }, include: { user: { include: { wallet: true } } } });
+    if (!payment || payment.type !== PaymentType.WITHDRAW) throw new NotFoundException('Saque não encontrado');
+    if (payment.status !== PaymentStatus.PENDING) throw new BadRequestException('Saque não está pendente');
+    if (!payment.user.wallet) throw new NotFoundException('Carteira não encontrada');
+
+    // Refunda saldo do usuario
+    await this.prisma.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: paymentId },
+        data: { status: PaymentStatus.FAILED, providerRef: `rejected-by-${adminUserId}` },
+      });
+      await tx.wallet.update({
+        where: { id: payment.user.wallet!.id },
+        data: { balance: { increment: payment.amount } },
+      });
+      await tx.walletTransaction.create({
+        data: {
+          walletId: payment.user.wallet!.id,
+          type: WalletTransactionType.ADJUSTMENT,
+          amount: payment.amount,
+          reference: `withdraw-rejected-${paymentId}`,
+        },
+      });
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: adminUserId,
+        action: 'WITHDRAW_REJECT',
+        entity: 'Payment',
+        entityId: paymentId,
+        payload: { amount: Number(payment.amount), reason: reason ?? null } as Prisma.InputJsonValue,
+      },
+    }).catch(() => undefined);
+    return { id: paymentId, status: 'FAILED', refunded: true };
   }
 
   async getDepositSummary(userId: string) {

@@ -61,13 +61,20 @@ export class WebhookController {
     }
 
     // PIX Cashin (deposit) — pix_receber event
+    // CRITICO: SO credita em status terminal "paid". "processing" significa que o
+    // banco ainda nao confirmou a transferencia - se confirmar credit a wallet
+    // antes da hora, podemos perder dinheiro se o PIX falhar/cancelar depois.
     if (
       payment.type === PaymentType.DEPOSIT &&
-      (status === 'paid' || status === 'processing')
+      status === 'paid'
     ) {
       this.logger.log(`Confirming deposit ${payment.id} via webhook`);
       await this.paymentsService.confirmDeposit(payment.id);
       return { received: true, action: 'deposit_confirmed' };
+    }
+    if (payment.type === PaymentType.DEPOSIT && status === 'processing') {
+      this.logger.log(`Deposit ${payment.id} marked as processing (wallet NAO creditado ate confirmacao final)`);
+      return { received: true, action: 'deposit_processing_noted' };
     }
 
     // PIX Cashout (withdrawal) — pix_pagar event

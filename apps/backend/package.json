@@ -24,7 +24,9 @@
     "prisma:push": "prisma db push",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "prisma:seed": "prisma db seed"
+    "prisma:seed": "prisma db seed",
+    "cleanup:events-bets": "ts-node scripts/cleanup-events-bets.ts",
+    "cleanup:events-bets:dry": "ts-node scripts/cleanup-events-bets.ts --dry"
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",

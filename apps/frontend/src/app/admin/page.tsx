@@ -212,7 +212,16 @@ export default function AdminPage() {
     }
 
     if (!response.ok) {
-      throw new Error(await response.text());
+      const raw = await response.text();
+      let friendly = raw;
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed?.message) && parsed.message[0]) friendly = parsed.message.join('; ');
+        else if (typeof parsed?.message === 'string') friendly = parsed.message;
+        else if (typeof parsed?.error === 'string') friendly = parsed.error;
+      } catch { /* nao era JSON */ }
+      if (response.status >= 500) friendly = `Erro no servidor (${response.status}): ${friendly || 'Tente novamente.'}`;
+      throw new Error(friendly);
     }
 
     return (await response.json()) as T;
@@ -325,7 +334,7 @@ export default function AdminPage() {
   if (!sessionReady) {
     return (
       <main className='min-h-screen bg-[#090b11] text-white'>
-        <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+        <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
           <MainNav />
           <p className='mt-10 text-center text-white/50'>Carregando…</p>
         </div>
@@ -336,7 +345,7 @@ export default function AdminPage() {
   if (!sessionUser) {
     return (
       <main className='min-h-screen bg-[#090b11] text-white'>
-        <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+        <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
           <MainNav />
           <section className='mt-8 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-6'>
             <h1 className='text-2xl font-bold'>Acesso administrativo necessário</h1>
@@ -351,7 +360,7 @@ export default function AdminPage() {
   if (!isAllowed) {
     return (
       <main className='min-h-screen bg-[#090b11] text-white'>
-        <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+        <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
           <MainNav />
           <section className='mt-8 rounded-2xl border border-red-400/40 bg-red-500/10 p-6'>
             <h1 className='text-2xl font-bold'>Permissão insuficiente</h1>
@@ -364,7 +373,7 @@ export default function AdminPage() {
 
   return (
     <main className='min-h-screen bg-[#090b11] pb-10 text-white'>
-      <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+      <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
         <MainNav />
 
         <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-5 sm:p-6'>
@@ -390,7 +399,14 @@ export default function AdminPage() {
               className='inline-flex items-center gap-2 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 px-4 py-2 text-xs font-bold text-[#d4a843] transition hover:bg-[#d4a843]/20'
             >
               <span>🏁 Listas Brasil</span>
-              <span className='text-[#d4a843]/70'>— cadastro de eventos, embates e gestão de listas</span>
+              <span className='text-[#d4a843]/70 hidden sm:inline'>— cadastro de eventos, embates e gestão de listas</span>
+            </a>
+            <a
+              href='/admin/copa-categorias'
+              className='inline-flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-300 transition hover:bg-emerald-500/20'
+            >
+              <span>🏆 Copa Categorias</span>
+              <span className='text-emerald-300/70 hidden sm:inline'>— eventos por tempo, inscritos e chaves</span>
             </a>
           </div>
         </section>

@@ -122,11 +122,45 @@ enum ListEventStatus {
   CANCELED
 }
 
+enum ListEventType {
+  REGULAR
+  ARMAGEDDON
+  SHARK_TANK
+}
+
 enum SharkTankStatus {
   REGISTERED
   ELIMINATED
   FINALIST
   PROMOTED
+}
+
+enum CategoryEventStatus {
+  DRAFT
+  REGISTRATION_OPEN
+  QUALIFYING
+  IN_PROGRESS
+  FINISHED
+  CANCELED
+}
+
+enum TimeCategory {
+  ORIGINAL_10S
+  CAT_9S
+  CAT_8_5S
+  CAT_8S
+  CAT_7_5S
+  CAT_7S
+  CAT_6_5S
+  CAT_6S
+  CAT_5_5S
+  TUDOKIDA
+}
+
+enum CategoryMatchupStatus {
+  PENDING
+  COMPLETED
+  INVALIDATED
 }
 
 model User {
@@ -212,19 +246,23 @@ model WalletTransaction {
 }
 
 model Event {
-  id        String      @id @default(uuid())
-  sport     String
-  name      String
-  startAt   DateTime
-  status    EventStatus @default(SCHEDULED)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  id          String      @id @default(uuid())
+  sport       String
+  name        String
+  description String?
+  bannerUrl   String?
+  featured    Boolean     @default(false)
+  startAt     DateTime
+  status      EventStatus @default(SCHEDULED)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   markets Market[]
   duels   Duel[]
 
   @@index([startAt])
   @@index([status])
+  @@index([featured])
 }
 
 model Driver {
@@ -239,11 +277,12 @@ model Driver {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  cars             Car[]
-  rosters          ListRoster[]
-  leftMatchups     ListMatchup[]    @relation("matchupLeftDriver")
-  rightMatchups    ListMatchup[]    @relation("matchupRightDriver")
-  sharkTankEntries SharkTankEntry[] @relation("sharkTankDriver")
+  cars                Car[]
+  rosters             ListRoster[]
+  leftMatchups        ListMatchup[]        @relation("matchupLeftDriver")
+  rightMatchups       ListMatchup[]        @relation("matchupRightDriver")
+  sharkTankEntries    SharkTankEntry[]     @relation("sharkTankDriver")
+  categoryCompetitors CategoryCompetitor[]
 
   @@index([active])
 }
@@ -379,6 +418,9 @@ model Payment {
   status      PaymentStatus @default(PENDING)
   provider    String
   providerRef String?
+  // Para WITHDRAW: persiste o destino do PIX para possibilitar review manual e retry
+  pixKey      String?
+  pixKeyType  String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -506,8 +548,12 @@ model ListEvent {
   listId      String
   name        String
   scheduledAt DateTime
+  endsAt      DateTime?
   status      ListEventStatus @default(DRAFT)
+  type        ListEventType   @default(REGULAR)
   eventId     String?
+  bannerUrl   String?
+  featured    Boolean         @default(false)
   notes       String?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
@@ -562,4 +608,109 @@ model SharkTankEntry {
 
   @@unique([listEventId, driverId])
   @@index([listEventId, status])
+}
+
+// ─── Copa Categorias ─────────────────────────────────────
+
+model CategoryEvent {
+  id          String              @id @default(uuid())
+  name        String
+  description String?
+  bannerUrl   String?
+  featured    Boolean             @default(false)
+  scheduledAt DateTime
+  endsAt      DateTime?
+  status      CategoryEventStatus @default(DRAFT)
+  // Link com Event (criado uma vez, reusado em todos os matchups que abrirem mercado)
+  eventId     String?
+  notes       String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  brackets CategoryBracket[]
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([featured])
+}
+
+model CategoryBracket {
+  id              String       @id @default(uuid())
+  categoryEventId String
+  category        TimeCategory
+  size            Int          @default(8)
+  notes           String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  categoryEvent CategoryEvent        @relation(fields: [categoryEventId], references: [id], onDelete: Cascade)
+  competitors   CategoryCompetitor[]
+  matchups      CategoryMatchup[]
+
+  @@unique([categoryEventId, category])
+}
+
+model CategoryCompetitor {
+  id        String  @id @default(uuid())
+  bracketId String
+  driverId  String
+  carName   String
+  carNumber String?
+
+  qualifyingReaction Decimal? @db.Decimal(8, 3)
+  qualifyingTrack    Decimal? @db.Decimal(8, 3)
+  qualifyingTotal    Decimal? @db.Decimal(8, 3)
+  qualifyingPosition Int?
+  notes              String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bracket CategoryBracket   @relation(fields: [bracketId], references: [id], onDelete: Cascade)
+  driver  Driver            @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  asLeft  CategoryMatchup[] @relation("CategoryMatchupLeft")
+  asRight CategoryMatchup[] @relation("CategoryMatchupRight")
+
+  @@unique([bracketId, driverId])
+  @@index([bracketId, qualifyingPosition])
+}
+
+model CategoryMatchup {
+  id           String  @id @default(uuid())
+  bracketId    String
+  roundNumber  Int
+  position     Int
+  isSuperFinal Boolean @default(false)
+
+  // Link com sistema de apostas (criado quando admin abre o mercado)
+  duelId     String?  @unique
+  marketOpen Boolean  @default(false)
+
+  leftCompetitorId  String?
+  rightCompetitorId String?
+
+  leftReaction Decimal? @db.Decimal(8, 3)
+  leftTrack    Decimal? @db.Decimal(8, 3)
+  leftQueimou  Boolean  @default(false)
+  leftInvalid  Boolean  @default(false)
+
+  rightReaction Decimal? @db.Decimal(8, 3)
+  rightTrack    Decimal? @db.Decimal(8, 3)
+  rightQueimou  Boolean  @default(false)
+  rightInvalid  Boolean  @default(false)
+
+  winnerSide MatchupSide?
+  status     CategoryMatchupStatus @default(PENDING)
+  settledAt  DateTime?
+  notes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bracket         CategoryBracket     @relation(fields: [bracketId], references: [id], onDelete: Cascade)
+  leftCompetitor  CategoryCompetitor? @relation("CategoryMatchupLeft", fields: [leftCompetitorId], references: [id], onDelete: SetNull)
+  rightCompetitor CategoryCompetitor? @relation("CategoryMatchupRight", fields: [rightCompetitorId], references: [id], onDelete: SetNull)
+
+  @@unique([bracketId, roundNumber, position])
+  @@index([bracketId, roundNumber])
 }

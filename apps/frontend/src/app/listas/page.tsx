@@ -44,10 +44,10 @@ export default function ListasPage() {
 
   return (
     <main className='min-h-screen bg-[#090b11] text-white'>
-      <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+      <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
         <MainNav />
 
-        <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-6 sm:p-8'>
+        <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-4 sm:p-6 sm:p-8'>
           <div className='flex items-center gap-3 mb-3'>
             <span className='inline-flex items-center rounded-full border border-[#d4a843]/30 bg-[#d4a843]/10 px-3 py-1 text-[10px] font-bold tracking-widest text-[#d4a843]'>
               LISTAS BRASIL

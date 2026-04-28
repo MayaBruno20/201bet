@@ -82,11 +82,16 @@ export default function DepositoPage() {
         const data = await res.json();
         if (data.status === 'APPROVED') {
           if (pollRef.current) clearInterval(pollRef.current);
-          setBalance(data.balance);
+          if (typeof data.balance === 'number') setBalance(data.balance);
           setStep('confirmado');
+          if (typeof window !== 'undefined') window.dispatchEvent(new Event('wallet:refresh'));
+        } else if (data.status === 'FAILED' || data.status === 'CANCELED') {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setError(data.status === 'FAILED' ? 'Pagamento falhou. Gere um novo PIX.' : 'Pagamento cancelado.');
+          setStep('valor');
         }
       } catch { /* ignore */ }
-    }, 5000); // Poll every 5 seconds
+    }, 5000);
   }, []);
 
   async function handleGeneratePix() {
@@ -136,9 +141,9 @@ export default function DepositoPage() {
   if (!sessionOk) {
     return (
       <main className='min-h-screen bg-[#090b11] text-white'>
-        <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+        <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
           <MainNav />
-          <section className='mt-8 rounded-3xl border border-white/10 bg-amber-500/5 p-6 backdrop-blur-md'>
+          <section className='mt-8 rounded-3xl border border-white/10 bg-amber-500/5 p-4 sm:p-6 backdrop-blur-md'>
             <h1 className='text-2xl font-semibold'>Login necessário</h1>
             <p className='mt-2 text-white/50'>Entre com sua conta para depositar.</p>
             <a href='/login' className='mt-4 inline-flex rounded-2xl bg-white px-5 py-3 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]'>Ir para login</a>
@@ -200,7 +205,7 @@ export default function DepositoPage() {
 
         {/* Step 1: Valor */}
         {step === 'valor' && (
-          <section className='rounded-2xl border border-white/10 bg-[#101525] p-6'>
+          <section className='rounded-2xl border border-white/10 bg-[#101525] p-4 sm:p-6'>
             <div className='flex items-center gap-2 mb-5'>
               <div className='flex h-8 w-8 items-center justify-center rounded-lg bg-[#00d0a2]/10'>
                 <svg className='h-4 w-4 text-[#00d0a2]' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
@@ -241,7 +246,7 @@ export default function DepositoPage() {
 
         {/* Step 2: PIX QR Code */}
         {step === 'pix' && (
-          <section className='rounded-2xl border border-white/10 bg-[#101525] p-6'>
+          <section className='rounded-2xl border border-white/10 bg-[#101525] p-4 sm:p-6'>
             <div className='flex items-center gap-2 mb-5'>
               <div className='flex h-8 w-8 items-center justify-center rounded-lg bg-[#00d0a2]/10'>
                 <svg className='h-4 w-4 text-[#00d0a2]' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
@@ -293,7 +298,7 @@ export default function DepositoPage() {
 
         {/* Step 3: Confirmado */}
         {step === 'confirmado' && (
-          <section className='rounded-2xl border border-white/10 bg-[#101525] p-6 text-center'>
+          <section className='rounded-2xl border border-white/10 bg-[#101525] p-4 sm:p-6 text-center'>
             <div className='mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#00d0a2]/10'>
               <svg className='h-8 w-8 text-[#00d0a2]' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
                 <path strokeLinecap='round' strokeLinejoin='round' d='M5 13l4 4L19 7' />
