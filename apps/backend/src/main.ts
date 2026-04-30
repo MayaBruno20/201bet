@@ -2,6 +2,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import Redis from 'ioredis';
 import { AppModule } from './app.module';
 import { PrismaService } from './database/prisma.service';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
@@ -21,6 +22,38 @@ function logRuntimeEnv() {
       `REDIS_TLS=${pick('REDIS_TLS') || 'false'}`,
     ].join(' '),
   );
+}
+
+async function probeRedisConnection(): Promise<void> {
+  const logger = new Logger('RedisProbe');
+  const host = process.env.REDIS_HOST || 'localhost';
+  const port = Number(process.env.REDIS_PORT || 3505);
+  const password = process.env.REDIS_PASSWORD || undefined;
+  const tls = process.env.REDIS_TLS === 'true' ? {} : undefined;
+
+  const client = new Redis({
+    host,
+    port,
+    password,
+    tls,
+    lazyConnect: false,
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 1,
+  });
+
+  try {
+    const pong = await client.ping();
+    logger.log(`PING ok host=${host} port=${port} tls=${tls ? 'true' : 'false'} (${pong})`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error(`PING failed host=${host} port=${port} tls=${tls ? 'true' : 'false'}: ${msg}`);
+  } finally {
+    try {
+      client.disconnect();
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function assertJwtSecretForRuntime() {
@@ -59,6 +92,7 @@ function assertCorsForRuntime(): string[] {
 async function bootstrap() {
   assertJwtSecretForRuntime();
   logRuntimeEnv();
+  await probeRedisConnection();
 
   const app = await NestFactory.create(AppModule);
   const prismaService = app.get(PrismaService);
