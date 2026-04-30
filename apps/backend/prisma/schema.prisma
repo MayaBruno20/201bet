@@ -665,7 +665,7 @@ model CategoryCompetitor {
   id        String  @id @default(uuid())
   bracketId String
   driverId  String
-  carName   String
+  carName   String?
   carNumber String?
 
   qualifyingReaction Decimal? @db.Decimal(8, 3)

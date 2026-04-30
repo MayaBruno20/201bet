@@ -6,7 +6,7 @@ import { Flag, Trophy, Zap, Flame, type LucideIcon } from 'lucide-react';
 import { MainNav } from '@/components/site/main-nav';
 import { apiFetch } from '@/lib/api-request';
 import { getPublicApiUrl, getPublicWsUrl } from '@/lib/env-public';
-import { BettingBoard, MarketSnapshot, MultiRunnerSnapshot } from '@/types/market';
+import { BettingBoard, BoardStage, MarketSnapshot, MultiRunnerSnapshot } from '@/types/market';
 import { MultiRunnerMarket } from '@/components/multi-runner-market';
 
 const apiUrl = getPublicApiUrl();
@@ -61,6 +61,7 @@ export default function ApostasPage() {
   const [selectedEventId, setSelectedEventId] = useState<string>('');
   const [selectedDuelId, setSelectedDuelId] = useState<string>('');
   const [selectedMarketId, setSelectedMarketId] = useState<string>('');
+  const [selectedRound, setSelectedRound] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('passadas');
   const [stakeRaw, setStakeRaw] = useState('100');
   const stake = Number(stakeRaw) || 0;
@@ -121,6 +122,42 @@ export default function ApostasPage() {
   }, [selectedDuelId]);
 
   const selectedEvent = useMemo(() => board?.events.find((e) => e.id === selectedEventId) ?? null, [board, selectedEventId]);
+
+  // Agrupa stages por roundNumber → categoria
+  const roundsForEvent = useMemo(() => {
+    if (!selectedEvent) return [] as Array<{ roundNumber: number; categories: Array<{ category: string | null; categoryLabel: string | null; stages: BoardStage[] }> }>;
+    const byRound = new Map<number, Map<string, BoardStage[]>>();
+    for (const s of selectedEvent.stages) {
+      if (!byRound.has(s.roundNumber)) byRound.set(s.roundNumber, new Map());
+      const catKey = s.category ?? '__none__';
+      const catMap = byRound.get(s.roundNumber)!;
+      if (!catMap.has(catKey)) catMap.set(catKey, []);
+      catMap.get(catKey)!.push(s);
+    }
+    return Array.from(byRound.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([roundNumber, catMap]) => ({
+        roundNumber,
+        categories: Array.from(catMap.entries())
+          .sort((a, b) => {
+            const la = a[1][0]?.categoryLabel ?? 'zzz';
+            const lb = b[1][0]?.categoryLabel ?? 'zzz';
+            return la.localeCompare(lb, 'pt-BR');
+          })
+          .map(([key, stages]) => ({
+            category: key === '__none__' ? null : key,
+            categoryLabel: stages[0]?.categoryLabel ?? null,
+            stages,
+          })),
+      }));
+  }, [selectedEvent]);
+
+  const activeRound = useMemo(() => {
+    if (!roundsForEvent.length) return null;
+    const target = selectedRound ?? roundsForEvent[0].roundNumber;
+    return roundsForEvent.find((r) => r.roundNumber === target) ?? roundsForEvent[0];
+  }, [roundsForEvent, selectedRound]);
+
   const currentDuelId = selectedDuelId || selectedEvent?.currentDuelId || selectedEvent?.stages[0]?.duelId || '';
   const snapshot = currentDuelId ? snapshots[currentDuelId] : undefined;
   const selectedSide = side === 'LEFT' ? snapshot?.duel.left : snapshot?.duel.right;
@@ -289,6 +326,7 @@ export default function ApostasPage() {
                     onClick={() => {
                       setSelectedEventId(event.id);
                       setSelectedDuelId(event.currentDuelId ?? event.stages[0]?.duelId ?? '');
+                      setSelectedRound(null);
                       setActiveTab('passadas');
                     }}
                   >
@@ -330,24 +368,100 @@ export default function ApostasPage() {
               {/* ── TAB: PASSADAS (Duelos) ── */}
               {activeTab === 'passadas' && (
                 <div className='space-y-4 sm:space-y-6'>
-                  {/* Stage selector — scroll horizontal mobile */}
-                  {selectedEvent && selectedEvent.stages.length > 1 && (
+                  {/* Round selector — uma aba por rodada (chave) com todas as categorias dentro */}
+                  {roundsForEvent.length > 1 && (
                     <div className='-mx-3 sm:mx-0 overflow-x-auto px-3 sm:px-0 scrollbar-hide'>
                       <div className='flex gap-2 min-w-fit'>
-                        {selectedEvent.stages.map((stage) => (
-                          <button
-                            key={stage.duelId}
-                            type='button'
-                            className={`shrink-0 rounded-full px-4 py-2 text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${currentDuelId === stage.duelId
-                              ? 'bg-blue-500 text-white shadow-lg'
-                              : 'bg-white/5 text-white/60 hover:bg-white/10'
-                            }`}
-                            onClick={() => setSelectedDuelId(stage.duelId)}
-                          >
-                            {stage.label}
-                          </button>
-                        ))}
+                        {roundsForEvent.map((r) => {
+                          const isActive = activeRound?.roundNumber === r.roundNumber;
+                          return (
+                            <button
+                              key={r.roundNumber}
+                              type='button'
+                              className={`shrink-0 rounded-full px-4 py-2 text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${isActive
+                                ? 'bg-blue-500 text-white shadow-lg'
+                                : 'bg-white/5 text-white/60 hover:bg-white/10'
+                              }`}
+                              onClick={() => setSelectedRound(r.roundNumber)}
+                            >
+                              Rodada {r.roundNumber}
+                            </button>
+                          );
+                        })}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Lista de embates abertos da rodada — agrupado por categoria */}
+                  {activeRound && (
+                    <div className='space-y-4'>
+                      {activeRound.categories.map((cat) => (
+                        <section key={cat.category ?? 'none'} className='rounded-2xl border border-white/10 bg-[#0d1320] overflow-hidden'>
+                          {cat.categoryLabel && (
+                            <div className='flex items-center justify-between gap-2 border-b border-white/10 bg-white/[0.03] px-3 py-2 sm:px-4 sm:py-2.5'>
+                              <p className='text-[10px] sm:text-xs font-bold uppercase tracking-widest text-white/60'>
+                                Categoria <span className='text-white'>{cat.categoryLabel}</span>
+                              </p>
+                              <span className='text-[10px] text-white/40'>{cat.stages.length} embate{cat.stages.length !== 1 ? 's' : ''}</span>
+                            </div>
+                          )}
+                          <ul className='divide-y divide-white/5'>
+                            {cat.stages.map((stage) => {
+                              const snap = snapshots[stage.duelId];
+                              const isActive = currentDuelId === stage.duelId;
+                              const leftLabel = snap?.duel.left.label ?? 'Aguardando...';
+                              const rightLabel = snap?.duel.right.label ?? 'Aguardando...';
+                              const leftOdd = snap?.duel.left.odd;
+                              const rightOdd = snap?.duel.right.odd;
+                              const isClosed = snap && (snap.locked || snap.status === 'BOOKING_CLOSED' || snap.status === 'FINISHED') && !snap.settlement;
+                              const isSettled = !!snap?.settlement;
+                              return (
+                                <li key={stage.duelId}>
+                                  <button
+                                    type='button'
+                                    onClick={() => setSelectedDuelId(stage.duelId)}
+                                    className={`w-full text-left px-3 py-3 sm:px-4 sm:py-3.5 transition-colors ${isActive ? 'bg-blue-500/10 ring-1 ring-blue-500/40' : 'hover:bg-white/5'}`}
+                                  >
+                                    <div className='flex items-center gap-2 sm:gap-3'>
+                                      {/* Lado esquerdo */}
+                                      <div className='min-w-0 flex-1'>
+                                        <p className={`text-xs sm:text-sm font-semibold truncate ${isActive ? 'text-white' : 'text-white/85'}`}>{leftLabel}</p>
+                                        <p className='text-[10px] sm:text-[11px] mt-0.5 text-blue-400 font-bold'>@{leftOdd?.toFixed(2) ?? '--'}</p>
+                                      </div>
+                                      <div className='shrink-0 text-[10px] sm:text-xs font-bold text-white/30 px-1'>vs</div>
+                                      <div className='min-w-0 flex-1 text-right'>
+                                        <p className={`text-xs sm:text-sm font-semibold truncate ${isActive ? 'text-white' : 'text-white/85'}`}>{rightLabel}</p>
+                                        <p className='text-[10px] sm:text-[11px] mt-0.5 text-orange-400 font-bold'>@{rightOdd?.toFixed(2) ?? '--'}</p>
+                                      </div>
+                                      {/* Status pill */}
+                                      <span className={`hidden sm:inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wider ${
+                                        isSettled ? 'bg-emerald-500/15 text-emerald-300' :
+                                        isClosed ? 'bg-red-500/15 text-red-300' :
+                                        'bg-emerald-500/10 text-emerald-400'
+                                      }`}>
+                                        {isSettled ? 'AUDITADO' : isClosed ? 'FECHADO' : 'ABERTO'}
+                                      </span>
+                                    </div>
+                                    {/* Mobile status row */}
+                                    <div className='mt-1.5 flex items-center justify-between sm:hidden'>
+                                      <span className='text-[10px] text-white/40'>
+                                        Pote R$ {snap ? formatMoney(snap.totalPool) : '--'}
+                                      </span>
+                                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold tracking-wider ${
+                                        isSettled ? 'bg-emerald-500/15 text-emerald-300' :
+                                        isClosed ? 'bg-red-500/15 text-red-300' :
+                                        'bg-emerald-500/10 text-emerald-400'
+                                      }`}>
+                                        {isSettled ? 'AUDITADO' : isClosed ? 'FECHADO' : 'ABERTO'}
+                                      </span>
+                                    </div>
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </section>
+                      ))}
                     </div>
                   )}
 
@@ -385,7 +499,7 @@ export default function ApostasPage() {
                       )}
 
                       {/* Banner: apostas encerradas / pausadas (so se nao auditado) */}
-                      {!snapshot.settlement && (snapshot.locked || snapshot.status === 'BOOKING_CLOSED' || snapshot.status === 'FINISHED' || snapshot.closeInSeconds <= 0) && (
+                      {!snapshot.settlement && (snapshot.locked || snapshot.status === 'BOOKING_CLOSED' || snapshot.status === 'FINISHED') && (
                         <div className='rounded-2xl border-2 border-red-500/40 bg-gradient-to-r from-red-500/15 to-red-500/5 p-4 sm:p-5 flex items-center gap-3 sm:gap-4'>
                           <div className='shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-red-500/20 flex items-center justify-center'>
                             <svg className='w-6 h-6 sm:w-7 sm:h-7 text-red-400' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
@@ -401,14 +515,14 @@ export default function ApostasPage() {
                         </div>
                       )}
 
-                      {/* Duel header */}
+                      {/* Duel header — info do embate (sempre visível) */}
                       <div className='flex items-end justify-between border-b border-white/5 pb-3 sm:pb-4'>
                         <div className='min-w-0'>
                           <p className='text-[10px] font-semibold uppercase tracking-widest text-blue-400/70'>{snapshot.stageLabel}</p>
                           <h2 className='mt-1 text-lg sm:text-2xl font-semibold tracking-tight truncate'>{snapshot.eventName}</h2>
                           <p className='mt-1 text-[11px] sm:text-xs text-white/50 flex flex-wrap gap-x-2 gap-y-1'>
                             <span>Pote: <strong className='text-white/80'>R$ {formatMoney(snapshot.totalPool)}</strong></span>
-                            {snapshot.closeInSeconds > 0 && (
+                            {!snapshot.settlement && snapshot.closeInSeconds > 0 && (
                               <span className='text-amber-400'>
                                 Encerra em: <strong>{formatCloseWindow(snapshot.closeInSeconds)}</strong>
                               </span>
@@ -417,54 +531,59 @@ export default function ApostasPage() {
                         </div>
                       </div>
 
-                      {/* Pool distribution bar */}
-                      {snapshot.totalPool > 0 && (
-                        <div className='flex h-2 rounded-full overflow-hidden gap-[2px]'>
-                          <div className='bg-blue-500 transition-all duration-500' style={{ width: `${(snapshot.duel.left.pool / snapshot.totalPool * 100)}%` }} />
-                          <div className='bg-orange-500 transition-all duration-500' style={{ width: `${(snapshot.duel.right.pool / snapshot.totalPool * 100)}%` }} />
-                        </div>
+                      {/* Bloco de seleção/aposta — escondido após auditoria */}
+                      {!snapshot.settlement && (
+                        <>
+                          {/* Pool distribution bar */}
+                          {snapshot.totalPool > 0 && (
+                            <div className='flex h-2 rounded-full overflow-hidden gap-[2px]'>
+                              <div className='bg-blue-500 transition-all duration-500' style={{ width: `${(snapshot.duel.left.pool / snapshot.totalPool * 100)}%` }} />
+                              <div className='bg-orange-500 transition-all duration-500' style={{ width: `${(snapshot.duel.right.pool / snapshot.totalPool * 100)}%` }} />
+                            </div>
+                          )}
+
+                          {/* Odd cards — empilhados em mobile */}
+                          <div className='grid gap-3 sm:gap-4 sm:grid-cols-2'>
+                            <OddCard title={snapshot.duel.left.label} odd={snapshot.duel.left.odd} pool={snapshot.duel.left.pool} tickets={snapshot.duel.left.tickets} active={side === 'LEFT'} onClick={() => setSide('LEFT')} tone='blue' />
+                            <OddCard title={snapshot.duel.right.label} odd={snapshot.duel.right.odd} pool={snapshot.duel.right.pool} tickets={snapshot.duel.right.tickets} active={side === 'RIGHT'} onClick={() => setSide('RIGHT')} tone='orange' />
+                          </div>
+
+                          {/* Bet form */}
+                          <div className='rounded-2xl border border-white/8 bg-white/[0.02] p-4 sm:p-6'>
+                            <div className='grid gap-4 sm:gap-6 lg:grid-cols-2'>
+                              <div className='space-y-1 text-sm'>
+                                <p className='text-white/40 text-xs sm:text-sm'>Sua seleção</p>
+                                <p className='text-base sm:text-lg font-medium'>{selectedSide?.label ?? 'Nenhum'}</p>
+                                <div className='h-2' />
+                                <div className='flex justify-between border-b border-white/5 pb-2 text-white/60 text-xs sm:text-sm'>
+                                  <span>Saldo</span>
+                                  <span className='font-medium text-white'>R$ {formatMoney(currentBalance)}</span>
+                                </div>
+                                <div className='flex justify-between border-b border-white/5 py-2 text-white/60 text-xs sm:text-sm'>
+                                  <span>Saldo após aposta</span>
+                                  <span className={`font-medium ${balanceAfterBet < 0 ? 'text-red-400' : 'text-white'}`}>R$ {formatMoney(balanceAfterBet)}</span>
+                                </div>
+                                <div className='flex justify-between py-2 text-white/60 text-xs sm:text-sm'>
+                                  <span>Retorno bruto</span>
+                                  <span className='font-semibold text-emerald-400'>R$ {formatMoney(expectedReturn)}</span>
+                                </div>
+                                {!me && <p className='mt-3 text-xs text-amber-400'>Faça login para apostar.</p>}
+                                {stake < minBet && <p className='mt-1 text-xs text-amber-400'>Valor mínimo: R$ {minBet.toFixed(2).replace('.', ',')}.</p>}
+                                {me && currentBalance < stake && <p className='mt-1 text-xs text-red-400'>Saldo insuficiente.</p>}
+                              </div>
+                              <div className='flex flex-col justify-end gap-3'>
+                                <div className='relative'>
+                                  <span className='absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-medium text-sm sm:text-base'>R$</span>
+                                  <input className='w-full rounded-2xl border border-white/10 bg-[#090b11]/50 py-3 sm:py-4 pl-11 sm:pl-12 pr-4 text-xl sm:text-2xl font-semibold text-white focus:border-white/30 focus:outline-none' type='number' inputMode='decimal' min={minBet} step={5} value={stakeRaw} onChange={(e) => setStakeRaw(e.target.value)} />
+                                </div>
+                                <button type='button' className='w-full rounded-2xl bg-white px-4 py-3 sm:py-4 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all hover:bg-white/90 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none' disabled={!canBet || placingBet} onClick={() => setConfirmOpen(true)}>
+                                  {placingBet ? 'Processando...' : 'Confirmar Bilhete ->'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </>
                       )}
-
-                      {/* Odd cards — empilhados em mobile */}
-                      <div className='grid gap-3 sm:gap-4 sm:grid-cols-2'>
-                        <OddCard title={snapshot.duel.left.label} odd={snapshot.duel.left.odd} pool={snapshot.duel.left.pool} tickets={snapshot.duel.left.tickets} active={side === 'LEFT'} onClick={() => setSide('LEFT')} tone='blue' />
-                        <OddCard title={snapshot.duel.right.label} odd={snapshot.duel.right.odd} pool={snapshot.duel.right.pool} tickets={snapshot.duel.right.tickets} active={side === 'RIGHT'} onClick={() => setSide('RIGHT')} tone='orange' />
-                      </div>
-
-                      {/* Bet form */}
-                      <div className='rounded-2xl border border-white/8 bg-white/[0.02] p-4 sm:p-6'>
-                        <div className='grid gap-4 sm:gap-6 lg:grid-cols-2'>
-                          <div className='space-y-1 text-sm'>
-                            <p className='text-white/40 text-xs sm:text-sm'>Sua seleção</p>
-                            <p className='text-base sm:text-lg font-medium'>{selectedSide?.label ?? 'Nenhum'}</p>
-                            <div className='h-2' />
-                            <div className='flex justify-between border-b border-white/5 pb-2 text-white/60 text-xs sm:text-sm'>
-                              <span>Saldo</span>
-                              <span className='font-medium text-white'>R$ {formatMoney(currentBalance)}</span>
-                            </div>
-                            <div className='flex justify-between border-b border-white/5 py-2 text-white/60 text-xs sm:text-sm'>
-                              <span>Saldo após aposta</span>
-                              <span className={`font-medium ${balanceAfterBet < 0 ? 'text-red-400' : 'text-white'}`}>R$ {formatMoney(balanceAfterBet)}</span>
-                            </div>
-                            <div className='flex justify-between py-2 text-white/60 text-xs sm:text-sm'>
-                              <span>Retorno bruto</span>
-                              <span className='font-semibold text-emerald-400'>R$ {formatMoney(expectedReturn)}</span>
-                            </div>
-                            {!me && <p className='mt-3 text-xs text-amber-400'>Faça login para apostar.</p>}
-                            {stake < minBet && <p className='mt-1 text-xs text-amber-400'>Valor mínimo: R$ {minBet.toFixed(2).replace('.', ',')}.</p>}
-                            {me && currentBalance < stake && <p className='mt-1 text-xs text-red-400'>Saldo insuficiente.</p>}
-                          </div>
-                          <div className='flex flex-col justify-end gap-3'>
-                            <div className='relative'>
-                              <span className='absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-medium text-sm sm:text-base'>R$</span>
-                              <input className='w-full rounded-2xl border border-white/10 bg-[#090b11]/50 py-3 sm:py-4 pl-11 sm:pl-12 pr-4 text-xl sm:text-2xl font-semibold text-white focus:border-white/30 focus:outline-none' type='number' inputMode='decimal' min={minBet} step={5} value={stakeRaw} onChange={(e) => setStakeRaw(e.target.value)} />
-                            </div>
-                            <button type='button' className='w-full rounded-2xl bg-white px-4 py-3 sm:py-4 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all hover:bg-white/90 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none' disabled={!canBet || placingBet} onClick={() => setConfirmOpen(true)}>
-                              {placingBet ? 'Processando...' : 'Confirmar Bilhete ->'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
 
                     </>
                   ) : (

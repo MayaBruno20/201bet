@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { getPublicApiUrl } from '@/lib/env-public';
+import { EventBanner, isVideoBanner } from '@/components/event-banner';
 
 const apiUrl = getPublicApiUrl();
 
@@ -56,17 +57,18 @@ export function FeaturedEvents() {
         href='/eventos'
         className='block group relative overflow-hidden rounded-2xl sm:rounded-3xl border border-white/10 bg-[#101525] aspect-[16/9] sm:aspect-[21/9] max-h-[500px]'
       >
-        {/* Banner background */}
+        {/* Banner background (imagem ou vídeo Vimeo/YouTube) */}
         {active.bannerUrl ? (
           <>
-            <img
-              src={active.bannerUrl}
-              alt={active.name}
-              className='absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ease-out'
-              key={active.id}
-            />
-            <div className='absolute inset-0 bg-gradient-to-t from-[#090b11] via-[#090b11]/60 to-transparent' />
-            <div className='absolute inset-0 bg-gradient-to-r from-[#090b11]/80 via-transparent to-transparent' />
+            <div key={active.id} className='absolute inset-0 w-full h-full overflow-hidden'>
+              <EventBanner
+                url={active.bannerUrl}
+                alt={active.name}
+                className='absolute inset-0 w-full h-full object-cover'
+              />
+            </div>
+            <div className='pointer-events-none absolute inset-0 bg-gradient-to-t from-[#090b11] via-[#090b11]/60 to-transparent' />
+            <div className='pointer-events-none absolute inset-0 bg-gradient-to-r from-[#090b11]/80 via-transparent to-transparent' />
           </>
         ) : (
           <>
@@ -149,7 +151,13 @@ export function FeaturedEvents() {
               className={`group relative overflow-hidden rounded-xl aspect-video border transition-all ${i === activeIdx ? 'border-white/40 ring-1 ring-white/20' : 'border-white/10 hover:border-white/25 opacity-70 hover:opacity-100'}`}
             >
               {ev.bannerUrl ? (
-                <img src={ev.bannerUrl} alt={ev.name} className='w-full h-full object-cover' />
+                isVideoBanner(ev.bannerUrl) ? (
+                  <div className='absolute inset-0 w-full h-full overflow-hidden'>
+                    <EventBanner url={ev.bannerUrl} alt={ev.name} className='absolute inset-0 w-full h-full object-cover' />
+                  </div>
+                ) : (
+                  <img src={ev.bannerUrl} alt={ev.name} className='w-full h-full object-cover' />
+                )
               ) : (
                 <div className='w-full h-full bg-gradient-to-br from-blue-500/20 to-orange-500/20' />
               )}

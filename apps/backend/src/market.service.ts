@@ -126,12 +126,34 @@ export type BettingBoard = {
     stages: Array<{
       duelId: string;
       label: string;
+      roundNumber: number;
+      category: string | null;
+      categoryLabel: string | null;
       startsAt: string;
       bookingCloseAt: string;
       status: string;
     }>;
   }>;
   generatedAt: string;
+};
+
+const TIME_CATEGORY_LABEL: Record<string, string> = {
+  ORIGINAL_10S: 'Original 10s',
+  CAT_9S: '9s',
+  CAT_8_5S: '8,5s',
+  CAT_8S: '8s',
+  CAT_7_5S: '7,5s',
+  CAT_7S: '7s',
+  CAT_6_5S: '6,5s',
+  CAT_6S: '6s',
+  CAT_5_5S: '5,5s',
+  TUDOKIDA: 'TUDOKIDÁ',
+};
+
+const LIST_ROUND_LABEL: Record<string, string> = {
+  ODD: 'Ímpares',
+  EVEN: 'Pares',
+  SHARK_TANK: 'Shark Tank',
 };
 
 const TICK_MS = 3_000;
@@ -197,6 +219,57 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
+    const allDuelIds = events.flatMap((e) => e.duels.map((d) => d.id));
+
+    // Enriquecimento: descobre roundNumber/categoria a partir das tabelas de matchup
+    const meta = new Map<string, { roundNumber: number; category: string | null; categoryLabel: string | null }>();
+    if (allDuelIds.length > 0) {
+      const [catMatchups, armaMatchups, listMatchups] = await Promise.all([
+        this.prisma.categoryMatchup.findMany({
+          where: { duelId: { in: allDuelIds } },
+          select: {
+            duelId: true,
+            roundNumber: true,
+            bracket: { select: { category: true } },
+          },
+        }),
+        this.prisma.armageddonMatchup.findMany({
+          where: { duelId: { in: allDuelIds } },
+          select: { duelId: true, roundNumber: true, roundType: true },
+        }),
+        this.prisma.listMatchup.findMany({
+          where: { duelId: { in: allDuelIds } },
+          select: { duelId: true, roundNumber: true, roundType: true },
+        }),
+      ]);
+
+      for (const m of catMatchups) {
+        if (!m.duelId) continue;
+        const cat = m.bracket.category;
+        meta.set(m.duelId, {
+          roundNumber: m.roundNumber,
+          category: cat,
+          categoryLabel: TIME_CATEGORY_LABEL[cat] ?? cat,
+        });
+      }
+      for (const m of armaMatchups) {
+        if (!m.duelId) continue;
+        meta.set(m.duelId, {
+          roundNumber: m.roundNumber,
+          category: m.roundType,
+          categoryLabel: LIST_ROUND_LABEL[m.roundType] ?? m.roundType,
+        });
+      }
+      for (const m of listMatchups) {
+        if (!m.duelId) continue;
+        meta.set(m.duelId, {
+          roundNumber: m.roundNumber,
+          category: m.roundType,
+          categoryLabel: LIST_ROUND_LABEL[m.roundType] ?? m.roundType,
+        });
+      }
+    }
+
     return {
       events: events.map((event) => {
         const stateDuels = event.duels.filter((duel) =>
@@ -216,13 +289,20 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           status: event.status,
           marketNames: event.markets.map((m) => m.name),
           currentDuelId: current?.id ?? null,
-          stages: event.duels.map((duel, index) => ({
-            duelId: duel.id,
-            label: `Rodada ${index + 1}`,
-            startsAt: duel.startsAt.toISOString(),
-            bookingCloseAt: duel.bookingCloseAt.toISOString(),
-            status: duel.status,
-          })),
+          stages: event.duels.map((duel, index) => {
+            const m = meta.get(duel.id);
+            const roundNumber = m?.roundNumber ?? index + 1;
+            return {
+              duelId: duel.id,
+              label: `Rodada ${roundNumber}`,
+              roundNumber,
+              category: m?.category ?? null,
+              categoryLabel: m?.categoryLabel ?? null,
+              startsAt: duel.startsAt.toISOString(),
+              bookingCloseAt: duel.bookingCloseAt.toISOString(),
+              status: duel.status,
+            };
+          }),
         };
       }),
       generatedAt: new Date().toISOString(),
@@ -260,9 +340,10 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     const placed = await this.prisma.$transaction(async (tx) => {
       const duel = await tx.duel.findUnique({
         where: { id: input.duelId },
-        include: {
-          leftCar: { include: { driver: true } },
-          rightCar: { include: { driver: true } },
+        select: {
+          id: true,
+          status: true,
+          bookingCloseAt: true,
         },
       });
 
@@ -398,7 +479,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         newBalance: Number(updatedWallet!.balance),
         oddAtPlacement,
       };
-    });
+    }, { timeout: 15000, maxWait: 5000 });
 
     const mem = this.states.get(input.duelId);
     if (mem) {
@@ -626,22 +707,19 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
   }
 
   private recalculateOdds(state: EngineState) {
+    // Pari-mutuel puro (referência 201Bet):
+    //   pool  = leftPool + rightPool
+    //   net   = pool * (1 - rake)
+    //   odd_X = net / pool_X   (piso 1.01, sem teto)
+    // Quando um lado ainda não tem aposta, odd = 0 ("—" na UI).
     const totalPool = state.left.pool + state.right.pool;
-    const margin = this.getMarginPercent() / 100;
+    const rake = this.getMarginPercent() / 100;
+    const net = totalPool * (1 - rake);
 
-    const leftOdd = this.clamp(
-      (totalPool * (1 - margin)) / Math.max(state.left.pool, 1),
-      1.1,
-      8,
-    );
-    const rightOdd = this.clamp(
-      (totalPool * (1 - margin)) / Math.max(state.right.pool, 1),
-      1.1,
-      8,
-    );
-
-    state.left.odd = Number(leftOdd.toFixed(2));
-    state.right.odd = Number(rightOdd.toFixed(2));
+    state.left.odd =
+      state.left.pool > 0 ? Number(Math.max(1.01, net / state.left.pool).toFixed(2)) : 0;
+    state.right.odd =
+      state.right.pool > 0 ? Number(Math.max(1.01, net / state.right.pool).toFixed(2)) : 0;
   }
 
   private evaluateLock(state: EngineState): {
@@ -650,28 +728,33 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     reason?: string;
     message?: string;
   } {
-    const now = Date.now();
+    // Pari-mutuel puro (referência 201Bet): apostas NUNCA pausam por imbalance,
+    // exposição da casa ou tempo. Os únicos bloqueios são estados terminais
+    // (mercado ainda não aberto, fechado pelo admin, finalizado, cancelado, liquidado).
+    if (state.settlement) {
+      return {
+        locked: true,
+        lockedSide: 'BOTH',
+        reason: 'SETTLED',
+        message: 'Confronto auditado e liquidado.',
+      };
+    }
     if (state.status === DuelStatus.SCHEDULED) {
       return {
         locked: true,
         lockedSide: 'BOTH',
-        reason: 'BOOKING_NOT_OPEN',
-        message: 'Apostas ainda não foram abertas para esta corrida',
+        reason: 'NOT_OPEN',
+        message: 'Mercado ainda não foi aberto pelo operador.',
       };
     }
-
-    if (
-      now >= state.bookingCloseAt.getTime() ||
-      state.status === DuelStatus.BOOKING_CLOSED
-    ) {
+    if (state.status === DuelStatus.BOOKING_CLOSED) {
       return {
         locked: true,
         lockedSide: 'BOTH',
-        reason: 'BOOKING_CLOSED_BY_TIME',
-        message: 'Apostas encerradas para esta corrida. Aguarde o resultado.',
+        reason: 'CLOSED_BY_ADMIN',
+        message: 'Apostas encerradas pelo operador.',
       };
     }
-
     if (
       state.status === DuelStatus.FINISHED ||
       state.status === DuelStatus.CANCELED
@@ -679,59 +762,10 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       return {
         locked: true,
         lockedSide: 'BOTH',
-        reason: 'DUEL_NOT_OPEN',
-        message: 'Corrida finalizada ou cancelada. Não é possível apostar.',
+        reason: 'FINISHED',
+        message: 'Confronto encerrado.',
       };
     }
-
-    const totalPool = state.left.pool + state.right.pool;
-    if (totalPool <= 0) {
-      return { locked: false, lockedSide: 'NONE' };
-    }
-
-    const biggerSide: Side =
-      state.left.pool >= state.right.pool ? 'LEFT' : 'RIGHT';
-    const biggerPool =
-      biggerSide === 'LEFT' ? state.left.pool : state.right.pool;
-    const dominance = (biggerPool / totalPool) * 100;
-    const threshold = this.getLockThresholdPercent();
-
-    if (dominance >= threshold) {
-      return {
-        locked: true,
-        lockedSide: biggerSide,
-        reason: 'IMBALANCE_LOCK',
-        message:
-          biggerSide === 'LEFT'
-            ? 'Apostas no lado azul foram pausadas para equilibrar o mercado'
-            : 'Apostas no lado laranja foram pausadas para equilibrar o mercado',
-      };
-    }
-
-    const houseBuffer = this.getHouseExposureBuffer();
-    const leftLiability = state.left.pool * state.left.odd;
-    const rightLiability = state.right.pool * state.right.odd;
-
-    if (leftLiability > totalPool + houseBuffer) {
-      return {
-        locked: true,
-        lockedSide: 'LEFT',
-        reason: 'HOUSE_EXPOSURE_LIMIT',
-        message:
-          'Apostas no lado azul pausadas por limite de segurança operacional',
-      };
-    }
-
-    if (rightLiability > totalPool + houseBuffer) {
-      return {
-        locked: true,
-        lockedSide: 'RIGHT',
-        reason: 'HOUSE_EXPOSURE_LIMIT',
-        message:
-          'Apostas no lado laranja pausadas por limite de segurança operacional',
-      };
-    }
-
     return { locked: false, lockedSide: 'NONE' };
   }
 
@@ -856,38 +890,51 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     duelId: string,
     side: Side,
   ) {
-    const duel = await tx.duel.findUnique({
-      where: { id: duelId },
+    // Busca o Market vinculado diretamente a este Duel (indexado em Market.duelId).
+    // Evita carregar todos os mercados do Event quando há múltiplos abertos em paralelo.
+    let market = await tx.market.findFirst({
+      where: {
+        duelId,
+        status: { in: [MarketStatus.OPEN, MarketStatus.SUSPENDED] },
+      },
+      orderBy: { createdAt: 'asc' },
       include: {
-        event: {
-          include: {
-            markets: {
-              where: {
-                status: { in: [MarketStatus.OPEN, MarketStatus.SUSPENDED] },
-              },
-              orderBy: { createdAt: 'asc' },
-              include: {
-                odds: {
-                  where: {
-                    status: { in: [OddStatus.ACTIVE, OddStatus.SUSPENDED] },
-                  },
-                  orderBy: { createdAt: 'asc' },
-                },
-              },
-            },
-          },
+        odds: {
+          where: { status: { in: [OddStatus.ACTIVE, OddStatus.SUSPENDED] } },
+          orderBy: { createdAt: 'asc' },
         },
       },
     });
 
-    if (!duel) {
-      throw new BadRequestException('Corrida não encontrada');
+    // Fallback p/ mercados antigos sem duelId preenchido: encontra pelo evento.
+    if (!market || market.odds.length < 2) {
+      const duel = await tx.duel.findUnique({
+        where: { id: duelId },
+        select: { eventId: true },
+      });
+      if (!duel) {
+        throw new BadRequestException('Corrida não encontrada');
+      }
+      const fallback = await tx.market.findFirst({
+        where: {
+          eventId: duel.eventId,
+          duelId: null,
+          status: { in: [MarketStatus.OPEN, MarketStatus.SUSPENDED] },
+        },
+        orderBy: { createdAt: 'asc' },
+        include: {
+          odds: {
+            where: { status: { in: [OddStatus.ACTIVE, OddStatus.SUSPENDED] } },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
+      market = fallback ?? market;
     }
 
-    const market = duel.event.markets.find((m) => m.odds.length >= 2);
-    if (!market) {
+    if (!market || market.odds.length < 2) {
       throw new BadRequestException(
-        'Mercado do evento sem odds válidas para registrar aposta',
+        'Mercado deste embate sem odds válidas para registrar aposta',
       );
     }
 

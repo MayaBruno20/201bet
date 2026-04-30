@@ -7,6 +7,8 @@ import { useConfirm } from '@/components/confirm-dialog';
 import { apiFetch } from '@/lib/api-request';
 import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
 import { getPublicApiUrl } from '@/lib/env-public';
+import { ImportPilotsModal } from './import-pilots-modal';
+import { EventBanner } from '@/components/event-banner';
 
 const apiUrl = getPublicApiUrl();
 
@@ -31,7 +33,7 @@ type Competitor = {
   id: string;
   bracketId: string;
   driverId: string;
-  carName: string;
+  carName: string | null;
   carNumber: string | null;
   qualifyingReaction: string | number | null;
   qualifyingTrack: string | number | null;
@@ -98,6 +100,7 @@ export default function AdminCopaCategoriasPage() {
     bannerUrl: '', featured: false,
     categories: [] as CategoryValue[],
   });
+  const [importOpen, setImportOpen] = useState(false);
 
   const confirm = useConfirm();
   const isAllowed = useMemo(() => sessionUser?.role === 'ADMIN', [sessionUser]);
@@ -279,10 +282,12 @@ export default function AdminCopaCategoriasPage() {
                     ))}
                   </div>
                 </div>
-                <input className='cc-field' placeholder='URL do banner (1600×900)' value={newEvent.bannerUrl} onChange={(e) => setNewEvent({ ...newEvent, bannerUrl: e.target.value })} />
+                <input className='cc-field' placeholder='URL do banner (imagem ou vídeo Vimeo/YouTube)' value={newEvent.bannerUrl} onChange={(e) => setNewEvent({ ...newEvent, bannerUrl: e.target.value })} />
                 {newEvent.bannerUrl && (
                   <div className='rounded-xl overflow-hidden border border-white/10 bg-black/30'>
-                    <img src={newEvent.bannerUrl} alt='preview' className='w-full aspect-[16/9] object-cover' onError={(e) => (e.currentTarget.style.display = 'none')} />
+                    <div className='relative w-full aspect-[16/9] overflow-hidden'>
+                      <EventBanner url={newEvent.bannerUrl} alt='preview' className='absolute inset-0 w-full h-full object-cover' />
+                    </div>
                   </div>
                 )}
                 <label className='flex items-center gap-2 text-xs text-white/70'>
@@ -319,7 +324,34 @@ export default function AdminCopaCategoriasPage() {
             {!detail && <div className='rounded-2xl border border-dashed border-white/10 p-12 text-center text-sm text-white/40'>Selecione um evento.</div>}
             {detail && (
               <>
-                <EventHeader event={detail} submit={submit} adminJson={adminJson} confirm={confirm} />
+                <EventHeader
+                  event={detail}
+                  submit={submit}
+                  adminJson={adminJson}
+                  confirm={confirm}
+                  onDeleted={() => {
+                    setSelectedId(null);
+                    setDetail(null);
+                  }}
+                />
+
+                {/* Bulk import via Excel */}
+                <div className='rounded-2xl border border-white/10 bg-[#101525] p-4 flex flex-wrap items-center justify-between gap-3'>
+                  <div>
+                    <p className='text-sm font-semibold'>📋 Importar pilotos via Excel</p>
+                    <p className='mt-1 text-xs text-white/50'>
+                      Cadastre vários pilotos de uma vez. A categoria é detectada pela coluna <strong>Produto</strong> da planilha
+                      (separa automaticamente por 9s, 8,5s, etc.).
+                    </p>
+                  </div>
+                  <button
+                    type='button'
+                    onClick={() => setImportOpen(true)}
+                    className='cc-btn-primary whitespace-nowrap'
+                  >
+                    Importar Excel
+                  </button>
+                </div>
 
                 {/* Categorias / Brackets tabs */}
                 <div className='rounded-2xl border border-white/10 bg-[#101525] p-2'>
@@ -360,6 +392,21 @@ export default function AdminCopaCategoriasPage() {
             )}
           </section>
         </div>
+
+        {importOpen && detail && (
+          <ImportPilotsModal
+            eventId={detail.id}
+            eventName={detail.name}
+            onClose={() => setImportOpen(false)}
+            onImported={() => {
+              void loadEvents();
+              if (selectedId) void loadDetail(selectedId);
+            }}
+            postJson={async (path, body) => {
+              return adminJson(path, { method: 'POST', body: JSON.stringify(body) });
+            }}
+          />
+        )}
       </div>
 
       <style jsx global>{`
@@ -436,7 +483,7 @@ function statusColor(s: string) {
   return 'text-amber-400';
 }
 
-function EventHeader({ event, submit, adminJson, confirm }: { event: CategoryEvent; submit: SubmitFn; adminJson: JsonFn; confirm: ConfirmFn }) {
+function EventHeader({ event, submit, adminJson, confirm, onDeleted }: { event: CategoryEvent; submit: SubmitFn; adminJson: JsonFn; confirm: ConfirmFn; onDeleted: () => void }) {
   return (
     <div className='rounded-2xl border border-white/10 bg-[#101525] p-5'>
       <div className='flex flex-wrap items-start justify-between gap-3'>
@@ -463,16 +510,44 @@ function EventHeader({ event, submit, adminJson, confirm }: { event: CategoryEve
             <option value='FINISHED'>ENCERRADO</option>
             <option value='CANCELED'>CANCELADO</option>
           </select>
-          <button className='cc-btn-danger' onClick={async () => {
+          <button className='cc-btn-outline' onClick={async () => {
             const ok = await confirm({
               title: 'Cancelar evento?',
-              message: 'O evento será marcado como cancelado.',
+              message: 'O evento será marcado como CANCELADO. O histórico (inscritos, chave, apostas) é preservado.',
               highlightText: event.name,
               danger: true, confirmLabel: 'Sim, cancelar',
             });
             if (!ok) return;
             void submit('Cancelar evento', () => adminJson(`/admin/category-events/${event.id}`, { method: 'DELETE' }), 'list');
           }}>Cancelar evento</button>
+          <button className='cc-btn-danger' onClick={async () => {
+            const ok = await confirm({
+              title: 'Excluir evento DEFINITIVAMENTE?',
+              message: 'Esta ação remove o evento, todos os inscritos, a chave e os mercados ainda não apostados. Não pode ser desfeita. Se já houver apostas registradas, use "Cancelar evento" ou "Excluir forçado".',
+              highlightText: event.name,
+              danger: true, confirmLabel: 'Sim, excluir',
+            });
+            if (!ok) return;
+            void submit(
+              'Excluir evento',
+              () => adminJson(`/admin/category-events/${event.id}/hard`, { method: 'DELETE' }),
+              'list',
+            ).then(() => onDeleted());
+          }}>Excluir definitivamente</button>
+          <button className='cc-btn-danger' style={{ borderColor: 'rgba(239,68,68,0.6)', background: 'rgba(239,68,68,0.25)' }} onClick={async () => {
+            const ok = await confirm({
+              title: 'EXCLUIR FORÇADO?',
+              message: 'Anula TODAS as apostas vinculadas a este evento (incluindo as auditadas) e remove o evento, mercados, duels e bilhetes. As carteiras dos apostadores são revertidas ao saldo pré-aposta. Use só para eventos de TESTE.',
+              highlightText: event.name,
+              danger: true, confirmLabel: 'Sim, excluir forçado',
+            });
+            if (!ok) return;
+            void submit(
+              'Excluir evento (forçado)',
+              () => adminJson(`/admin/category-events/${event.id}/hard?force=true`, { method: 'DELETE' }),
+              'list',
+            ).then(() => onDeleted());
+          }}>Excluir forçado</button>
         </div>
       </div>
     </div>
@@ -521,14 +596,14 @@ function CompetitorsPanel({ bracket, submit, adminJson, confirm }: { bracket: Br
           className='mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3'
           onSubmit={(e) => {
             e.preventDefault();
-            if (!form.driverName || !form.carName) { return; }
+            if (!form.driverName) { return; }
             void submit('Inscrever piloto', () =>
               adminJson(`/admin/category-events/brackets/${bracket.id}/competitors`, {
                 method: 'POST',
                 body: JSON.stringify({
                   driverName: form.driverName,
                   driverNickname: form.driverNickname || undefined,
-                  carName: form.carName,
+                  carName: form.carName || undefined,
                   carNumber: form.carNumber || undefined,
                   driverTeam: form.driverTeam || undefined,
                   qualifyingReaction: form.qualifyingReaction ? Number(form.qualifyingReaction) : undefined,
@@ -542,7 +617,7 @@ function CompetitorsPanel({ bracket, submit, adminJson, confirm }: { bracket: Br
           <input className='cc-field' placeholder='Nome do piloto' value={form.driverName} onChange={(e) => setForm({ ...form, driverName: e.target.value })} />
           <input className='cc-field' placeholder='Apelido (opc)' value={form.driverNickname} onChange={(e) => setForm({ ...form, driverNickname: e.target.value })} />
           <input className='cc-field' placeholder='Equipe (opc)' value={form.driverTeam} onChange={(e) => setForm({ ...form, driverTeam: e.target.value })} />
-          <input className='cc-field' placeholder='Nome do carro' value={form.carName} onChange={(e) => setForm({ ...form, carName: e.target.value })} />
+          <input className='cc-field' placeholder='Nome do carro (opc)' value={form.carName} onChange={(e) => setForm({ ...form, carName: e.target.value })} />
           <input className='cc-field' placeholder='Nº do carro (opc)' value={form.carNumber} onChange={(e) => setForm({ ...form, carNumber: e.target.value })} />
           <input className='cc-field' type='number' step='0.001' placeholder='Reação class. (s)' value={form.qualifyingReaction} onChange={(e) => setForm({ ...form, qualifyingReaction: e.target.value })} />
           <input className='cc-field' type='number' step='0.001' placeholder='Tempo pista class. (s)' value={form.qualifyingTrack} onChange={(e) => setForm({ ...form, qualifyingTrack: e.target.value })} />
@@ -565,7 +640,7 @@ function CompetitorsPanel({ bracket, submit, adminJson, confirm }: { bracket: Br
                 <div className='flex-1 min-w-0'>
                   <p className='text-sm font-medium truncate'>{c.driver.name} {c.driver.nickname && <span className='text-white/40'>({c.driver.nickname})</span>}</p>
                   <p className='text-[10px] text-white/40 truncate'>
-                    {c.carName}{c.carNumber ? ` #${c.carNumber}` : ''}{c.driver.team ? ` · ${c.driver.team}` : ''}
+                    {c.carName || '— sem carro'}{c.carNumber ? ` #${c.carNumber}` : ''}{c.driver.team ? ` · ${c.driver.team}` : ''}
                   </p>
                 </div>
                 <div className='text-right text-[11px] font-mono text-white/70'>

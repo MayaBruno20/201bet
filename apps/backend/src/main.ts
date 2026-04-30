@@ -44,11 +44,13 @@ async function probeRedisConnection(): Promise<void> {
     password,
     tls,
     lazyConnect: false,
-    enableOfflineQueue: false,
+    // Allow queueing commands while connecting.
+    enableOfflineQueue: true,
     maxRetriesPerRequest: 1,
   });
 
   try {
+    await client.connect();
     const pong = await client.ping();
     const msg = `PING ok host=${host} port=${port} tls=${tls ? 'true' : 'false'} username=${username} (${pong})`;
     logger.log(msg);

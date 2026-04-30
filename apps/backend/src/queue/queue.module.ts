@@ -22,7 +22,8 @@ import type { AppEnv } from '../config/env.validation';
           // Render/RedisCloud: evitar race com enableOfflineQueue=false.
           // Conecte imediatamente para que os primeiros comandos (AUTH/INFO) não falhem.
           lazyConnect: false,
-          enableOfflineQueue: false,
+          // BullMQ faz comandos logo no startup (AUTH/INFO). Precisa enfileirar enquanto conecta.
+          enableOfflineQueue: true,
           maxRetriesPerRequest: null,
         },
         skipWaitingForReady: true,

@@ -17,6 +17,40 @@ export class ValutRejectedError extends Error {
   constructor(message: string) { super(message); this.name = 'ValutRejectedError'; }
 }
 
+function safeProxySummary(proxyUrl: string): string {
+  if (!proxyUrl) return 'none';
+  try {
+    const u = new URL(proxyUrl);
+    return `${u.protocol}//${u.hostname}:${u.port || '(default)'}`;
+  } catch {
+    return 'invalid';
+  }
+}
+
+function describeFetchError(err: unknown): Record<string, unknown> {
+  if (!(err instanceof Error)) return { raw: String(err) };
+  const anyErr = err as Error & {
+    code?: unknown;
+    errno?: unknown;
+    syscall?: unknown;
+    cause?: unknown;
+  };
+  const out: Record<string, unknown> = {
+    name: anyErr.name,
+    message: anyErr.message,
+  };
+  if (anyErr.code) out.code = anyErr.code;
+  if (anyErr.errno) out.errno = anyErr.errno;
+  if (anyErr.syscall) out.syscall = anyErr.syscall;
+  if (anyErr.cause) {
+    out.cause =
+      anyErr.cause instanceof Error
+        ? { name: anyErr.cause.name, message: anyErr.cause.message }
+        : anyErr.cause;
+  }
+  return out;
+}
+
 @Injectable()
 export class ValutService {
   private readonly logger = new Logger(ValutService.name);
@@ -44,7 +78,9 @@ export class ValutService {
     if (!this.proxyUrl) return undefined;
     if (!this.proxyAgent) {
       this.proxyAgent = new ProxyAgent(this.proxyUrl);
-      this.logger.log('Using QuotaGuard proxy for Valut outbound requests');
+      this.logger.log(
+        `Using QuotaGuard proxy for Valut outbound requests proxy=${safeProxySummary(this.proxyUrl)}`,
+      );
     }
     return this.proxyAgent;
   }
@@ -58,18 +94,34 @@ export class ValutService {
       'base64',
     );
 
-    const res = await fetch(`${VALUT_BASE_URL}/auth`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${basicAuth}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        username: this.username,
-        password: this.password,
-      }),
-      dispatcher: this.getDispatcher(),
-    } as RequestInit & { dispatcher?: ProxyAgent });
+    const url = `${VALUT_BASE_URL}/auth`;
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${basicAuth}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: this.username,
+          password: this.password,
+        }),
+        dispatcher: this.getDispatcher(),
+      } as RequestInit & { dispatcher?: ProxyAgent });
+    } catch (err) {
+      const details = describeFetchError(err);
+      this.logger.error(
+        `Valut auth network error url=${url} proxy=${safeProxySummary(
+          this.proxyUrl,
+        )} details=${JSON.stringify(details)}`,
+      );
+      throw new ValutNetworkError(
+        `Erro de rede no gateway de pagamento (auth): ${
+          err instanceof Error ? err.message : 'desconhecido'
+        }`,
+      );
+    }
 
     if (!res.ok) {
       const text = await res.text();
@@ -110,6 +162,11 @@ export class ValutService {
 
     let res: Response;
     try {
+      this.logger.log(
+        `Valut request start method=${method} path=${path} url=${url.toString()} proxy=${safeProxySummary(
+          this.proxyUrl,
+        )}`,
+      );
       res = await fetch(url.toString(), {
         method,
         headers: {
@@ -121,8 +178,17 @@ export class ValutService {
       } as RequestInit & { dispatcher?: ProxyAgent });
     } catch (err) {
       // Network/timeout/connection errors - estado UNKNOWN, NAO refund
-      this.logger.error(`Valut ${method} ${path} network error: ${err instanceof Error ? err.message : err}`);
-      throw new ValutNetworkError(`Erro de rede no gateway de pagamento: ${err instanceof Error ? err.message : 'desconhecido'}`);
+      const details = describeFetchError(err);
+      this.logger.error(
+        `Valut ${method} ${path} network error url=${url.toString()} proxy=${safeProxySummary(
+          this.proxyUrl,
+        )} details=${JSON.stringify(details)}`,
+      );
+      throw new ValutNetworkError(
+        `Erro de rede no gateway de pagamento: ${
+          err instanceof Error ? err.message : 'desconhecido'
+        }`,
+      );
     }
 
     if (!res.ok) {

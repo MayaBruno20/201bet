@@ -216,9 +216,16 @@ export default function DepositoPage() {
             </div>
 
             <label className='block text-sm text-white/50 mb-2'>Valor do depósito (R$)</label>
-            <div className='relative mb-4'>
-              <span className='absolute left-3 top-1/2 -translate-y-1/2 text-sm text-white/40 font-medium'>R$</span>
-              <input type='text' inputMode='decimal' className='field pl-10 text-lg' placeholder='0.00' value={amount} onChange={(e) => handleAmountChange(e.target.value)} />
+            <div className='mb-4 flex items-center gap-2 rounded-[0.625rem] border border-white/10 bg-white/[0.03] px-3 py-2.5 transition-colors focus-within:border-white/30 focus-within:bg-white/[0.07]'>
+              <span className='text-sm text-white/40 font-medium select-none'>R$</span>
+              <input
+                type='text'
+                inputMode='decimal'
+                className='flex-1 min-w-0 bg-transparent text-lg text-white outline-none placeholder:text-white/40'
+                placeholder='0,00'
+                value={amount}
+                onChange={(e) => handleAmountChange(e.target.value)}
+              />
             </div>
 
             <div className='grid grid-cols-3 gap-2 mb-5'>

@@ -127,9 +127,8 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Este mercado não está aberto para apostas');
     }
 
-    if (Date.now() >= state.bookingCloseAt.getTime()) {
-      throw new BadRequestException('O período de apostas deste mercado já encerrou');
-    }
+    // Pari-mutuel puro: apostas nunca pausam por tempo. O mercado só fecha
+    // quando o operador fecha (status != OPEN) ou quando é liquidado.
 
     const amount = Number(input.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -161,14 +160,7 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
     if (dbMarket.status !== 'OPEN') {
       throw new BadRequestException('Este mercado não está aberto para apostas');
     }
-    if (dbMarket.bookingCloseAt && Date.now() >= dbMarket.bookingCloseAt.getTime()) {
-      throw new BadRequestException('O período de apostas deste mercado já encerrou');
-    }
-
-    // BUG-8: se nao tem bookingCloseAt configurado, bloqueia (mercado mal configurado)
-    if (!dbMarket.bookingCloseAt) {
-      throw new BadRequestException('Mercado sem data de encerramento configurada. Contate o admin.');
-    }
+    // Não há cutoff por tempo: enquanto OPEN, segue aceitando apostas.
 
     const placed = await this.prisma.$transaction(async (tx) => {
       // SELECT FOR UPDATE to prevent double-spend race condition

@@ -301,7 +301,7 @@ export default function AdminArmageddonPage() {
                 </select>
                 <input
                   className='field-sm w-full'
-                  placeholder='URL do banner (opcional)'
+                  placeholder='URL do banner (imagem ou vídeo Vimeo/YouTube)'
                   value={newEvent.bannerUrl}
                   onChange={(e) => setNewEvent((v) => ({ ...v, bannerUrl: e.target.value }))}
                 />

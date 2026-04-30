@@ -20,8 +20,8 @@ export class UpsertCompetitorDto {
   @IsOptional() @IsString() @MaxLength(60)
   driverNickname?: string;
 
-  @IsString() @MaxLength(120)
-  carName: string;
+  @IsOptional() @IsString() @MaxLength(120)
+  carName?: string;
 
   @IsOptional() @IsString() @MaxLength(20)
   carNumber?: string;
