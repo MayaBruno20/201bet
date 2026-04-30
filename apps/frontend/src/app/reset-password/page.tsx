@@ -29,7 +29,7 @@ export default function ResetPasswordPage() {
 function ResetPasswordFallback() {
   return (
     <main className='min-h-screen bg-[#090b11] text-white'>
-      <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+      <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
         <MainNav />
         <section className='mx-auto mt-12 max-w-md rounded-3xl border border-white/10 bg-[#101525] p-8 backdrop-blur-md'>
           <h1 className='text-2xl font-semibold tracking-tight'>Redefinir senha</h1>
@@ -126,7 +126,7 @@ function ResetPasswordContent() {
 
   return (
     <main className='min-h-screen bg-[#090b11] text-white'>
-      <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+      <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
         <MainNav />
         <section className='mx-auto mt-12 max-w-md rounded-3xl border border-white/10 bg-[#101525] p-8 backdrop-blur-md'>
           <h1 className='text-2xl font-semibold tracking-tight'>Redefinir senha</h1>

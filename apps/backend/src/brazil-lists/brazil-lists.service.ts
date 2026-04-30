@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -33,6 +34,7 @@ import {
   CreateSharkTankEntryDto,
   UpdateSharkTankEntryDto,
 } from './dto/shark-tank.dto';
+import { SettlementService } from '../settlement.service';
 
 type AuditContext = {
   actorUserId?: string;
@@ -43,7 +45,12 @@ type AuditContext = {
 
 @Injectable()
 export class BrazilListsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(BrazilListsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settlementService: SettlementService,
+  ) {}
 
   // ── Public ─────────────────────────────────────────────
 
@@ -82,7 +89,9 @@ export class BrazilListsService {
       id: event.id,
       name: event.name,
       scheduledAt: event.scheduledAt,
+      endsAt: event.endsAt,
       status: event.status,
+      type: event.type,
       list: {
         id: event.list.id,
         areaCode: event.list.areaCode,
@@ -319,12 +328,23 @@ export class BrazilListsService {
 
   async adminCreateEvent(listId: string, dto: CreateListEventDto, audit: AuditContext) {
     await this.ensureListExists(listId);
+
+    const startDate = new Date(dto.scheduledAt);
+    const endDate = dto.endsAt ? new Date(dto.endsAt) : null;
+    if (endDate && endDate.getTime() <= startDate.getTime()) {
+      throw new BadRequestException('A data de fim deve ser posterior à data de início');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const event = await tx.listEvent.create({
         data: {
           listId,
           name: dto.name,
-          scheduledAt: new Date(dto.scheduledAt),
+          scheduledAt: startDate,
+          endsAt: endDate,
+          type: (dto.type as 'REGULAR' | 'ARMAGEDDON' | 'SHARK_TANK' | undefined) ?? 'REGULAR',
+          bannerUrl: dto.bannerUrl,
+          featured: dto.featured ?? false,
           notes: dto.notes,
           status: ListEventStatus.DRAFT,
         },
@@ -338,16 +358,36 @@ export class BrazilListsService {
     const event = await this.prisma.listEvent.findUnique({ where: { id: eventId } });
     if (!event) throw new NotFoundException('Evento de lista não encontrado');
 
+    // Validate dates if both are being changed (or if one is changed and the other already exists)
+    const finalStart = dto.scheduledAt ? new Date(dto.scheduledAt) : event.scheduledAt;
+    const finalEnd = dto.endsAt ? new Date(dto.endsAt) : event.endsAt;
+    if (finalEnd && finalEnd.getTime() <= finalStart.getTime()) {
+      throw new BadRequestException('A data de fim deve ser posterior à data de início');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.listEvent.update({
         where: { id: eventId },
         data: {
           name: dto.name,
           scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
+          endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
           status: dto.status,
+          bannerUrl: dto.bannerUrl,
+          featured: dto.featured,
           notes: dto.notes,
         },
       });
+      // Se o ListEvent ja gerou um Event vinculado, propaga banner+featured
+      if (updated.eventId && (dto.bannerUrl !== undefined || dto.featured !== undefined)) {
+        await tx.event.update({
+          where: { id: updated.eventId },
+          data: {
+            bannerUrl: dto.bannerUrl !== undefined ? dto.bannerUrl : undefined,
+            featured: dto.featured !== undefined ? dto.featured : undefined,
+          },
+        }).catch(() => undefined);
+      }
       await this.logAudit(tx, 'BRAZIL_EVENT_UPDATE', 'ListEvent', eventId, dto, audit);
       return updated;
     });
@@ -497,6 +537,19 @@ export class BrazilListsService {
     });
     if (!matchup) throw new NotFoundException('Confronto não encontrado');
 
+    // SECURITY: PATCH nao pode auditar vencedor (rota dedicada e adminSettleMatchup)
+    // Bypassar imutabilidade aqui criaria registros corrompidos sem pagar apostas
+    if (dto.winnerSide !== undefined) {
+      throw new BadRequestException(
+        'Para definir vencedor use o endpoint /settle (audita apostas e mantem imutabilidade). PATCH nao aceita winnerSide.',
+      );
+    }
+
+    // Confronto ja auditado: nao permite alterar pilotos/posicoes
+    if (matchup.winnerSide && matchup.settledAt) {
+      throw new BadRequestException('Confronto ja auditado e imutavel. Nao pode ser editado.');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const data: Prisma.ListMatchupUpdateInput = {
         notes: dto.notes,
@@ -524,11 +577,6 @@ export class BrazilListsService {
         data.rightDriver = newRightId ? { connect: { id: newRightId } } : { disconnect: true };
       }
 
-      if (dto.winnerSide !== undefined) {
-        data.winnerSide = dto.winnerSide;
-        data.settledAt = new Date();
-      }
-
       const updated = await tx.listMatchup.update({ where: { id: matchupId }, data });
       await this.logAudit(tx, 'BRAZIL_MATCHUP_UPDATE', 'ListMatchup', matchupId, dto, audit);
       return updated;
@@ -536,8 +584,20 @@ export class BrazilListsService {
   }
 
   async adminSettleMatchup(matchupId: string, dto: SettleMatchupDto, audit: AuditContext) {
-    const matchup = await this.prisma.listMatchup.findUnique({ where: { id: matchupId } });
+    const matchup = await this.prisma.listMatchup.findUnique({
+      where: { id: matchupId },
+      include: { listEvent: { include: { list: { include: { roster: true } } } } },
+    });
     if (!matchup) throw new NotFoundException('Confronto não encontrado');
+
+    // Imutabilidade: nao permite re-auditar uma rodada ja liquidada
+    if (matchup.winnerSide && matchup.settledAt) {
+      throw new BadRequestException('Esta rodada ja foi auditada e o vencedor e imutavel');
+    }
+
+    if (!dto.winnerSide || (dto.winnerSide !== 'LEFT' && dto.winnerSide !== 'RIGHT')) {
+      throw new BadRequestException('winnerSide deve ser LEFT ou RIGHT');
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.listMatchup.update({
@@ -548,8 +608,116 @@ export class BrazilListsService {
           notes: dto.notes ?? matchup.notes,
         },
       });
+
+      // Swap roster positions if challenger won (regulamento PAR/IMPAR)
+      // Convencao: leftPosition e sempre a posicao desafiante (numero maior = rank pior)
+      // Se LEFT (desafiante) vence -> swap. Se RIGHT (defensor) vence -> sem mudanca
+      if (
+        dto.winnerSide === 'LEFT' &&
+        matchup.leftPosition && matchup.rightPosition &&
+        matchup.leftDriverId && matchup.rightDriverId &&
+        matchup.roundType !== 'SHARK_TANK'
+      ) {
+        const challengerPos = matchup.leftPosition;  // pior rank (numero maior)
+        const defenderPos = matchup.rightPosition;   // melhor rank (numero menor)
+        const challengerDriverId = matchup.leftDriverId;
+        const defenderDriverId = matchup.rightDriverId;
+        const listId = matchup.listEvent.listId;
+
+        // Swap em 3 passos para evitar colisao no unique([listId, position]):
+        // 1) parquear defensor em -1 (posicao temp inexistente, sem colisao)
+        await tx.listRoster.updateMany({
+          where: { listId, driverId: defenderDriverId },
+          data: { position: -1 },
+        });
+        // 2) mover challenger para a posicao do defensor (agora livre)
+        await tx.listRoster.updateMany({
+          where: { listId, driverId: challengerDriverId },
+          data: { position: defenderPos, isKing: defenderPos === 1 },
+        });
+        // 3) mover defensor de -1 para a posicao do challenger (agora livre)
+        await tx.listRoster.updateMany({
+          where: { listId, driverId: defenderDriverId },
+          data: { position: challengerPos, isKing: false },
+        });
+
+        await this.logAudit(tx, 'BRAZIL_ROSTER_SWAP', 'BrazilList', listId, {
+          matchupId, challengerPos, defenderPos, challengerDriverId, defenderDriverId,
+        }, audit);
+      }
+
       await this.logAudit(tx, 'BRAZIL_MATCHUP_SETTLE', 'ListMatchup', matchupId, dto, audit);
       return updated;
+    }, { timeout: 20000, maxWait: 5000 }).then(async (result) => {
+      // 1) Liquidar Duel/Market (paga apostas) e marcar Duel FINISHED
+      // CRITICO: erros aqui sao surfaceados ao admin para reconciliacao manual
+      let payoutError: string | null = null;
+      if (matchup.duelId) {
+        // Verifica se ha mercado para liquidar antes de tentar
+        const hasMarket = await this.prisma.market.findFirst({
+          where: { duelId: matchup.duelId, status: { in: ['OPEN', 'CLOSED', 'SUSPENDED'] } },
+          select: { id: true },
+        });
+        if (hasMarket) {
+          try {
+            await this.settlementService.settleDuel(matchup.duelId, dto.winnerSide as 'LEFT' | 'RIGHT', audit);
+          } catch (e) {
+            // ATENCAO: NAO swallow. Loga e SURFACEA para admin.
+            const msg = e instanceof Error ? e.message : String(e);
+            this.logger.error(`[CRITICAL] Settle do duel ${matchup.duelId} falhou: ${msg}`);
+            payoutError = msg;
+            // Audit log para reconciliacao
+            await this.prisma.auditLog.create({
+              data: {
+                actorUserId: audit.actorUserId,
+                action: 'SETTLE_DUEL_FAILED',
+                entity: 'Duel',
+                entityId: matchup.duelId,
+                payload: { matchupId, winnerSide: dto.winnerSide, error: msg } as Prisma.InputJsonValue,
+              },
+            }).catch(() => undefined);
+          }
+        }
+        // Marca duel FINISHED mesmo se nao havia mercado (apostas auto-resolvem como vazio)
+        try {
+          await this.prisma.duel.update({
+            where: { id: matchup.duelId },
+            data: { status: DuelStatus.FINISHED },
+          });
+        } catch (e) {
+          this.logger.warn(`Falha ao marcar duel ${matchup.duelId} como FINISHED: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+
+      // 2) Auto-abrir proxima rodada (nao fatal se falhar - admin pode abrir manualmente)
+      try {
+        const nextMatchup = await this.prisma.listMatchup.findFirst({
+          where: {
+            listEventId: matchup.listEventId,
+            winnerSide: null,
+            marketOpen: false,
+            id: { not: matchupId },
+          },
+          orderBy: [
+            { roundNumber: 'asc' },
+            { order: 'asc' },
+          ],
+        });
+        if (nextMatchup && nextMatchup.leftDriverId && nextMatchup.rightDriverId) {
+          await this.adminToggleMatchupMarket(nextMatchup.id, true, audit);
+        }
+      } catch (e) {
+        this.logger.warn(`Falha ao abrir proxima rodada apos settle de ${matchupId}: ${e instanceof Error ? e.message : e}`);
+      }
+
+      // Se payout falhou, lanca erro APOS o swap/audit log para o admin saber
+      if (payoutError) {
+        throw new BadRequestException(
+          `Vencedor auditado mas LIQUIDACAO DAS APOSTAS FALHOU: ${payoutError}. Reconcilie manualmente em /admin/audit-logs (acao SETTLE_DUEL_FAILED).`,
+        );
+      }
+
+      return result;
     });
   }
 
@@ -607,6 +775,8 @@ export class BrazilListsService {
             data: {
               sport: 'DRAG_RACE',
               name: `${matchup.listEvent.list.name} — ${matchup.listEvent.name}`,
+              bannerUrl: matchup.listEvent.bannerUrl ?? null,
+              featured: matchup.listEvent.featured ?? false,
               startAt: matchup.listEvent.scheduledAt,
               status: EventStatus.SCHEDULED,
             },
@@ -738,7 +908,7 @@ export class BrazilListsService {
         audit,
       );
       return updated;
-    });
+    }, { timeout: 20000, maxWait: 5000 });
   }
 
   private async ensureDriverCar(
@@ -889,7 +1059,9 @@ export class BrazilListsService {
         id: event.id,
         name: event.name,
         scheduledAt: event.scheduledAt,
+        endsAt: event.endsAt,
         status: event.status,
+        type: event.type,
         notes: event.notes,
         matchups: (event.matchups ?? []).map((m: any) => ({
           id: m.id,

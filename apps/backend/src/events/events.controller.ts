@@ -9,4 +9,9 @@ export class EventsController {
   listEvents() {
     return this.eventsService.listEvents();
   }
+
+  @Get('featured')
+  listFeatured() {
+    return this.eventsService.listFeatured();
+  }
 }

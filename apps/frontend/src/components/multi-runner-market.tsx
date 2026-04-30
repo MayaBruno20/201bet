@@ -53,22 +53,32 @@ export function MultiRunnerMarket({ snapshot, me, stake, setStake, onPlaceBet, p
   const canBet = !!me && !!selectedRunner && stake >= 10 && currentBalance >= stake;
 
   return (
-    <div className='space-y-6'>
+    <div className='space-y-4 sm:space-y-6'>
       {/* Header */}
-      <div className='flex items-end justify-between border-b border-white/5 pb-4'>
-        <div>
+      <div className='border-b border-white/5 pb-3 sm:pb-4'>
+        <div className='flex items-center gap-2 flex-wrap'>
           <p className='text-[10px] font-semibold uppercase tracking-widest text-emerald-400/70'>
             {MARKET_TYPE_LABELS[snapshot.marketType] ?? snapshot.marketType}
           </p>
-          <h2 className='mt-1 text-2xl font-semibold tracking-tight'>{snapshot.marketName}</h2>
-          <p className='mt-1 text-xs text-white/50'>
-            Pote: <strong className='text-white/80'>R$ {formatMoney(snapshot.totalPool)}</strong>
-            <span className='mx-2'>•</span>
-            Comissão: <strong className='text-white/80'>{snapshot.rakePercent}%</strong>
-            <span className='mx-2'>•</span>
-            <strong className='text-white/80'>{snapshot.runners.length}</strong> opções
-          </p>
+          {snapshot.status === 'SUSPENDED' && (
+            <span className='rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-300'>
+              ⏸ SUSPENSO
+            </span>
+          )}
+          {snapshot.status === 'SETTLED' && (
+            <span className='rounded-full bg-white/10 border border-white/20 px-2 py-0.5 text-[10px] font-bold text-white/60'>
+              LIQUIDADO
+            </span>
+          )}
         </div>
+        <h2 className='mt-1 text-lg sm:text-2xl font-semibold tracking-tight'>{snapshot.marketName}</h2>
+        <p className='mt-1 text-[11px] sm:text-xs text-white/50 flex flex-wrap gap-x-2 gap-y-1'>
+          <span>Pote: <strong className='text-white/80'>R$ {formatMoney(snapshot.totalPool)}</strong></span>
+          <span className='hidden sm:inline'>•</span>
+          <span>Comissão: <strong className='text-white/80'>{snapshot.rakePercent}%</strong></span>
+          <span className='hidden sm:inline'>•</span>
+          <span><strong className='text-white/80'>{snapshot.runners.length}</strong> opções</span>
+        </p>
       </div>
 
       {/* Pool distribution bar */}
@@ -96,7 +106,7 @@ export function MultiRunnerMarket({ snapshot, me, stake, setStake, onPlaceBet, p
       )}
 
       {/* Runner cards */}
-      <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
+      <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3'>
         {snapshot.runners.map((runner, idx) => {
           const isSelected = selectedOddId === runner.oddId;
           const colorClass = RUNNER_COLORS[idx % RUNNER_COLORS.length];
@@ -106,26 +116,26 @@ export function MultiRunnerMarket({ snapshot, me, stake, setStake, onPlaceBet, p
             <button
               key={runner.oddId}
               type='button'
-              className={`group relative text-left rounded-2xl border p-5 transition-all duration-300 outline-none
+              className={`group relative text-left rounded-2xl border p-4 sm:p-5 transition-all duration-300 outline-none
                 ${isSelected ? `bg-gradient-to-br ${colorClass} scale-[1.02] shadow-xl` : 'bg-white/[0.02] border-white/8 hover:bg-white/5 hover:border-white/15'}`}
               onClick={() => setSelectedOddId(runner.oddId)}
             >
-              <div className='flex items-center justify-between mb-3'>
-                <p className='font-medium text-white/90'>{runner.label}</p>
-                {isSelected && <div className='h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' />}
+              <div className='flex items-center justify-between mb-2 sm:mb-3'>
+                <p className='font-medium text-white/90 text-sm sm:text-base truncate'>{runner.label}</p>
+                {isSelected && <div className='h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] shrink-0' />}
               </div>
 
-              <div className='flex items-end justify-between'>
-                <div>
-                  <p className='text-[10px] font-medium uppercase tracking-widest text-white/30 mb-1'>Cotação</p>
+              <div className='flex items-end justify-between gap-2'>
+                <div className='min-w-0'>
+                  <p className='text-[10px] font-medium uppercase tracking-widest text-white/30 mb-0.5 sm:mb-1'>Cotação</p>
                   <div className='flex items-baseline gap-1'>
-                    <span className={`text-lg font-medium ${accentClass}`}>@</span>
-                    <span className='text-3xl font-bold tracking-tighter text-white'>
+                    <span className={`text-base sm:text-lg font-medium ${accentClass}`}>@</span>
+                    <span className='text-2xl sm:text-3xl font-bold tracking-tighter text-white'>
                       {runner.odd > 0 ? runner.odd.toFixed(2) : '—'}
                     </span>
                   </div>
                 </div>
-                <div className='text-right'>
+                <div className='text-right shrink-0'>
                   <p className='text-[10px] text-white/30 mb-0.5'>R$ {formatMoney(runner.pool)}</p>
                   <p className='text-[10px] text-white/25'>{runner.tickets} apostas</p>
                 </div>
@@ -145,12 +155,12 @@ export function MultiRunnerMarket({ snapshot, me, stake, setStake, onPlaceBet, p
 
       {/* Bet form */}
       <div className='rounded-2xl border border-white/8 bg-white/[0.02] p-6'>
-        <div className='grid gap-6 lg:grid-cols-2'>
-          <div className='space-y-1 text-sm'>
+        <div className='grid gap-4 sm:gap-6 lg:grid-cols-2'>
+          <div className='space-y-1 text-xs sm:text-sm'>
             <p className='text-white/40'>Sua seleção</p>
-            <p className='text-lg font-medium'>{selectedRunner?.label ?? 'Selecione uma opção acima'}</p>
+            <p className='text-base sm:text-lg font-medium truncate'>{selectedRunner?.label ?? 'Selecione uma opção acima'}</p>
             {selectedRunner && (
-              <p className='text-sm text-white/50'>Cotação: <span className='text-white font-medium'>@{selectedRunner.odd.toFixed(2)}</span></p>
+              <p className='text-xs sm:text-sm text-white/50'>Cotação: <span className='text-white font-medium'>@{selectedRunner.odd.toFixed(2)}</span></p>
             )}
             <div className='h-2' />
             <div className='flex justify-between border-b border-white/5 pb-2 text-white/60'>
@@ -172,16 +182,16 @@ export function MultiRunnerMarket({ snapshot, me, stake, setStake, onPlaceBet, p
 
           <div className='flex flex-col justify-end gap-3'>
             <div className='relative'>
-              <span className='absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-medium'>R$</span>
+              <span className='absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-medium text-sm sm:text-base'>R$</span>
               <input
-                className='w-full rounded-2xl border border-white/10 bg-[#090b11]/50 py-4 pl-12 pr-4 text-2xl font-semibold text-white focus:border-white/30 focus:outline-none'
-                type='number' min={10} step={10} value={stake}
+                className='w-full rounded-2xl border border-white/10 bg-[#090b11]/50 py-3 sm:py-4 pl-11 sm:pl-12 pr-4 text-xl sm:text-2xl font-semibold text-white focus:border-white/30 focus:outline-none'
+                type='number' inputMode='decimal' min={10} step={10} value={stake}
                 onChange={(e) => setStake(Number(e.target.value || 0))}
               />
             </div>
             <button
               type='button'
-              className='w-full rounded-2xl bg-white px-4 py-4 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all hover:bg-white/90 disabled:opacity-50 disabled:pointer-events-none'
+              className='w-full rounded-2xl bg-white px-4 py-3 sm:py-4 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all hover:bg-white/90 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none'
               disabled={!canBet || placingBet}
               onClick={() => selectedOddId && onPlaceBet(selectedOddId)}
             >
@@ -193,7 +203,7 @@ export function MultiRunnerMarket({ snapshot, me, stake, setStake, onPlaceBet, p
 
       {/* History */}
       {snapshot.history.length > 0 && (
-        <article className='rounded-2xl border border-white/10 bg-[#101525] p-5'>
+        <article className='rounded-2xl border border-white/10 bg-[#101525] p-4 sm:p-5'>
           <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3'>Histórico de cotações</p>
           <div className='max-h-48 space-y-1.5 overflow-auto pr-1'>
             {snapshot.history.slice().reverse().slice(0, 20).map((point, i) => (

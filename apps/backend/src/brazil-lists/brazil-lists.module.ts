@@ -6,6 +6,7 @@ import {
 } from './brazil-lists.admin.controller';
 import { BrazilListsService } from './brazil-lists.service';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { SettlementService } from '../settlement.service';
 
 @Module({
   controllers: [
@@ -13,7 +14,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
     BrazilListsAdminController,
     BrazilListEventsAdminController,
   ],
-  providers: [BrazilListsService, RolesGuard],
+  providers: [BrazilListsService, RolesGuard, SettlementService],
   exports: [BrazilListsService],
 })
 export class BrazilListsModule {}

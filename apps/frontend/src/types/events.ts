@@ -2,6 +2,9 @@ export type ApiEvent = {
   id: string;
   sport: string;
   name: string;
+  description?: string | null;
+  bannerUrl?: string | null;
+  featured?: boolean;
   startAt: string;
   status: string;
   markets: Array<{

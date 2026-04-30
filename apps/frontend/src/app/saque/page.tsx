@@ -47,6 +47,9 @@ export default function SaquePage() {
 
   useEffect(() => {
     void loadData();
+    // Polling automatico para refresh de status de saques pendentes
+    const interval = setInterval(() => { void loadData(); }, 15000);
+    return () => clearInterval(interval);
   }, []);
 
   async function loadData() {
@@ -126,9 +129,9 @@ export default function SaquePage() {
   if (!sessionOk) {
     return (
       <main className='min-h-screen bg-[#090b11] text-white'>
-        <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+        <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
           <MainNav />
-          <section className='mt-8 rounded-3xl border border-white/10 bg-amber-500/5 p-6 backdrop-blur-md'>
+          <section className='mt-8 rounded-3xl border border-white/10 bg-amber-500/5 p-4 sm:p-6 backdrop-blur-md'>
             <h1 className='text-2xl font-semibold'>Login necessário</h1>
             <p className='mt-2 text-white/50'>Entre com sua conta para solicitar saque.</p>
             <a href='/login' className='mt-4 inline-flex rounded-2xl bg-white px-5 py-3 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]'>Ir para login</a>
@@ -172,7 +175,7 @@ export default function SaquePage() {
         </div>
 
         {/* Withdraw Form */}
-        <section className='rounded-2xl border border-white/10 bg-[#101525] p-6 mb-6'>
+        <section className='rounded-2xl border border-white/10 bg-[#101525] p-4 sm:p-6 mb-6'>
           <label className='block text-sm text-white/50 mb-2'>Valor do saque (R$)</label>
           <input type='text' inputMode='decimal' className='field text-lg mb-4' placeholder='0,00' value={amount} onChange={(e) => handleAmountChange(e.target.value)} />
 
@@ -209,7 +212,7 @@ export default function SaquePage() {
         </section>
 
         {/* Withdrawal History */}
-        <section className='rounded-2xl border border-white/10 bg-[#101525] p-6'>
+        <section className='rounded-2xl border border-white/10 bg-[#101525] p-4 sm:p-6'>
           <h2 className='text-lg font-semibold mb-4'>Histórico de saques</h2>
           {!withdrawals.length ? (
             <div className='rounded-2xl border border-dashed border-white/10 p-8 text-center'>

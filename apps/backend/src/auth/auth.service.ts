@@ -61,25 +61,28 @@ export class AuthService {
 
   async register(payload: RegisterDto) {
     const email = payload.email.toLowerCase().trim();
-    const cpf = this.normalizeCpf(payload.cpf);
+    const cpf = payload.cpf ? this.normalizeCpf(payload.cpf) : null;
 
     if (payload.password !== payload.confirmPassword) {
       throw new BadRequestException('Senha e confirmação não conferem');
     }
 
-    if (!this.isAdult(payload.birthDate)) {
+    // Idade so e exigida se birthDate foi informado
+    if (payload.birthDate && !this.isAdult(payload.birthDate)) {
       throw new BadRequestException(
         'Cadastro permitido apenas para maiores de 18 anos',
       );
     }
 
     const existing = await this.prisma.user.findUnique({ where: { email } });
-    const existingCpf = await this.prisma.user.findUnique({ where: { cpf } });
-
-    if (existing || existingCpf) {
-      throw new BadRequestException(
-        existing ? 'E-mail já cadastrado' : 'CPF já cadastrado',
-      );
+    if (existing) {
+      throw new BadRequestException('E-mail já cadastrado');
+    }
+    if (cpf) {
+      const existingCpf = await this.prisma.user.findUnique({ where: { cpf } });
+      if (existingCpf) {
+        throw new BadRequestException('CPF já cadastrado');
+      }
     }
 
     const passwordHash = await bcrypt.hash(payload.password, 12);
@@ -90,7 +93,7 @@ export class AuthService {
           email,
           name: payload.name.trim(),
           cpf,
-          birthDate: new Date(payload.birthDate),
+          birthDate: payload.birthDate ? new Date(payload.birthDate) : null,
           password: passwordHash,
           wallet: {
             create: {
@@ -306,7 +309,12 @@ export class AuthService {
       throw new UnauthorizedException('Token Google inválido');
     }
 
-    const email = ticketPayload.email.toLowerCase();
+    // SECURITY: rejeitar contas Google com email nao verificado (previne takeover)
+    if (ticketPayload.email_verified !== true) {
+      throw new UnauthorizedException('E-mail Google não verificado pelo Google');
+    }
+
+    const email = ticketPayload.email.toLowerCase().trim();
     const displayName =
       ticketPayload.name ?? email.split('@')[0] ?? 'Usuário Google';
 
@@ -316,11 +324,25 @@ export class AuthService {
         include: { wallet: true },
       });
       if (existing) {
+        if (existing.status === 'BANNED') {
+          throw new UnauthorizedException('Conta suspensa');
+        }
+        // SECURITY: conta com googleSub diferente = takeover attempt
+        if (existing.googleSub && existing.googleSub !== ticketPayload.sub) {
+          throw new UnauthorizedException('Esta conta Google nao corresponde ao registro vinculado');
+        }
+        // SECURITY: conta SEM googleSub = registrada via senha. Bloqueia auto-link
+        // para impedir que alguem com Google da mesma email assuma a conta sem provar a senha.
+        if (!existing.googleSub) {
+          throw new UnauthorizedException(
+            'Já existe uma conta com este e-mail. Faça login com sua senha cadastrada e vincule o Google em Minha conta.',
+          );
+        }
+        // Conta com mesmo googleSub - login normal
         const updated = await tx.user.update({
           where: { id: existing.id },
           data: {
-            googleSub: ticketPayload.sub,
-            status: 'ACTIVE',
+            status: existing.status === 'ACTIVE' ? 'ACTIVE' : existing.status,
             emailVerified: true,
           },
           include: { wallet: true },
@@ -571,8 +593,8 @@ export class AuthService {
           eventName: item.odd.market.event.name,
           duelId: nearest?.id ?? null,
           stageLabel: nearest
-            ? `Etapa ${nearest.index + 1}`
-            : 'Etapa não identificada',
+            ? `Rodada ${nearest.index + 1}`
+            : 'Rodada não identificada',
           duelStatus: nearest?.status ?? null,
         };
       }),

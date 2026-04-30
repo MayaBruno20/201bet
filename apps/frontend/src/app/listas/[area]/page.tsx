@@ -92,7 +92,7 @@ export default function ListaAreaPage() {
 
   return (
     <main className='min-h-screen bg-[#090b11] text-white'>
-      <div className='mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8'>
+      <div className='mx-auto max-w-6xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
         <MainNav />
 
         <Link href='/listas' className='mt-2 inline-flex items-center gap-2 text-xs text-white/40 transition hover:text-white'>

@@ -23,7 +23,7 @@ export function SiteFooter() {
         <div className='grid grid-cols-1 gap-8 md:grid-cols-4'>
           <div className='md:col-span-2'>
             <Link href='/' className='inline-flex items-center transition-opacity hover:opacity-80'>
-              <Image src='/images/logo.png' alt='201bet' width={140} height={36} className='h-8 w-auto' />
+              <Image src='/images/logoSemFundo.png' alt='201bet' width={200} height={56} className='h-12 w-auto' />
             </Link>
             <p className='mt-4 max-w-md text-sm text-white/50'>
               Apostas esportivas em tempo real focadas na cultura brasileira de arrancada. Mercados homologados,
