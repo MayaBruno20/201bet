@@ -1,9 +1,26 @@
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { PrismaService } from './database/prisma.service';
+
+function logRuntimeEnv() {
+  const logger = new Logger('Env');
+  const pick = (key: string) => (process.env[key] ?? '').toString();
+
+  logger.log(
+    [
+      `NODE_ENV=${pick('NODE_ENV') || 'development'}`,
+      `PORT=${pick('PORT') || '3502'}`,
+      `EMAIL_PROVIDER=${pick('EMAIL_PROVIDER') || 'noop'}`,
+      `EMAIL_FROM_ADDRESS=${pick('EMAIL_FROM_ADDRESS') || '(missing)'}`,
+      `REDIS_HOST=${pick('REDIS_HOST') || 'localhost'}`,
+      `REDIS_PORT=${pick('REDIS_PORT') || '3505'}`,
+      `REDIS_TLS=${pick('REDIS_TLS') || 'false'}`,
+    ].join(' '),
+  );
+}
 
 function assertJwtSecretForRuntime() {
   const secret = process.env.JWT_SECRET?.trim();
@@ -27,6 +44,7 @@ function assertJwtSecretForRuntime() {
 
 async function bootstrap() {
   assertJwtSecretForRuntime();
+  logRuntimeEnv();
 
   const app = await NestFactory.create(AppModule);
   const prismaService = app.get(PrismaService);
