@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
 import { ApiEvent } from '@/types/events';
+import { EventBanner } from '@/components/event-banner';
 
 import { getPublicApiUrl } from '@/lib/env-public';
 
@@ -77,11 +78,11 @@ export default function EventosPage() {
             const evStatus = getStatus(event.status);
             return (
               <article key={event.id} className='group rounded-3xl border border-white/10 bg-[#101525] overflow-hidden transition-colors hover:border-white/15'>
-                {/* Banner do evento (se houver) */}
+                {/* Banner do evento (imagem ou vídeo Vimeo/YouTube) */}
                 {event.bannerUrl && (
                   <div className='relative w-full aspect-[16/9] sm:aspect-[21/9] max-h-[300px] overflow-hidden'>
-                    <img src={event.bannerUrl} alt={event.name} className='w-full h-full object-cover' />
-                    <div className='absolute inset-0 bg-gradient-to-t from-[#101525] via-[#101525]/40 to-transparent' />
+                    <EventBanner url={event.bannerUrl} alt={event.name} className='absolute inset-0 w-full h-full object-cover' />
+                    <div className='pointer-events-none absolute inset-0 bg-gradient-to-t from-[#101525] via-[#101525]/40 to-transparent' />
                     {event.featured && (
                       <span className='absolute top-3 right-3 inline-flex items-center rounded-full bg-[#d4a843]/30 backdrop-blur-md border border-[#d4a843]/50 px-2.5 py-1 text-[10px] font-bold tracking-wider text-[#d4a843]'>
                         ⭐ DESTAQUE

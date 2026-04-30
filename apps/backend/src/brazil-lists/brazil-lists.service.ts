@@ -741,29 +741,7 @@ export class BrazilListsService {
     const rightDriver = matchup.rightDriver;
 
     return this.prisma.$transaction(async (tx) => {
-      if (open) {
-        // Garantir que só um mercado fica aberto por evento de lista
-        const siblings = await tx.listMatchup.findMany({
-          where: {
-            listEventId: matchup.listEventId,
-            marketOpen: true,
-            id: { not: matchupId },
-          },
-          select: { id: true, duelId: true },
-        });
-        for (const sibling of siblings) {
-          await tx.listMatchup.update({
-            where: { id: sibling.id },
-            data: { marketOpen: false },
-          });
-          if (sibling.duelId) {
-            await tx.duel.update({
-              where: { id: sibling.duelId },
-              data: { status: DuelStatus.BOOKING_CLOSED },
-            }).catch(() => undefined);
-          }
-        }
-      }
+      // Múltiplos mercados podem ficar abertos simultaneamente neste evento de lista.
 
       let duelId = matchup.duelId;
       let eventId = matchup.listEvent.eventId;

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
+import { ListLogo } from '@/components/list-logo';
 import { getPublicApiUrl } from '@/lib/env-public';
 
 const apiUrl = getPublicApiUrl();
@@ -118,9 +119,7 @@ export default function ListaAreaPage() {
           <>
             <section className='mt-4 rounded-2xl border border-white/10 bg-[#101525] p-6 sm:p-8'>
               <div className='flex flex-wrap items-start gap-4'>
-                <div className='flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-blue-500/20 to-orange-500/20 text-lg font-bold'>
-                  {list.areaCode}
-                </div>
+                <ListLogo areaCode={list.areaCode} className='h-16 w-16' fallbackTextClassName='text-lg' />
                 <div className='flex-1 min-w-0'>
                   <div className='flex items-center gap-2'>
                     <h1 className='text-2xl font-bold tracking-tight sm:text-3xl truncate'>{list.name}</h1>

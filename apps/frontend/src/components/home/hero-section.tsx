@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue } from 'framer-motion';
 import { AnimatedContent } from '@/components/animations/AnimatedContent';
 import { ShinyText } from '@/components/animations/ShinyText';
 
@@ -40,14 +40,44 @@ export function HeroSection() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const sectionRef = useRef<HTMLElement>(null);
 
-  const { scrollYProgress } = useScroll({
-    target: sectionRef,
-    offset: ['start start', 'end start'],
-  });
+  // Progresso da rolagem do hero, calculado a partir do `getBoundingClientRect`
+  // da própria seção. Funciona independente de qualquer coisa renderizada acima
+  // (FeaturedEvents, MainNav, etc.) — quando o topo do hero está no topo do viewport,
+  // progress=0; quando o hero já rolou ~uma altura pra cima, progress=1.
+  const backgroundY    = useMotionValue('0%');
+  const contentOpacity = useMotionValue(1);
+  const contentY       = useMotionValue('0%');
 
-  const backgroundY    = useTransform(scrollYProgress, [0, 1], ['0%', '20%']);
-  const contentOpacity = useTransform(scrollYProgress, [0, 0.55], [1, 0]);
-  const contentY       = useTransform(scrollYProgress, [0, 1], ['0%', '12%']);
+  useEffect(() => {
+    const update = () => {
+      const node = sectionRef.current;
+      if (!node) return;
+      const rect = node.getBoundingClientRect();
+      const h = rect.height || 1;
+      // progress: 0 quando topo do hero >= topo do viewport (hero ainda não começou a sair).
+      // 1 quando topo do hero rolou uma altura inteira para cima.
+      const raw = -rect.top / h;
+      const progress = Math.max(0, Math.min(1, raw));
+
+      // Conteúdo: opacity 1 → 0 ao longo dos primeiros 55% da rolagem do hero.
+      const op = Math.max(0, Math.min(1, 1 - progress / 0.55));
+      contentOpacity.set(op);
+
+      // Parallax: 0% → 12% sobre toda a faixa.
+      contentY.set(`${progress * 12}%`);
+
+      // Background parallax: 0% → 20%.
+      backgroundY.set(`${progress * 20}%`);
+    };
+
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [backgroundY, contentOpacity, contentY]);
 
   const advance = useCallback(() => {
     setCurrentIndex(prev => (prev + 1) % heroImages.length);
@@ -150,10 +180,10 @@ export function HeroSection() {
 
           <AnimatedContent distance={40} delay={0.3}>
             <h1 className='text-5xl font-extrabold leading-[1.05] text-white sm:text-6xl md:text-7xl lg:text-8xl tracking-tight'>
-              No mundo da arrancada,{' '}
+            Os 201 metros{' '}
               <br className='hidden md:block' />
               <span className='text-transparent bg-clip-text bg-gradient-to-br from-blue-400 via-white to-white/20'>
-                quem larga primeiro vence.
+               decidem o vencedor. Você decide o lance.
               </span>
             </h1>
           </AnimatedContent>

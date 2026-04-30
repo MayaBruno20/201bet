@@ -71,6 +71,17 @@ export type MultiRunnerSnapshot = {
   };
 };
 
+export type BoardStage = {
+  duelId: string;
+  label: string;
+  roundNumber: number;
+  category: string | null;
+  categoryLabel: string | null;
+  startsAt: string;
+  bookingCloseAt: string;
+  status: string;
+};
+
 export type BettingBoard = {
   events: Array<{
     id: string;
@@ -79,13 +90,7 @@ export type BettingBoard = {
     status: string;
     marketNames: string[];
     currentDuelId: string | null;
-    stages: Array<{
-      duelId: string;
-      label: string;
-      startsAt: string;
-      bookingCloseAt: string;
-      status: string;
-    }>;
+    stages: BoardStage[];
   }>;
   generatedAt: string;
 };

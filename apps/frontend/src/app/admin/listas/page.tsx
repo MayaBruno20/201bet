@@ -7,6 +7,7 @@ import { apiFetch } from '@/lib/api-request';
 import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
 import { getPublicApiUrl } from '@/lib/env-public';
 import { useConfirm } from '@/components/confirm-dialog';
+import { EventBanner } from '@/components/event-banner';
 
 const apiUrl = getPublicApiUrl();
 
@@ -717,10 +718,12 @@ function EventsPanel({
             <option value='ARMAGEDDON'>⚔️ Armageddon</option>
             <option value='SHARK_TANK'>🦈 Shark Tank</option>
           </select>
-          <input className='field-sm sm:col-span-2' placeholder='URL do banner (1600×900, JPG/PNG/WebP, max 2MB)' value={newEvent.bannerUrl} onChange={(e) => setNewEvent({ ...newEvent, bannerUrl: e.target.value })} />
+          <input className='field-sm sm:col-span-2' placeholder='URL do banner (imagem ou vídeo Vimeo/YouTube)' value={newEvent.bannerUrl} onChange={(e) => setNewEvent({ ...newEvent, bannerUrl: e.target.value })} />
           {newEvent.bannerUrl && (
             <div className='sm:col-span-2 rounded-xl overflow-hidden border border-white/10 bg-black/30'>
-              <img src={newEvent.bannerUrl} alt='preview' className='w-full aspect-[16/9] object-cover' onError={(e) => (e.currentTarget.style.display = 'none')} />
+              <div className='relative w-full aspect-[16/9] overflow-hidden'>
+                <EventBanner url={newEvent.bannerUrl} alt='preview' className='absolute inset-0 w-full h-full object-cover' />
+              </div>
             </div>
           )}
           <label className='sm:col-span-2 flex items-center gap-2 text-xs text-white/70'>

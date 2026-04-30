@@ -489,29 +489,7 @@ export class ArmageddonService {
     const rightDriver = matchup.rightDriver;
 
     return this.prisma.$transaction(async (tx) => {
-      if (open) {
-        // Garantir que so um mercado fica aberto por evento Armageddon
-        const siblings = await tx.armageddonMatchup.findMany({
-          where: {
-            eventId: matchup.eventId,
-            marketOpen: true,
-            id: { not: matchupId },
-          },
-          select: { id: true, duelId: true },
-        });
-        for (const sibling of siblings) {
-          await tx.armageddonMatchup.update({
-            where: { id: sibling.id },
-            data: { marketOpen: false },
-          });
-          if (sibling.duelId) {
-            await tx.duel.update({
-              where: { id: sibling.duelId },
-              data: { status: DuelStatus.BOOKING_CLOSED },
-            }).catch(() => undefined);
-          }
-        }
-      }
+      // Múltiplos mercados podem ficar abertos simultaneamente neste evento Armageddon.
 
       let duelId = matchup.duelId;
       let eventId = matchup.event.eventId;

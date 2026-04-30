@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
+import { ListLogo } from '@/components/list-logo';
 import { getPublicApiUrl } from '@/lib/env-public';
 
 const apiUrl = getPublicApiUrl();
@@ -100,14 +101,12 @@ export default function ListasPage() {
             >
               <div className='flex items-start justify-between gap-3'>
                 <div>
-                  <div className='flex items-center gap-2'>
-                    <span className='inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/20 to-orange-500/20 border border-white/10 text-sm font-bold tracking-tight'>
-                      {list.areaCode}
-                    </span>
+                  <div className='flex items-center gap-3'>
+                    <ListLogo areaCode={list.areaCode} className='h-12 w-12' />
                     <div>
                       <p className='text-sm font-semibold'>{list.name}</p>
                       <p className='text-[10px] font-semibold uppercase tracking-widest text-white/40'>
-                        {list.format === 'TOP_20' ? 'TOP 20' : 'TOP 10'}
+                        DDD {list.areaCode} · {list.format === 'TOP_20' ? 'TOP 20' : 'TOP 10'}
                       </p>
                     </div>
                   </div>

@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { CategoryEventStatus, CategoryMatchupStatus, DuelStatus, EventStatus, MarketStatus, MatchupSide, OddStatus, Prisma, TimeCategory } from '@prisma/client';
+import { BetStatus, CategoryEventStatus, CategoryMatchupStatus, DuelStatus, EventStatus, MarketStatus, MatchupSide, OddStatus, Prisma, TimeCategory, WalletTransactionType } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { SettlementService } from '../settlement.service';
 import { CreateCategoryEventDto } from './dto/create-category-event.dto';
 import { UpdateCategoryEventDto } from './dto/update-category-event.dto';
 import { CreateBracketDto, SaveBracketLayoutDto, SettleCategoryMatchupDto, UpdateCompetitorDto, UpsertCompetitorDto } from './dto/bracket.dto';
+import { ImportCompetitorsDto } from './dto/import-competitors.dto';
 
 type AuditContext = { actorUserId?: string; ipAddress?: string; userAgent?: string };
 
@@ -96,34 +97,54 @@ export class CategoryEventsService {
       throw new BadRequestException('A data de fim deve ser posterior à data de início');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const event = await tx.categoryEvent.create({
-        data: {
-          name: dto.name.trim(),
-          description: dto.description?.trim(),
-          scheduledAt: startDate,
-          endsAt: endDate,
-          bannerUrl: dto.bannerUrl,
-          featured: dto.featured ?? false,
-          status: CategoryEventStatus.DRAFT,
-          notes: dto.notes,
-        },
-      });
+    const created = await this.prisma.$transaction(
+      async (tx) => {
+        const event = await tx.categoryEvent.create({
+          data: {
+            name: dto.name.trim(),
+            description: dto.description?.trim(),
+            scheduledAt: startDate,
+            endsAt: endDate,
+            bannerUrl: dto.bannerUrl,
+            featured: dto.featured ?? false,
+            status: CategoryEventStatus.DRAFT,
+            notes: dto.notes,
+          },
+        });
 
-      // Cria brackets para categorias informadas
-      if (dto.categories?.length) {
-        for (const cat of dto.categories) {
-          await tx.categoryBracket.create({
-            data: { categoryEventId: event.id, category: cat, size: 8 },
+        // Cria todos os brackets em uma única chamada (em vez de N round-trips)
+        if (dto.categories?.length) {
+          await tx.categoryBracket.createMany({
+            data: dto.categories.map((category) => ({
+              categoryEventId: event.id,
+              category,
+              size: 8,
+            })),
+            skipDuplicates: true,
           });
         }
-      }
 
-      await this.logAudit(tx, 'CATEGORY_EVENT_CREATE', 'CategoryEvent', event.id, dto, audit);
-      return tx.categoryEvent.findUnique({
-        where: { id: event.id },
-        include: { brackets: { include: { _count: { select: { competitors: true, matchups: true } } } } },
-      });
+        return event;
+      },
+      { timeout: 20000, maxWait: 5000 },
+    );
+
+    // Audit log e fetch final fora da transação — não bloqueiam a criação
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: audit.actorUserId,
+        action: 'CATEGORY_EVENT_CREATE',
+        entity: 'CategoryEvent',
+        entityId: created.id,
+        payload: dto as unknown as Prisma.InputJsonValue,
+        ipAddress: audit.ipAddress,
+        userAgent: audit.userAgent,
+      },
+    }).catch((e) => this.logger.warn(`Audit CATEGORY_EVENT_CREATE falhou: ${e instanceof Error ? e.message : e}`));
+
+    return this.prisma.categoryEvent.findUnique({
+      where: { id: created.id },
+      include: { brackets: { include: { _count: { select: { competitors: true, matchups: true } } } } },
     });
   }
 
@@ -164,6 +185,223 @@ export class CategoryEventsService {
       await this.logAudit(tx, 'CATEGORY_EVENT_CANCEL', 'CategoryEvent', id, {}, audit);
       return { id, status: CategoryEventStatus.CANCELED };
     });
+  }
+
+  async adminHardDeleteEvent(id: string, audit: AuditContext = {}, options: { force?: boolean } = {}) {
+    const force = !!options.force;
+    const event = await this.prisma.categoryEvent.findUnique({
+      where: { id },
+      include: {
+        brackets: {
+          include: {
+            matchups: { select: { id: true, duelId: true, settledAt: true } },
+          },
+        },
+      },
+    });
+    if (!event) throw new NotFoundException('Evento não encontrado');
+
+    // Coleta duelIds vinculados a esse evento (criados quando algum mercado foi aberto)
+    const duelIds = event.brackets
+      .flatMap((b) => b.matchups.map((m) => m.duelId))
+      .filter((d): d is string => !!d);
+
+    const settledMatchup = event.brackets.some((b) => b.matchups.some((m) => m.settledAt !== null));
+
+    let betsCount = 0;
+    if (duelIds.length > 0) {
+      betsCount = await this.prisma.betItem.count({
+        where: { odd: { market: { duelId: { in: duelIds } } } },
+      });
+    }
+
+    if (!force) {
+      if (settledMatchup) {
+        throw new BadRequestException(
+          'Não é possível excluir: existem rodadas já auditadas/liquidadas neste evento. Use "Excluir forçado" para anular as apostas e remover.',
+        );
+      }
+      if (betsCount > 0) {
+        throw new BadRequestException(
+          'Não é possível excluir: este evento já possui apostas registradas. Use "Cancelar evento" para preservar o histórico ou "Excluir forçado" para anular as apostas.',
+        );
+      }
+    }
+
+    // Em modo force, carrega bilhetes pra reverter o impacto na carteira do usuário
+    type BetReversal = {
+      betId: string;
+      userId: string;
+      walletId: string | null;
+      stake: Prisma.Decimal;
+      potentialWin: Prisma.Decimal;
+      status: BetStatus;
+    };
+    let reversals: BetReversal[] = [];
+    if (force && duelIds.length > 0) {
+      const betItems = await this.prisma.betItem.findMany({
+        where: { odd: { market: { duelId: { in: duelIds } } } },
+        include: {
+          bet: { include: { user: { include: { wallet: true } } } },
+        },
+      });
+      const seen = new Set<string>();
+      for (const bi of betItems) {
+        if (seen.has(bi.betId)) continue;
+        seen.add(bi.betId);
+        reversals.push({
+          betId: bi.betId,
+          userId: bi.bet.userId,
+          walletId: bi.bet.user.wallet?.id ?? null,
+          stake: bi.bet.stake,
+          potentialWin: bi.bet.potentialWin,
+          status: bi.bet.status,
+        });
+      }
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        let refundedCount = 0;
+        let payoutReversedCount = 0;
+
+        if (force && reversals.length > 0) {
+          for (const r of reversals) {
+            // Reverte impacto na carteira pra que o usuário volte ao saldo pré-aposta
+            //   OPEN/LOST: stake foi debitado e nunca devolvido → refund stake
+            //   WON: stake foi debitado, payout creditado → refund stake e estorna payout (delta = stake - payout)
+            //   REFUNDED: nada (já devolvido pelo voidMarket anterior)
+            //   VOID/CASHED_OUT: tratamos como já reembolsado
+            if (r.walletId) {
+              if (r.status === BetStatus.OPEN || r.status === BetStatus.LOST) {
+                await tx.wallet.update({
+                  where: { id: r.walletId },
+                  data: { balance: { increment: r.stake } },
+                });
+                await tx.walletTransaction.create({
+                  data: {
+                    walletId: r.walletId,
+                    type: WalletTransactionType.BET_REFUND,
+                    amount: r.stake,
+                    reference: r.betId,
+                  },
+                });
+                refundedCount += 1;
+              } else if (r.status === BetStatus.WON) {
+                // Estorna payout, devolve stake
+                const delta = r.stake.sub(r.potentialWin); // pode ser negativo
+                if (!delta.isZero()) {
+                  await tx.wallet.update({
+                    where: { id: r.walletId },
+                    data: { balance: { increment: delta } },
+                  });
+                }
+                await tx.walletTransaction.create({
+                  data: {
+                    walletId: r.walletId,
+                    type: WalletTransactionType.BET_REFUND,
+                    amount: delta,
+                    reference: r.betId,
+                  },
+                });
+                payoutReversedCount += 1;
+              }
+            }
+
+            // Apaga comissões de afiliado vinculadas a essa aposta
+            await tx.affiliateCommission.deleteMany({ where: { betId: r.betId } });
+            // Apaga BetItems e a Bet (deleteMany pra ser idempotente — não erra se sumiu)
+            await tx.betItem.deleteMany({ where: { betId: r.betId } });
+            await tx.bet.deleteMany({ where: { id: r.betId } });
+          }
+        }
+
+        // 1) Coleta TODOS os markets/duels referenciando este evento.
+        //    Usa duelIds dos matchups + eventId vinculado, varrendo possíveis órfãos
+        //    (ex.: matchups apagados deixam o Duel apontando pro Event sem caminho de volta).
+        const marketIdSet = new Set<string>();
+        const duelIdSet = new Set<string>(duelIds);
+
+        if (event.eventId) {
+          const eventMarkets = await tx.market.findMany({
+            where: { eventId: event.eventId },
+            select: { id: true, duelId: true },
+          });
+          for (const m of eventMarkets) {
+            marketIdSet.add(m.id);
+            if (m.duelId) duelIdSet.add(m.duelId);
+          }
+          const eventDuels = await tx.duel.findMany({
+            where: { eventId: event.eventId },
+            select: { id: true },
+          });
+          for (const d of eventDuels) duelIdSet.add(d.id);
+        }
+        if (duelIdSet.size > 0) {
+          const duelMarkets = await tx.market.findMany({
+            where: { duelId: { in: Array.from(duelIdSet) } },
+            select: { id: true },
+          });
+          for (const m of duelMarkets) marketIdSet.add(m.id);
+        }
+
+        const marketIds = Array.from(marketIdSet);
+        const allDuelIds = Array.from(duelIdSet);
+
+        // 2) Apaga em ordem (filhos → pais), respeitando os Restrict do schema
+        if (marketIds.length > 0) {
+          const oddIds = await tx.odd
+            .findMany({ where: { marketId: { in: marketIds } }, select: { id: true } })
+            .then((rows) => rows.map((o) => o.id));
+
+          if (oddIds.length > 0) {
+            await tx.affiliateCommission.deleteMany({ where: { marketId: { in: marketIds } } });
+            await tx.betItem.deleteMany({ where: { oddId: { in: oddIds } } });
+            await tx.odd.deleteMany({ where: { id: { in: oddIds } } });
+          }
+          await tx.market.deleteMany({ where: { id: { in: marketIds } } });
+        }
+
+        if (allDuelIds.length > 0) {
+          await tx.duelPoolState.deleteMany({ where: { duelId: { in: allDuelIds } } });
+          await tx.duel.deleteMany({ where: { id: { in: allDuelIds } } });
+        }
+
+        if (event.eventId) {
+          await tx.event.deleteMany({ where: { id: event.eventId } });
+        }
+
+        // 3) CategoryEvent — brackets, competitors e matchups caem em cascade
+        await tx.categoryEvent.delete({ where: { id } });
+
+        await this.logAudit(
+          tx,
+          force ? 'CATEGORY_EVENT_FORCE_DELETE' : 'CATEGORY_EVENT_HARD_DELETE',
+          'CategoryEvent',
+          id,
+          {
+            name: event.name,
+            duelIds,
+            linkedEventId: event.eventId,
+            force,
+            betsAffected: reversals.length,
+            refundedCount,
+            payoutReversedCount,
+          },
+          audit,
+        );
+
+        return {
+          id,
+          deleted: true,
+          force,
+          betsAffected: reversals.length,
+          refundedCount,
+          payoutReversedCount,
+        };
+      },
+      { timeout: 60000, maxWait: 10000 },
+    );
   }
 
   // ── Admin: Brackets ────────────────────────────────
@@ -235,12 +473,13 @@ export class CategoryEventsService {
       const track = dto.qualifyingTrack !== undefined ? new Prisma.Decimal(dto.qualifyingTrack) : null;
       const total = reaction && track ? reaction.add(track) : null;
 
+      const carNameTrimmed = dto.carName?.trim() || null;
       const competitor = await tx.categoryCompetitor.upsert({
         where: { bracketId_driverId: { bracketId, driverId } },
         create: {
           bracketId,
           driverId,
-          carName: dto.carName.trim(),
+          carName: carNameTrimmed,
           carNumber: dto.carNumber ?? null,
           qualifyingReaction: reaction,
           qualifyingTrack: track,
@@ -248,7 +487,7 @@ export class CategoryEventsService {
           qualifyingPosition: dto.qualifyingPosition,
         },
         update: {
-          carName: dto.carName.trim(),
+          carName: carNameTrimmed,
           carNumber: dto.carNumber ?? null,
           qualifyingReaction: reaction ?? undefined,
           qualifyingTrack: track ?? undefined,
@@ -261,6 +500,217 @@ export class CategoryEventsService {
       await this.logAudit(tx, 'CATEGORY_COMPETITOR_UPSERT', 'CategoryCompetitor', competitor.id, dto, audit);
       return competitor;
     });
+  }
+
+  async adminImportCompetitors(eventId: string, dto: ImportCompetitorsDto, audit: AuditContext = {}) {
+    const event = await this.prisma.categoryEvent.findUnique({
+      where: { id: eventId },
+      include: { brackets: true },
+    });
+    if (!event) throw new NotFoundException('Evento não encontrado');
+
+    type Summary = {
+      imported: number;
+      skipped: number;
+      bracketsCreated: number;
+      perCategory: Record<string, { imported: number; skipped: number; bracketId: string }>;
+      skippedDetails: Array<{ row: number; driverName: string; reason: string }>;
+    };
+
+    const summary: Summary = {
+      imported: 0,
+      skipped: 0,
+      bracketsCreated: 0,
+      perCategory: {},
+      skippedDetails: [],
+    };
+
+    // 1) Sanitiza entradas e separa as inválidas
+    type Sanitized = {
+      row: number;
+      driverName: string;
+      lowerName: string;
+      category: TimeCategory;
+      original: ImportCompetitorsDto['entries'][number];
+    };
+    const sanitized: Sanitized[] = [];
+    for (let i = 0; i < dto.entries.length; i++) {
+      const e = dto.entries[i];
+      const driverName = (e.driverName || '').trim();
+      if (!driverName) {
+        summary.skipped += 1;
+        summary.skippedDetails.push({ row: i + 1, driverName: '', reason: 'Nome do piloto vazio' });
+        continue;
+      }
+      sanitized.push({
+        row: i + 1,
+        driverName,
+        lowerName: driverName.toLowerCase(),
+        category: e.category,
+        original: e,
+      });
+    }
+
+    // 2) Garante brackets faltantes (poucos — uma criação por categoria)
+    const bracketByCategory = new Map<TimeCategory, string>();
+    for (const b of event.brackets) bracketByCategory.set(b.category, b.id);
+    const neededCats = Array.from(new Set(sanitized.map((s) => s.category)));
+    for (const cat of neededCats) {
+      if (bracketByCategory.has(cat)) continue;
+      const created = await this.prisma.categoryBracket.create({
+        data: { categoryEventId: eventId, category: cat, size: 8 },
+      });
+      bracketByCategory.set(cat, created.id);
+      summary.bracketsCreated += 1;
+    }
+
+    // 3) Lookup em lote dos drivers existentes (uma única query, case-insensitive)
+    const lowerNames = Array.from(new Set(sanitized.map((s) => s.lowerName)));
+    const driverIdByLower = new Map<string, string>();
+    if (lowerNames.length > 0) {
+      const existing = await this.prisma.$queryRaw<Array<{ id: string; name: string }>>(
+        Prisma.sql`SELECT "id", "name" FROM "Driver" WHERE LOWER("name") IN (${Prisma.join(lowerNames)})`,
+      );
+      for (const d of existing) driverIdByLower.set(d.name.toLowerCase(), d.id);
+    }
+
+    // 4) Cria drivers ausentes em lote (createMany), depois rebusca os IDs
+    const newDriversByLower = new Map<
+      string,
+      { name: string; nickname: string | null; team: string | null; hometown: string | null; carNumber: string | null }
+    >();
+    for (const s of sanitized) {
+      if (driverIdByLower.has(s.lowerName)) continue;
+      if (newDriversByLower.has(s.lowerName)) continue;
+      newDriversByLower.set(s.lowerName, {
+        name: s.driverName,
+        nickname: s.original.driverNickname?.trim() || null,
+        team: s.original.driverTeam?.trim() || null,
+        hometown: s.original.driverHometown?.trim() || null,
+        carNumber: s.original.carNumber ?? null,
+      });
+    }
+    if (newDriversByLower.size > 0) {
+      await this.prisma.driver.createMany({
+        data: Array.from(newDriversByLower.values()),
+      });
+      const fresh = await this.prisma.$queryRaw<Array<{ id: string; name: string }>>(
+        Prisma.sql`SELECT "id", "name" FROM "Driver" WHERE LOWER("name") IN (${Prisma.join(
+          Array.from(newDriversByLower.keys()),
+        )})`,
+      );
+      for (const d of fresh) {
+        const key = d.name.toLowerCase();
+        if (!driverIdByLower.has(key)) driverIdByLower.set(key, d.id);
+      }
+    }
+
+    // 5) Pré-busca os pares (bracketId, driverId) já existentes
+    const allBracketIds = Array.from(bracketByCategory.values());
+    const existingCompetitors = allBracketIds.length
+      ? await this.prisma.categoryCompetitor.findMany({
+          where: { bracketId: { in: allBracketIds } },
+          select: { bracketId: true, driverId: true },
+        })
+      : [];
+    const existingPairs = new Set<string>();
+    for (const c of existingCompetitors) existingPairs.add(`${c.bracketId}:${c.driverId}`);
+
+    // 6) Monta payload do createMany de competitors
+    const competitorData: Prisma.CategoryCompetitorCreateManyInput[] = [];
+    const seenInBatch = new Set<string>();
+
+    for (const s of sanitized) {
+      const bracketId = bracketByCategory.get(s.category);
+      if (!bracketId) {
+        summary.skipped += 1;
+        summary.skippedDetails.push({
+          row: s.row,
+          driverName: s.driverName,
+          reason: 'Categoria sem chave',
+        });
+        continue;
+      }
+      const driverId = driverIdByLower.get(s.lowerName);
+      if (!driverId) {
+        summary.skipped += 1;
+        summary.skippedDetails.push({
+          row: s.row,
+          driverName: s.driverName,
+          reason: 'Não foi possível resolver o piloto',
+        });
+        continue;
+      }
+      const pairKey = `${bracketId}:${driverId}`;
+      if (existingPairs.has(pairKey) || seenInBatch.has(pairKey)) {
+        summary.skipped += 1;
+        summary.skippedDetails.push({
+          row: s.row,
+          driverName: s.driverName,
+          reason: `Já inscrito na categoria ${s.category}`,
+        });
+        const bucket = (summary.perCategory[s.category] ??= {
+          imported: 0,
+          skipped: 0,
+          bracketId,
+        });
+        bucket.skipped += 1;
+        continue;
+      }
+      seenInBatch.add(pairKey);
+
+      const reaction =
+        s.original.qualifyingReaction !== undefined ? new Prisma.Decimal(s.original.qualifyingReaction) : null;
+      const track =
+        s.original.qualifyingTrack !== undefined ? new Prisma.Decimal(s.original.qualifyingTrack) : null;
+      const total = reaction && track ? reaction.add(track) : null;
+
+      competitorData.push({
+        bracketId,
+        driverId,
+        carName: s.original.carName?.trim() || null,
+        carNumber: s.original.carNumber ?? null,
+        qualifyingReaction: reaction,
+        qualifyingTrack: track,
+        qualifyingTotal: total,
+      });
+
+      summary.imported += 1;
+      const bucket = (summary.perCategory[s.category] ??= {
+        imported: 0,
+        skipped: 0,
+        bracketId,
+      });
+      bucket.imported += 1;
+    }
+
+    if (competitorData.length > 0) {
+      await this.prisma.categoryCompetitor.createMany({
+        data: competitorData,
+        skipDuplicates: true,
+      });
+    }
+
+    // 7) Audit log
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: audit.actorUserId,
+        action: 'CATEGORY_COMPETITORS_IMPORT',
+        entity: 'CategoryEvent',
+        entityId: eventId,
+        payload: {
+          total: dto.entries.length,
+          imported: summary.imported,
+          skipped: summary.skipped,
+          bracketsCreated: summary.bracketsCreated,
+          perCategory: summary.perCategory,
+        } as Prisma.InputJsonValue,
+        ipAddress: audit.ipAddress,
+        userAgent: audit.userAgent,
+      },
+    });
+
+    return summary;
   }
 
   async adminUpdateCompetitor(competitorId: string, dto: UpdateCompetitorDto, audit: AuditContext = {}) {
@@ -411,19 +861,8 @@ export class CategoryEventsService {
     const rightComp = matchup.rightCompetitor;
 
     return this.prisma.$transaction(async (tx) => {
-      // Garante apenas 1 mercado aberto por bracket
-      if (open) {
-        const siblings = await tx.categoryMatchup.findMany({
-          where: { bracketId: matchup.bracketId, marketOpen: true, id: { not: matchupId } },
-          select: { id: true, duelId: true },
-        });
-        for (const s of siblings) {
-          await tx.categoryMatchup.update({ where: { id: s.id }, data: { marketOpen: false } });
-          if (s.duelId) {
-            await tx.duel.update({ where: { id: s.duelId }, data: { status: DuelStatus.BOOKING_CLOSED } }).catch(() => undefined);
-          }
-        }
-      }
+      // Múltiplos mercados podem ficar abertos simultaneamente — operadores podem
+      // movimentar várias apostas em paralelo enquanto os embates rolam.
 
       let duelId = matchup.duelId;
 
@@ -527,8 +966,8 @@ export class CategoryEventsService {
 
   private async ensureDriverCar(
     tx: Prisma.TransactionClient,
-    driver: { id: string; cars: Array<{ id: string }> },
-    carName: string,
+    driver: { id: string; name: string; cars: Array<{ id: string }> },
+    carName: string | null,
     carNumber: string | null,
   ): Promise<string> {
     const existing = driver.cars[0];
@@ -536,7 +975,7 @@ export class CategoryEventsService {
     const created = await tx.car.create({
       data: {
         driverId: driver.id,
-        name: carName,
+        name: carName?.trim() || driver.name,
         category: 'COPA_CATEGORIAS',
         number: carNumber ?? null,
       },

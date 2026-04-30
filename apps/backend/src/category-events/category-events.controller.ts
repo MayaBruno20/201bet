@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -8,6 +8,7 @@ import { CategoryEventsService } from './category-events.service';
 import { CreateCategoryEventDto } from './dto/create-category-event.dto';
 import { UpdateCategoryEventDto } from './dto/update-category-event.dto';
 import { CreateBracketDto, SaveBracketLayoutDto, SettleCategoryMatchupDto, UpdateCompetitorDto, UpsertCompetitorDto } from './dto/bracket.dto';
+import { ImportCompetitorsDto } from './dto/import-competitors.dto';
 
 type ReqUser = Request & { user?: { userId?: string } };
 
@@ -54,6 +55,16 @@ export class CategoryEventsAdminController {
     return this.svc.adminDeleteEvent(id, this.audit(req));
   }
 
+  @Delete(':id/hard')
+  hardRemove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('force') force: string | undefined,
+    @Req() req: ReqUser,
+  ) {
+    const forced = force === 'true' || force === '1';
+    return this.svc.adminHardDeleteEvent(id, this.audit(req), { force: forced });
+  }
+
   // Brackets
   @Post(':id/brackets')
   createBracket(@Param('id', ParseUUIDPipe) eventId: string, @Body() dto: CreateBracketDto, @Req() req: ReqUser) {
@@ -74,6 +85,11 @@ export class CategoryEventsAdminController {
   @Post('brackets/:bracketId/competitors')
   upsertCompetitor(@Param('bracketId', ParseUUIDPipe) bracketId: string, @Body() dto: UpsertCompetitorDto, @Req() req: ReqUser) {
     return this.svc.adminUpsertCompetitor(bracketId, dto, this.audit(req));
+  }
+
+  @Post(':id/competitors/import')
+  importCompetitors(@Param('id', ParseUUIDPipe) eventId: string, @Body() dto: ImportCompetitorsDto, @Req() req: ReqUser) {
+    return this.svc.adminImportCompetitors(eventId, dto, this.audit(req));
   }
 
   @Patch('competitors/:competitorId')

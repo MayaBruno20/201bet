@@ -18,15 +18,16 @@
     "@react-three/fiber": "^9.5.0",
     "201bet": "file:../..",
     "clsx": "^2.1.1",
+    "dotenv": "^16.4.5",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.7.0",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "dotenv": "^16.4.5",
     "socket.io-client": "^4.8.3",
     "tailwind-merge": "^3.5.0",
-    "three": "^0.183.2"
+    "three": "^0.183.2",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
