@@ -83,7 +83,7 @@ export class DailyRateLimiter implements OnModuleDestroy {
       maxRetriesPerRequest: 1,
       // Evita race com enableOfflineQueue=false no primeiro comando.
       lazyConnect: false,
-      enableOfflineQueue: false,
+      enableOfflineQueue: true,
     });
     this.client.on('error', (err) => {
       this.markDegraded(err);
