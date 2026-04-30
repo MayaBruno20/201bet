@@ -3,6 +3,9 @@ import {
   Body,
   Controller,
   Get,
+  HttpException,
+  InternalServerErrorException,
+  Logger,
   Post,
   Query,
   UseGuards,
@@ -16,6 +19,8 @@ import { MultiRunnerMarketService } from './multi-runner-market.service';
 
 @Controller()
 export class AppController {
+  private readonly logger = new Logger(AppController.name);
+
   constructor(
     private readonly marketService: MarketService,
     private readonly multiRunnerService: MultiRunnerMarketService,
@@ -62,9 +67,10 @@ export class AppController {
         amount: payload.amount,
       });
     } catch (error) {
-      throw new BadRequestException(
-        error instanceof Error ? error.message : 'Falha ao registrar aposta',
-      );
+      // Re-lanca HttpException (BadRequest, NotFound, etc) sem alterar - o GlobalExceptionFilter cuida
+      if (error instanceof HttpException) throw error;
+      this.logger.error('placeBet falhou inesperadamente', error instanceof Error ? error.stack : error);
+      throw new InternalServerErrorException('Falha ao registrar aposta. Tente novamente.');
     }
   }
 
@@ -122,7 +128,7 @@ export class AppController {
     return this.multiRunnerService.getSnapshot(marketId);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, EmailVerifiedGuard)
   @Post('market/multi-runner/bet')
   async placeMultiRunnerBet(
     @CurrentUser() user: { userId: string },
@@ -140,7 +146,9 @@ export class AppController {
         amount: payload.amount,
       });
     } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : 'Falha ao registrar aposta');
+      if (error instanceof HttpException) throw error;
+      this.logger.error('placeMultiRunnerBet falhou inesperadamente', error instanceof Error ? error.stack : error);
+      throw new InternalServerErrorException('Falha ao registrar aposta. Tente novamente.');
     }
   }
 }

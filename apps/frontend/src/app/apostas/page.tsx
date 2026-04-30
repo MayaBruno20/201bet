@@ -72,12 +72,25 @@ export default function ApostasPage() {
   const [placingBet, setPlacingBet] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [myBets, setMyBets] = useState<MyBet[]>([]);
+  const [minBet, setMinBet] = useState(10);
 
   useEffect(() => {
     void loadBoardAndDefaults();
     void loadSession();
     void loadMyBets();
+    void loadConfig();
   }, []);
+
+  async function loadConfig() {
+    try {
+      const res = await fetch(`${apiUrl}/market/config`);
+      if (!res.ok) return;
+      const cfg = await res.json();
+      if (typeof cfg?.minBetAmount === 'number' && cfg.minBetAmount > 0) {
+        setMinBet(cfg.minBetAmount);
+      }
+    } catch { /* ignore */ }
+  }
 
   useEffect(() => {
     const socket: Socket = io(wsUrl, { transports: ['websocket'] });
@@ -97,6 +110,13 @@ export default function ApostasPage() {
       setMultiRunnerSnapshots((prev) => ({ ...prev, [payload.marketId]: payload }));
     });
 
+    socket.on('market:settled', (payload: { marketId: string; winnerLabel: string }) => {
+      // Pode ter ganhado uma aposta — atualiza saldo e bets
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('wallet:refresh'));
+      void loadMyBets();
+      setMessage(`Mercado liquidado: vencedor ${payload.winnerLabel}`);
+    });
+
     return () => { socket.disconnect(); };
   }, [selectedDuelId]);
 
@@ -107,7 +127,7 @@ export default function ApostasPage() {
   const expectedReturn = selectedSide ? stake * selectedSide.odd : 0;
   const currentBalance = Number(me?.wallet?.balance ?? 0);
   const balanceAfterBet = currentBalance - stake;
-  const canBet = !!snapshot && !!me && stake >= 10 && currentBalance >= stake;
+  const canBet = !!snapshot && !!me && stake >= minBet && currentBalance >= stake;
 
   // Multi-runner markets for the selected event, grouped by type
   const eventMultiRunnerMarkets = useMemo(() => {
@@ -152,7 +172,8 @@ export default function ApostasPage() {
       const [boardRes, snapshotRes] = await Promise.all([fetch(`${apiUrl}/market/board`), fetch(`${apiUrl}/market/snapshot`)]);
       if (!boardRes.ok || !snapshotRes.ok) throw new Error('Não foi possível carregar os mercados');
       const boardData = (await boardRes.json()) as BettingBoard;
-      const firstSnapshot = (await snapshotRes.json()) as MarketSnapshot | null;
+      const snapText = await snapshotRes.text();
+      const firstSnapshot = snapText.trim() ? (JSON.parse(snapText) as MarketSnapshot | null) : null;
       setBoard(boardData);
       if (firstSnapshot) {
         setSnapshots({ [firstSnapshot.duelId]: firstSnapshot });
@@ -186,6 +207,8 @@ export default function ApostasPage() {
       const data = (await response.json()) as { snapshot: MarketSnapshot; bet: { id: string; oddAtPlacement: number; potentialWin: number }; wallet: { balance: number } };
       setSnapshots((prev) => ({ ...prev, [data.snapshot.duelId]: data.snapshot }));
       setMe((prev) => (prev ? { ...prev, wallet: { balance: data.wallet.balance, currency: prev.wallet?.currency ?? 'BRL' } } : prev));
+      // notifica nav (e qualquer outro componente) para atualizar saldo
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('wallet:refresh'));
       void loadMyBets();
       setMessage(`Aposta confirmada! Ticket ${data.bet.id.slice(0, 8)} • odd ${data.bet.oddAtPlacement.toFixed(2)} • retorno R$ ${data.bet.potentialWin.toFixed(2)}`);
     } catch (error) {
@@ -211,6 +234,7 @@ export default function ApostasPage() {
       const data = (await response.json()) as { snapshot: MultiRunnerSnapshot; bet: { id: string; oddAtPlacement: number; potentialWin: number }; wallet: { balance: number } };
       setMultiRunnerSnapshots((prev) => ({ ...prev, [data.snapshot.marketId]: data.snapshot }));
       setMe((prev) => (prev ? { ...prev, wallet: { balance: data.wallet.balance, currency: prev.wallet?.currency ?? 'BRL' } } : prev));
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('wallet:refresh'));
       void loadMyBets();
       setMessage(`Aposta confirmada! Ticket ${data.bet.id.slice(0, 8)} • odd ${data.bet.oddAtPlacement.toFixed(2)} • retorno R$ ${data.bet.potentialWin.toFixed(2)}`);
     } catch (error) {
@@ -220,26 +244,26 @@ export default function ApostasPage() {
 
   return (
     <main className='min-h-screen bg-[#090b11] text-white'>
-      <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+      <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
         <MainNav />
 
         {/* Header */}
-        <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-5 sm:p-6'>
-          <div className='flex items-center justify-between'>
-            <div>
-              <h1 className='text-2xl font-semibold sm:text-3xl'>Apostas em tempo real</h1>
-              <p className='mt-1 text-sm text-white/60'>Escolha o evento e a modalidade para apostar.</p>
+        <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-4 sm:p-6'>
+          <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+            <div className='min-w-0'>
+              <h1 className='text-xl font-semibold sm:text-2xl md:text-3xl'>Apostas em tempo real</h1>
+              <p className='mt-1 text-xs sm:text-sm text-white/60'>Escolha o evento e a modalidade.</p>
             </div>
-            <div className='flex items-center gap-4'>
+            <div className='flex items-center justify-between gap-3 sm:justify-end sm:gap-4'>
               {me && (
-                <div className='text-right'>
+                <div className='text-left sm:text-right'>
                   <p className='text-[10px] text-white/40 uppercase tracking-wider'>Saldo</p>
-                  <p className='text-lg font-bold text-emerald-400'>R$ {formatMoney(currentBalance)}</p>
+                  <p className='text-base sm:text-lg font-bold text-emerald-400'>R$ {formatMoney(currentBalance)}</p>
                 </div>
               )}
-              <span className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-medium ${connected ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                <span className={`mr-2 h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
-                {connected ? 'Ao vivo' : 'Reconectando...'}
+              <span className={`inline-flex items-center rounded-full px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-xs font-medium whitespace-nowrap ${connected ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                <span className={`mr-1.5 sm:mr-2 h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+                {connected ? 'Ao vivo' : 'Reconectando'}
               </span>
             </div>
           </div>
@@ -251,85 +275,144 @@ export default function ApostasPage() {
           <p className='mt-6 text-white/70'>Carregando mercados...</p>
         ) : (
           <>
-            {/* Event selector */}
-            <div className='mt-4 flex flex-wrap gap-2'>
-              {board?.events.map((event) => (
-                <button
-                  key={event.id}
-                  type='button'
-                  className={`rounded-xl px-5 py-3 text-sm font-medium transition-all ${selectedEventId === event.id
-                    ? 'bg-white text-[#090b11] shadow-lg'
-                    : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white border border-white/5'
-                  }`}
-                  onClick={() => {
-                    setSelectedEventId(event.id);
-                    setSelectedDuelId(event.currentDuelId ?? event.stages[0]?.duelId ?? '');
-                    setActiveTab('passadas');
-                  }}
-                >
-                  {event.name}
-                </button>
-              ))}
+            {/* Event selector — scroll horizontal no mobile */}
+            <div className='mt-4 -mx-3 sm:mx-0 overflow-x-auto px-3 sm:px-0 scrollbar-hide'>
+              <div className='flex gap-2 min-w-fit'>
+                {board?.events.map((event) => (
+                  <button
+                    key={event.id}
+                    type='button'
+                    className={`shrink-0 rounded-xl px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${selectedEventId === event.id
+                      ? 'bg-white text-[#090b11] shadow-lg'
+                      : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white border border-white/5'
+                    }`}
+                    onClick={() => {
+                      setSelectedEventId(event.id);
+                      setSelectedDuelId(event.currentDuelId ?? event.stages[0]?.duelId ?? '');
+                      setActiveTab('passadas');
+                    }}
+                  >
+                    {event.name}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Tabs por modalidade */}
-            <div className='mt-4 flex gap-1 rounded-xl bg-[#101525] p-1 border border-white/10'>
-              {TABS.map((tab) => {
-                const { Icon } = tab;
-                const active = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type='button'
-                    className={`group flex flex-1 flex-col items-center justify-center gap-1.5 rounded-lg px-4 py-3 text-sm font-semibold transition-all ${active
-                      ? 'bg-white text-[#090b11] shadow-lg'
-                      : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-                    }`}
-                    onClick={() => setActiveTab(tab.id)}
-                  >
-                    <Icon
-                      size={20}
-                      strokeWidth={active ? 2.4 : 2}
-                      className={`transition-transform ${active ? 'scale-110' : 'group-hover:scale-105'}`}
-                    />
-                    <span className='leading-none'>{tab.label}</span>
-                  </button>
-                );
-              })}
+            {/* Tabs por modalidade — scroll horizontal no mobile */}
+            <div className='mt-4 -mx-3 sm:mx-0 overflow-x-auto scrollbar-hide'>
+              <div className='mx-3 sm:mx-0 flex gap-1 rounded-xl bg-[#101525] p-1 border border-white/10 min-w-fit'>
+                {TABS.map((tab) => {
+                  const { Icon } = tab;
+                  const active = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type='button'
+                      className={`group flex flex-1 sm:flex-1 flex-col items-center justify-center gap-1 sm:gap-1.5 rounded-lg px-3 py-2.5 sm:px-4 sm:py-3 text-[11px] sm:text-sm font-semibold transition-all whitespace-nowrap min-w-[80px] ${active
+                        ? 'bg-white text-[#090b11] shadow-lg'
+                        : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                      }`}
+                      onClick={() => setActiveTab(tab.id)}
+                    >
+                      <Icon
+                        size={18}
+                        strokeWidth={active ? 2.4 : 2}
+                        className={`transition-transform ${active ? 'scale-110' : 'group-hover:scale-105'}`}
+                      />
+                      <span className='leading-none text-center'>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className='mt-6'>
               {/* ── TAB: PASSADAS (Duelos) ── */}
               {activeTab === 'passadas' && (
-                <div className='space-y-6'>
-                  {/* Stage selector */}
+                <div className='space-y-4 sm:space-y-6'>
+                  {/* Stage selector — scroll horizontal mobile */}
                   {selectedEvent && selectedEvent.stages.length > 1 && (
-                    <div className='flex flex-wrap gap-2'>
-                      {selectedEvent.stages.map((stage) => (
-                        <button
-                          key={stage.duelId}
-                          type='button'
-                          className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${currentDuelId === stage.duelId
-                            ? 'bg-blue-500 text-white shadow-lg'
-                            : 'bg-white/5 text-white/60 hover:bg-white/10'
-                          }`}
-                          onClick={() => setSelectedDuelId(stage.duelId)}
-                        >
-                          {stage.label}
-                        </button>
-                      ))}
+                    <div className='-mx-3 sm:mx-0 overflow-x-auto px-3 sm:px-0 scrollbar-hide'>
+                      <div className='flex gap-2 min-w-fit'>
+                        {selectedEvent.stages.map((stage) => (
+                          <button
+                            key={stage.duelId}
+                            type='button'
+                            className={`shrink-0 rounded-full px-4 py-2 text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${currentDuelId === stage.duelId
+                              ? 'bg-blue-500 text-white shadow-lg'
+                              : 'bg-white/5 text-white/60 hover:bg-white/10'
+                            }`}
+                            onClick={() => setSelectedDuelId(stage.duelId)}
+                          >
+                            {stage.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
 
                   {snapshot ? (
                     <>
+                      {/* Banner de Resultado Final (rodada auditada) */}
+                      {snapshot.settlement && (
+                        <div className='rounded-2xl border-2 border-emerald-500/40 bg-gradient-to-r from-emerald-500/15 to-emerald-500/5 p-4 sm:p-5'>
+                          <div className='flex items-center gap-3 mb-3'>
+                            <div className='shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-emerald-500/20 flex items-center justify-center'>
+                              <svg className='w-6 h-6 sm:w-7 sm:h-7 text-emerald-400' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                                <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M5 13l4 4L19 7' />
+                              </svg>
+                            </div>
+                            <div className='flex-1 min-w-0'>
+                              <p className='text-[10px] font-bold uppercase tracking-widest text-emerald-300/70'>Rodada Auditada</p>
+                              <p className='text-base sm:text-xl font-bold text-emerald-200 truncate'>Vencedor: {snapshot.settlement.winnerLabel}</p>
+                            </div>
+                          </div>
+                          <div className='grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 mt-3'>
+                            <div className='rounded-lg bg-black/20 p-2.5 sm:p-3'>
+                              <p className='text-[10px] uppercase tracking-widest text-white/40'>Pote Final</p>
+                              <p className='mt-1 text-sm sm:text-lg font-bold text-white'>R$ {formatMoney(snapshot.settlement.finalPool)}</p>
+                            </div>
+                            <div className='rounded-lg bg-black/20 p-2.5 sm:p-3'>
+                              <p className='text-[10px] uppercase tracking-widest text-white/40'>Odd Final</p>
+                              <p className='mt-1 text-sm sm:text-lg font-bold text-emerald-300'>@{snapshot.settlement.finalOdd.toFixed(2)}</p>
+                            </div>
+                            <div className='col-span-2 sm:col-span-1 rounded-lg bg-black/20 p-2.5 sm:p-3'>
+                              <p className='text-[10px] uppercase tracking-widest text-white/40'>Liquidado em</p>
+                              <p className='mt-1 text-xs font-medium text-white/80'>{new Date(snapshot.settlement.settledAt).toLocaleString('pt-BR')}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Banner: apostas encerradas / pausadas (so se nao auditado) */}
+                      {!snapshot.settlement && (snapshot.locked || snapshot.status === 'BOOKING_CLOSED' || snapshot.status === 'FINISHED' || snapshot.closeInSeconds <= 0) && (
+                        <div className='rounded-2xl border-2 border-red-500/40 bg-gradient-to-r from-red-500/15 to-red-500/5 p-4 sm:p-5 flex items-center gap-3 sm:gap-4'>
+                          <div className='shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-red-500/20 flex items-center justify-center'>
+                            <svg className='w-6 h-6 sm:w-7 sm:h-7 text-red-400' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                              <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' />
+                            </svg>
+                          </div>
+                          <div className='flex-1 min-w-0'>
+                            <p className='font-bold text-red-300 text-base sm:text-lg'>Apostas encerradas</p>
+                            <p className='text-xs sm:text-sm text-red-200/70 mt-0.5'>
+                              {snapshot.lockMessage ?? (snapshot.status === 'FINISHED' ? 'Esta corrida ja foi finalizada e o resultado liquidado.' : 'O periodo de apostas para esta rodada foi encerrado.')}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Duel header */}
-                      <div className='flex items-end justify-between border-b border-white/5 pb-4'>
-                        <div>
+                      <div className='flex items-end justify-between border-b border-white/5 pb-3 sm:pb-4'>
+                        <div className='min-w-0'>
                           <p className='text-[10px] font-semibold uppercase tracking-widest text-blue-400/70'>{snapshot.stageLabel}</p>
-                          <h2 className='mt-1 text-2xl font-semibold tracking-tight'>{snapshot.eventName}</h2>
-                          <p className='mt-1 text-xs text-white/50'>
-                            Pote: <strong className='text-white/80'>R$ {formatMoney(snapshot.totalPool)}</strong>
+                          <h2 className='mt-1 text-lg sm:text-2xl font-semibold tracking-tight truncate'>{snapshot.eventName}</h2>
+                          <p className='mt-1 text-[11px] sm:text-xs text-white/50 flex flex-wrap gap-x-2 gap-y-1'>
+                            <span>Pote: <strong className='text-white/80'>R$ {formatMoney(snapshot.totalPool)}</strong></span>
+                            {snapshot.closeInSeconds > 0 && (
+                              <span className='text-amber-400'>
+                                Encerra em: <strong>{formatCloseWindow(snapshot.closeInSeconds)}</strong>
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>
@@ -342,41 +425,41 @@ export default function ApostasPage() {
                         </div>
                       )}
 
-                      {/* Odd cards */}
-                      <div className='grid gap-4 md:grid-cols-2'>
+                      {/* Odd cards — empilhados em mobile */}
+                      <div className='grid gap-3 sm:gap-4 sm:grid-cols-2'>
                         <OddCard title={snapshot.duel.left.label} odd={snapshot.duel.left.odd} pool={snapshot.duel.left.pool} tickets={snapshot.duel.left.tickets} active={side === 'LEFT'} onClick={() => setSide('LEFT')} tone='blue' />
                         <OddCard title={snapshot.duel.right.label} odd={snapshot.duel.right.odd} pool={snapshot.duel.right.pool} tickets={snapshot.duel.right.tickets} active={side === 'RIGHT'} onClick={() => setSide('RIGHT')} tone='orange' />
                       </div>
 
                       {/* Bet form */}
-                      <div className='rounded-2xl border border-white/8 bg-white/[0.02] p-6'>
-                        <div className='grid gap-6 lg:grid-cols-2'>
+                      <div className='rounded-2xl border border-white/8 bg-white/[0.02] p-4 sm:p-6'>
+                        <div className='grid gap-4 sm:gap-6 lg:grid-cols-2'>
                           <div className='space-y-1 text-sm'>
-                            <p className='text-white/40'>Sua seleção</p>
-                            <p className='text-lg font-medium'>{selectedSide?.label ?? 'Nenhum'}</p>
+                            <p className='text-white/40 text-xs sm:text-sm'>Sua seleção</p>
+                            <p className='text-base sm:text-lg font-medium'>{selectedSide?.label ?? 'Nenhum'}</p>
                             <div className='h-2' />
-                            <div className='flex justify-between border-b border-white/5 pb-2 text-white/60'>
+                            <div className='flex justify-between border-b border-white/5 pb-2 text-white/60 text-xs sm:text-sm'>
                               <span>Saldo</span>
                               <span className='font-medium text-white'>R$ {formatMoney(currentBalance)}</span>
                             </div>
-                            <div className='flex justify-between border-b border-white/5 py-2 text-white/60'>
+                            <div className='flex justify-between border-b border-white/5 py-2 text-white/60 text-xs sm:text-sm'>
                               <span>Saldo após aposta</span>
                               <span className={`font-medium ${balanceAfterBet < 0 ? 'text-red-400' : 'text-white'}`}>R$ {formatMoney(balanceAfterBet)}</span>
                             </div>
-                            <div className='flex justify-between py-2 text-white/60'>
+                            <div className='flex justify-between py-2 text-white/60 text-xs sm:text-sm'>
                               <span>Retorno bruto</span>
                               <span className='font-semibold text-emerald-400'>R$ {formatMoney(expectedReturn)}</span>
                             </div>
                             {!me && <p className='mt-3 text-xs text-amber-400'>Faça login para apostar.</p>}
-                            {stake < 10 && <p className='mt-1 text-xs text-amber-400'>Valor mínimo: R$ 10,00.</p>}
+                            {stake < minBet && <p className='mt-1 text-xs text-amber-400'>Valor mínimo: R$ {minBet.toFixed(2).replace('.', ',')}.</p>}
                             {me && currentBalance < stake && <p className='mt-1 text-xs text-red-400'>Saldo insuficiente.</p>}
                           </div>
                           <div className='flex flex-col justify-end gap-3'>
                             <div className='relative'>
-                              <span className='absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-medium'>R$</span>
-                              <input className='w-full rounded-2xl border border-white/10 bg-[#090b11]/50 py-4 pl-12 pr-4 text-2xl font-semibold text-white focus:border-white/30 focus:outline-none' type='number' min={10} step={10} value={stakeRaw} onChange={(e) => setStakeRaw(e.target.value)} />
+                              <span className='absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-medium text-sm sm:text-base'>R$</span>
+                              <input className='w-full rounded-2xl border border-white/10 bg-[#090b11]/50 py-3 sm:py-4 pl-11 sm:pl-12 pr-4 text-xl sm:text-2xl font-semibold text-white focus:border-white/30 focus:outline-none' type='number' inputMode='decimal' min={minBet} step={5} value={stakeRaw} onChange={(e) => setStakeRaw(e.target.value)} />
                             </div>
-                            <button type='button' className='w-full rounded-2xl bg-white px-4 py-4 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all hover:bg-white/90 disabled:opacity-50 disabled:pointer-events-none' disabled={!canBet || placingBet} onClick={() => setConfirmOpen(true)}>
+                            <button type='button' className='w-full rounded-2xl bg-white px-4 py-3 sm:py-4 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all hover:bg-white/90 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none' disabled={!canBet || placingBet} onClick={() => setConfirmOpen(true)}>
                               {placingBet ? 'Processando...' : 'Confirmar Bilhete ->'}
                             </button>
                           </div>
@@ -500,27 +583,27 @@ function OddCard({ title, odd, pool, tickets, active, onClick, tone }: {
       className={`group relative w-full overflow-hidden text-left transition-all duration-500 outline-none ${active ? 'scale-[1.02] shadow-2xl z-10' : 'hover:scale-[1.01] opacity-90 hover:opacity-100'}`}
       type='button' onClick={onClick}
     >
-      <div className={`absolute inset-0 border-2 rounded-3xl transition-colors duration-300 ${active ? (isBlue ? 'border-blue-500' : 'border-orange-500') : 'border-transparent'}`} />
-      <div className={`rounded-3xl p-6 h-full flex flex-col justify-between ${isBlue ? 'bg-gradient-to-br from-[#121c2d] to-[#0a101d]' : 'bg-gradient-to-br from-[#2d1c12] to-[#1d100a]'}`}>
+      <div className={`absolute inset-0 border-2 rounded-2xl sm:rounded-3xl transition-colors duration-300 ${active ? (isBlue ? 'border-blue-500' : 'border-orange-500') : 'border-transparent'}`} />
+      <div className={`rounded-2xl sm:rounded-3xl p-4 sm:p-6 h-full flex flex-col justify-between ${isBlue ? 'bg-gradient-to-br from-[#121c2d] to-[#0a101d]' : 'bg-gradient-to-br from-[#2d1c12] to-[#1d100a]'}`}>
         <div className={`absolute -right-12 -top-12 h-32 w-32 rounded-full blur-3xl transition-opacity duration-500 ${active ? 'opacity-30' : 'opacity-0'} ${isBlue ? 'bg-blue-400' : 'bg-orange-400'}`} />
         <div className='relative z-10'>
           <div className='flex items-center gap-2 mb-2'>
             <div className={`w-2 h-2 rounded-full shadow-[0_0_10px_currentColor] ${isBlue ? 'text-blue-400 bg-blue-400' : 'text-orange-400 bg-orange-400'}`} />
             <p className='text-[10px] font-bold uppercase tracking-widest text-white/50'>Opção</p>
           </div>
-          <p className='text-lg font-medium tracking-tight text-white/90 leading-tight min-h-[50px]'>{title}</p>
+          <p className='text-base sm:text-lg font-medium tracking-tight text-white/90 leading-tight min-h-[40px] sm:min-h-[50px]'>{title}</p>
         </div>
-        <div className='relative z-10 mt-6 flex items-end justify-between'>
-          <div>
-            <p className='text-xs font-semibold text-white/40 mb-1'>Cotação</p>
+        <div className='relative z-10 mt-4 sm:mt-6 flex items-end justify-between gap-2'>
+          <div className='min-w-0'>
+            <p className='text-[10px] sm:text-xs font-semibold text-white/40 mb-0.5 sm:mb-1'>Cotação</p>
             <div className='flex items-baseline gap-1'>
-              <span className={`text-xl font-medium ${isBlue ? 'text-blue-400' : 'text-orange-400'}`}>@</span>
-              <p className='text-4xl font-bold tracking-tighter text-white'>{odd?.toFixed(2) ?? '--'}</p>
+              <span className={`text-lg sm:text-xl font-medium ${isBlue ? 'text-blue-400' : 'text-orange-400'}`}>@</span>
+              <p className='text-3xl sm:text-4xl font-bold tracking-tighter text-white'>{odd?.toFixed(2) ?? '--'}</p>
             </div>
           </div>
-          <div className='text-right'>
-            <p className='text-[10px] font-medium uppercase tracking-widest text-white/30 mb-1'>Volume</p>
-            <p className='text-xs font-medium text-white/60'>R$ {formatMoney(pool ?? 0)}</p>
+          <div className='text-right shrink-0'>
+            <p className='text-[10px] font-medium uppercase tracking-widest text-white/30 mb-0.5 sm:mb-1'>Volume</p>
+            <p className='text-[11px] sm:text-xs font-medium text-white/60'>R$ {formatMoney(pool ?? 0)}</p>
             <p className='text-[10px] text-white/40 mt-0.5'>{tickets ?? '--'} APOSTAS</p>
           </div>
         </div>
@@ -540,4 +623,13 @@ function parseApiError(payload: unknown): string | null {
 function formatMoney(value: number) {
   if (!Number.isFinite(value)) return '0,00';
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatCloseWindow(seconds: number) {
+  if (seconds <= 0) return 'encerrado';
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}min ${seconds % 60}s`;
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  return `${hours}h ${mins}min`;
 }
