@@ -11,18 +11,22 @@ function logRuntimeEnv() {
   const logger = new Logger('Env');
   const pick = (key: string) => (process.env[key] ?? '').toString();
 
-  logger.log(
-    [
-      `NODE_ENV=${pick('NODE_ENV') || 'development'}`,
-      `PORT=${pick('PORT') || '3502'}`,
-      `EMAIL_PROVIDER=${pick('EMAIL_PROVIDER') || 'noop'}`,
-      `EMAIL_FROM_ADDRESS=${pick('EMAIL_FROM_ADDRESS') || '(missing)'}`,
-      `REDIS_HOST=${pick('REDIS_HOST') || 'localhost'}`,
-      `REDIS_PORT=${pick('REDIS_PORT') || '3505'}`,
-      `REDIS_TLS=${pick('REDIS_TLS') || 'false'}`,
-      `REDIS_USERNAME=${pick('REDIS_USERNAME') || 'default'}`,
-    ].join(' '),
-  );
+  const line = [
+    `NODE_ENV=${pick('NODE_ENV') || 'development'}`,
+    `PORT=${pick('PORT') || '3502'}`,
+    `EMAIL_PROVIDER=${pick('EMAIL_PROVIDER') || 'noop'}`,
+    `EMAIL_FROM_ADDRESS=${pick('EMAIL_FROM_ADDRESS') || '(missing)'}`,
+    `REDIS_HOST=${pick('REDIS_HOST') || 'localhost'}`,
+    `REDIS_PORT=${pick('REDIS_PORT') || '3505'}`,
+    `REDIS_TLS=${pick('REDIS_TLS') || 'false'}`,
+    `REDIS_USERNAME=${pick('REDIS_USERNAME') || 'default'}`,
+    `REDIS_PASSWORD_SET=${pick('REDIS_PASSWORD') ? 'true' : 'false'}`,
+  ].join(' ');
+
+  // Render às vezes “come” logs iniciais; imprime via ambos.
+  logger.log(line);
+  // eslint-disable-next-line no-console
+  console.log(`[Env] ${line}`);
 }
 
 async function probeRedisConnection(): Promise<void> {
@@ -46,14 +50,16 @@ async function probeRedisConnection(): Promise<void> {
 
   try {
     const pong = await client.ping();
-    logger.log(
-      `PING ok host=${host} port=${port} tls=${tls ? 'true' : 'false'} username=${username} (${pong})`,
-    );
+    const msg = `PING ok host=${host} port=${port} tls=${tls ? 'true' : 'false'} username=${username} (${pong})`;
+    logger.log(msg);
+    // eslint-disable-next-line no-console
+    console.log(`[RedisProbe] ${msg}`);
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    logger.error(
-      `PING failed host=${host} port=${port} tls=${tls ? 'true' : 'false'} username=${username}: ${msg}`,
-    );
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const msg = `PING failed host=${host} port=${port} tls=${tls ? 'true' : 'false'} username=${username}: ${errMsg}`;
+    logger.error(msg);
+    // eslint-disable-next-line no-console
+    console.error(`[RedisProbe] ${msg}`);
   } finally {
     try {
       client.disconnect();
