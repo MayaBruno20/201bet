@@ -81,7 +81,8 @@ export class DailyRateLimiter implements OnModuleDestroy {
       tls:
         this.config.get('REDIS_TLS', { infer: true }) === 'true' ? {} : undefined,
       maxRetriesPerRequest: 1,
-      lazyConnect: true,
+      // Evita race com enableOfflineQueue=false no primeiro comando.
+      lazyConnect: false,
       enableOfflineQueue: false,
     });
     this.client.on('error', (err) => {
