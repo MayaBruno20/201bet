@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, forwardRef, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { BetStatus, MarketStatus, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
 import { PrismaService } from './database/prisma.service';
+import { MarketGateway } from './market.gateway';
 
 type AuditContext = {
   actorUserId?: string;
@@ -25,7 +26,12 @@ export type SettlementResult = {
 export class SettlementService {
   private readonly logger = new Logger(SettlementService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional para evitar circular dep em modulos onde gateway nao esta carregado
+    @Optional() @Inject(forwardRef(() => MarketGateway))
+    private readonly marketGateway?: MarketGateway,
+  ) {}
 
   async settleMarket(marketId: string, winnerOddId: string, audit: AuditContext = {}): Promise<SettlementResult> {
     // Execute everything inside a single transaction with row lock to prevent double-settlement
@@ -210,7 +216,7 @@ export class SettlementService {
         losingBets,
         winnerLabel: winnerOdd.label,
       };
-    });
+    }, { timeout: 60_000, maxWait: 5_000 });
 
     const houseNetProfit = result.rakeCollected - result.totalAffiliateCommission;
 
@@ -219,6 +225,17 @@ export class SettlementService {
       `rake=${result.rakeCollected.toFixed(2)}, payout=${result.totalPayout.toFixed(2)}, ` +
       `affiliate=${result.totalAffiliateCommission.toFixed(2)}, houseNet=${houseNetProfit.toFixed(2)}`,
     );
+
+    // Notifica clientes via WebSocket
+    try {
+      this.marketGateway?.emitSettlement({
+        marketId,
+        winnerOddId,
+        winnerLabel: result.winnerLabel,
+      });
+    } catch (e) {
+      this.logger.warn(`Falha ao emitir settlement por WS: ${e instanceof Error ? e.message : e}`);
+    }
 
     return {
       marketId,
@@ -349,7 +366,7 @@ export class SettlementService {
           userAgent: audit.userAgent,
         },
       });
-    });
+    }, { timeout: 60_000, maxWait: 5_000 });
 
     return { marketId, status: 'VOIDED', refundedBets: market.odds.flatMap((o) => o.betItems).length };
   }

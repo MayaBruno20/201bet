@@ -23,7 +23,16 @@ const baseLinks: NavLink[] = [
 
 type NavUser = SessionUser & {
   wallet?: { balance: number | string; currency: string };
+  walletBalance?: number | string;
 };
+
+/** Suporta ambos shapes (login retorna walletBalance flat, /me retorna wallet aninhado) */
+function getBalance(u: NavUser | null): number {
+  if (!u) return 0;
+  if (u.wallet?.balance !== undefined) return Number(u.wallet.balance);
+  if (u.walletBalance !== undefined) return Number(u.walletBalance);
+  return 0;
+}
 
 export function MainNav() {
   const pathname = usePathname();
@@ -41,23 +50,40 @@ export function MainNav() {
   }, [pathname]);
 
   useEffect(() => {
-    void (async () => {
+    let cancelled = false;
+    const refresh = async () => {
       try {
         const res = await apiFetch(`${apiUrl}/auth/me`, { cache: 'no-store' });
-
+        if (cancelled) return;
         if (!res.ok) {
           clearClientSession();
           setUser(null);
           return;
         }
-
         const data = (await res.json()) as NavUser;
         setStoredUser(data);
         setUser(data);
+
+        // Profile guard: redireciona para completar-cadastro se faltar dados
+        // em rotas que exigem perfil completo (deposito/saque/apostas/carteira)
+        const protectedRoutes = ['/deposito', '/saque', '/apostas', '/carteira'];
+        const inProtected = protectedRoutes.some((p) => pathname?.startsWith(p));
+        if (inProtected && data.profileComplete === false) {
+          router.push('/completar-cadastro');
+        }
       } catch {
-        // keep previous state if backend is temporarily unavailable
+        // keep previous state
       }
-    })();
+    };
+    void refresh();
+
+    // Listener para atualizar saldo apos eventos do app (apostas, depositos)
+    const handler = () => { void refresh(); };
+    window.addEventListener('wallet:refresh', handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('wallet:refresh', handler);
+    };
   }, [pathname]);
 
   useEffect(() => {
@@ -106,20 +132,20 @@ export function MainNav() {
     <>
       {/* Header Fixo Desktop/Mobile */}
       <header className='fixed left-0 right-0 top-0 z-40 glass w-full transition-all duration-300'>
-        <div className='mx-auto max-w-7xl px-4 flex h-16 items-center justify-between sm:px-6 lg:px-8'>
-          
-          <div className='flex items-center gap-6'>
+        <div className='mx-auto max-w-7xl px-3 flex h-16 sm:h-20 items-center justify-between sm:px-6 lg:px-8'>
+
+          <div className='flex items-center gap-3 md:gap-6 min-w-0'>
             <Link
               href='/'
-              className='flex items-center transition-opacity hover:opacity-80'
+              className='flex items-center transition-opacity hover:opacity-80 shrink-0'
             >
               <Image
-                src='/images/logo.png'
+                src='/images/logoSemFundo.png'
                 alt='201bet'
-                width={180}
-                height={48}
+                width={360}
+                height={104}
                 priority
-                className='h-9 w-auto'
+                className='h-11 sm:h-16 md:h-20 w-auto'
               />
             </Link>
 
@@ -137,11 +163,11 @@ export function MainNav() {
             </nav>
           </div>
 
-          <div className='flex items-center gap-2'>
+          <div className='flex items-center gap-1.5 sm:gap-2 shrink-0'>
             {!user ? (
               <Link
                 href='/login'
-                className='rounded-full bg-white/10 px-5 py-2 text-sm font-semibold transition hover:bg-white/20'
+                className='rounded-full bg-white/10 px-4 py-1.5 sm:px-5 sm:py-2 text-xs sm:text-sm font-semibold transition hover:bg-white/20'
               >
                 Entrar
               </Link>
@@ -152,13 +178,13 @@ export function MainNav() {
                   <button
                     type='button'
                     onClick={() => { setWalletOpen((v) => !v); setMenuOpen(false); }}
-                    className='flex items-center gap-2 rounded-full border border-[#d4a843]/30 bg-[#d4a843]/10 py-1.5 pl-3 pr-3 transition hover:bg-[#d4a843]/20'
+                    className='flex items-center gap-1.5 sm:gap-2 rounded-full border border-[#d4a843]/30 bg-[#d4a843]/10 py-1 sm:py-1.5 pl-2 sm:pl-3 pr-2 sm:pr-3 transition hover:bg-[#d4a843]/20'
                   >
-                    <svg className='h-4 w-4 text-[#d4a843]' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+                    <svg className='h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#d4a843]' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
                       <path strokeLinecap='round' strokeLinejoin='round' d='M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 110-6h5.25A2.25 2.25 0 0121 6v0m0 6v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18V6a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 6v6z' />
                     </svg>
-                    <span className='text-xs font-bold text-[#d4a843]'>
-                      {user.wallet ? `R$ ${Number(user.wallet.balance).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'R$ 0,00'}
+                    <span className='text-[11px] sm:text-xs font-bold text-[#d4a843] whitespace-nowrap'>
+                      {`R$ ${getBalance(user).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     </span>
                     <svg className={`h-3 w-3 text-[#d4a843]/60 transition-transform duration-200 ${walletOpen ? 'rotate-180' : ''}`} fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2.5}>
                       <path strokeLinecap='round' strokeLinejoin='round' d='M19 9l-7 7-7-7' />
@@ -169,14 +195,14 @@ export function MainNav() {
                     <div className='rounded-xl border border-white/10 bg-white/[0.03] p-4 mb-3'>
                       <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-1'>Saldo total</p>
                       <p className='text-2xl font-bold text-[#d4a843]'>
-                        {user.wallet ? Number(user.wallet.balance).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00'}
+                        {getBalance(user).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </p>
                     </div>
 
                     <div className='flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 mb-3'>
                       <span className='text-xs text-white/40'>Saldo</span>
                       <span className='text-sm font-semibold'>
-                        {user.wallet ? Number(user.wallet.balance).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00'}
+                        {getBalance(user).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </span>
                     </div>
 
@@ -199,8 +225,8 @@ export function MainNav() {
                   </div>
                 </div>
 
-                {/* Conta Dropdown */}
-                <div className='relative' ref={menuRef}>
+                {/* Conta Dropdown - escondido em mobile (acessivel via hamburger) */}
+                <div className='relative hidden md:block' ref={menuRef}>
                   <button
                     type='button'
                     onClick={() => { setMenuOpen((v) => !v); setWalletOpen(false); }}
@@ -264,22 +290,86 @@ export function MainNav() {
           </button>
         </div>
         
-        <nav className='flex flex-col gap-2 p-6'>
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              onClick={() => setMobileMenuOpen(false)}
-              className={`rounded-2xl px-4 py-4 text-lg font-medium transition-all duration-300 ${pathname === link.href ? 'bg-white/5 text-white border-l-2 border-white' : 'text-white/40 hover:text-white/80 border-l-2 border-transparent'}`}
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
+        <div className='flex flex-col h-[calc(100vh-4rem)] overflow-y-auto'>
+          {user && (
+            <div className='border-b border-white/5 px-6 py-4'>
+              <div className='flex items-center gap-3'>
+                <span className='inline-flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-emerald-500/20 text-base font-bold text-emerald-300'>
+                  {user.avatarUrl ? <img src={user.avatarUrl} alt='Avatar' className='h-full w-full object-cover' /> : user.name.slice(0, 1).toUpperCase()}
+                </span>
+                <div className='min-w-0 flex-1'>
+                  <p className='truncate text-sm font-bold'>{user.name}</p>
+                  <p className='truncate text-xs text-white/50'>{user.email}</p>
+                </div>
+              </div>
+              <div className='mt-3 rounded-xl border border-[#d4a843]/30 bg-[#d4a843]/10 px-4 py-3'>
+                <p className='text-[10px] font-semibold uppercase tracking-widest text-[#d4a843]/70'>Saldo</p>
+                <p className='text-xl font-bold text-[#d4a843]'>
+                  {getBalance(user).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </p>
+                <div className='mt-2 grid grid-cols-2 gap-2'>
+                  <Link
+                    href='/deposito'
+                    onClick={() => setMobileMenuOpen(false)}
+                    className='rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-center text-xs font-bold text-emerald-400 hover:bg-emerald-500/20'
+                  >
+                    Depositar
+                  </Link>
+                  <Link
+                    href='/saque'
+                    onClick={() => setMobileMenuOpen(false)}
+                    className='rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-center text-xs font-bold text-white/80 hover:bg-white/10'
+                  >
+                    Sacar
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+          <nav className='flex flex-col gap-1 p-4 sm:p-6 flex-1'>
+            {links.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className={`rounded-xl px-4 py-3 text-base font-medium transition-all ${pathname === link.href ? 'bg-white/10 text-white border-l-2 border-white' : 'text-white/60 hover:text-white hover:bg-white/5 border-l-2 border-transparent'}`}
+              >
+                {link.label}
+              </Link>
+            ))}
+            {!user && (
+              <Link
+                href='/login'
+                onClick={() => setMobileMenuOpen(false)}
+                className='mt-3 rounded-xl bg-white px-4 py-3 text-center text-base font-bold text-black hover:bg-white/90'
+              >
+                Entrar
+              </Link>
+            )}
+          </nav>
+          {user && (
+            <div className='border-t border-white/5 p-4 sm:p-6 space-y-1'>
+              <Link
+                href='/carteira?tab=transacoes'
+                onClick={() => setMobileMenuOpen(false)}
+                className='block rounded-xl px-4 py-3 text-sm text-white/70 hover:bg-white/5 hover:text-white'
+              >
+                Transações
+              </Link>
+              <button
+                type='button'
+                onClick={logout}
+                className='w-full rounded-xl px-4 py-3 text-left text-sm font-medium text-red-400 hover:bg-red-500/10'
+              >
+                Sair
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Spacer para o fixed header não cobrir conteúdo principal */}
-      <div className='h-16 w-full shrink-0'></div>
+      <div className='h-16 sm:h-20 w-full shrink-0'></div>
     </>
   );
 }

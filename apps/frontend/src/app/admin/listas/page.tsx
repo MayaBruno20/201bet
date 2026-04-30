@@ -6,6 +6,7 @@ import { MainNav } from '@/components/site/main-nav';
 import { apiFetch } from '@/lib/api-request';
 import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
 import { getPublicApiUrl } from '@/lib/env-public';
+import { useConfirm } from '@/components/confirm-dialog';
 
 const apiUrl = getPublicApiUrl();
 
@@ -52,7 +53,9 @@ type ListEvent = {
   id: string;
   name: string;
   scheduledAt: string;
+  endsAt: string | null;
   status: 'DRAFT' | 'IN_PROGRESS' | 'FINISHED' | 'CANCELED';
+  type?: 'REGULAR' | 'ARMAGEDDON' | 'SHARK_TANK';
   notes: string | null;
   matchups: Matchup[];
   sharkTank?: SharkTankEntry[];
@@ -83,8 +86,9 @@ export default function AdminListasPage() {
   const [activeTab, setActiveTab] = useState<'roster' | 'events' | 'shark'>('roster');
 
   const [newList, setNewList] = useState({ areaCode: '', name: '', format: 'TOP_20' as 'TOP_10' | 'TOP_20', administratorName: '', hometown: '' });
-  const [newEvent, setNewEvent] = useState({ name: '', scheduledAt: '', notes: '' });
+  const [newEvent, setNewEvent] = useState({ name: '', scheduledAt: '', endsAt: '', notes: '', bannerUrl: '', featured: false, type: 'REGULAR' as 'REGULAR' | 'ARMAGEDDON' | 'SHARK_TANK' });
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   const isAllowed = useMemo(() => sessionUser?.role === 'ADMIN', [sessionUser]);
 
@@ -122,7 +126,20 @@ export default function AdminListasPage() {
       setSessionUser(null);
       throw new Error('Sessão expirada ou sem permissão.');
     }
-    if (!response.ok) throw new Error(await response.text());
+    if (!response.ok) {
+      const raw = await response.text();
+      let friendly = raw;
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed?.message) && parsed.message[0]) friendly = parsed.message.join('; ');
+        else if (typeof parsed?.message === 'string') friendly = parsed.message;
+        else if (typeof parsed?.error === 'string') friendly = parsed.error;
+      } catch { /* não era JSON */ }
+      if (response.status >= 500) {
+        friendly = `Erro no servidor (${response.status}): ${friendly || 'Tente novamente em instantes.'}`;
+      }
+      throw new Error(friendly);
+    }
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }, []);
@@ -211,30 +228,45 @@ export default function AdminListasPage() {
 
   return (
     <main className='min-h-screen bg-[#090b11] text-white pb-10'>
-      <div className='mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'>
+      <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
         <MainNav />
 
-        <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-5 sm:p-6'>
+        <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-4 sm:p-6'>
           <div className='flex flex-wrap items-start justify-between gap-3'>
-            <div>
+            <div className='min-w-0 flex-1'>
               <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30'>Admin · Listas Brasil</p>
-              <h1 className='mt-1 text-2xl font-bold tracking-tight sm:text-3xl'>Gestão das Listas Brasil</h1>
-              <p className='mt-2 text-sm text-white/60'>
-                Gerencie listas por DDD, pilotos do TOP 10/20, eventos e a geração automática de chaves PAR/ÍMPAR.
+              <h1 className='mt-1 text-xl sm:text-2xl md:text-3xl font-bold tracking-tight'>Gestão das Listas Brasil</h1>
+              <p className='mt-2 text-xs sm:text-sm text-white/60'>
+                Gerencie listas por DDD, pilotos do TOP 10/20, eventos e chaves PAR/ÍMPAR.
               </p>
             </div>
-            <Link href='/admin' className='rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-white/70 transition hover:bg-white/10'>
-              ← Voltar para Admin
+            <Link href='/admin' className='rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10 whitespace-nowrap'>
+              ← Admin
             </Link>
           </div>
-          {statusMessage && (
-            <p className='mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white/70'>{statusMessage}</p>
-          )}
+          {statusMessage && (() => {
+            const isError = /falha|erro|invalid|not found|unauthorized|forbidden|fail|exists/i.test(statusMessage);
+            const isSuccess = /sucesso/i.test(statusMessage);
+            return (
+              <div className={`mt-3 rounded-xl border p-3 text-sm flex items-start justify-between gap-3 ${
+                isError ? 'border-red-500/40 bg-red-500/10 text-red-200'
+                : isSuccess ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+                : 'border-white/10 bg-white/5 text-white/70'
+              }`}>
+                <span className='flex-1'>
+                  {isError && <span className='mr-2'>⚠️</span>}
+                  {isSuccess && <span className='mr-2'>✅</span>}
+                  {statusMessage}
+                </span>
+                <button onClick={() => setStatusMessage('')} className='shrink-0 text-white/40 hover:text-white' aria-label='Fechar'>×</button>
+              </div>
+            );
+          })()}
         </section>
 
-        <div className='mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]'>
+        <div className='mt-4 sm:mt-6 grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-[320px_1fr]'>
           {/* ── Sidebar: lista de listas ───────────────── */}
-          <aside className='space-y-4'>
+          <aside className='space-y-3 sm:space-y-4'>
             <div className='rounded-2xl border border-white/10 bg-[#101525] p-4'>
               <h2 className='text-sm font-semibold'>Nova lista</h2>
               <form
@@ -309,7 +341,8 @@ export default function AdminListasPage() {
             {!detail && <div className='rounded-2xl border border-dashed border-white/10 p-12 text-center text-sm text-white/40'>Selecione uma lista para gerenciar.</div>}
             {detail && (
               <>
-                <ListHeader list={detail} submit={submit} adminJson={adminJson} />
+                <ListHeader list={detail} submit={submit} adminJson={adminJson} confirm={confirm} />
+                <NextRoundPanel list={detail} submit={submit} adminJson={adminJson} confirm={confirm} setActiveTab={setActiveTab} setSelectedEventId={setSelectedEventId} />
                 <div className='rounded-2xl border border-white/10 bg-[#101525] p-2'>
                   <div className='flex gap-1'>
                     {(['roster', 'events', 'shark'] as const).map((t) => (
@@ -322,12 +355,13 @@ export default function AdminListasPage() {
                   </div>
                 </div>
 
-                {activeTab === 'roster' && <RosterPanel list={detail} submit={submit} adminJson={adminJson} />}
+                {activeTab === 'roster' && <RosterPanel list={detail} submit={submit} adminJson={adminJson} confirm={confirm} />}
                 {activeTab === 'events' && (
                   <EventsPanel
                     list={detail}
                     submit={submit}
                     adminJson={adminJson}
+                    confirm={confirm}
                     newEvent={newEvent}
                     setNewEvent={setNewEvent}
                     selectedEventId={selectedEventId}
@@ -339,6 +373,7 @@ export default function AdminListasPage() {
                     list={detail}
                     submit={submit}
                     adminJson={adminJson}
+                    confirm={confirm}
                     selectedEventId={selectedEventId}
                     setSelectedEventId={setSelectedEventId}
                   />
@@ -410,8 +445,9 @@ type SubmitFn = (
   reload?: 'list' | 'detail' | 'both' | 'none',
 ) => Promise<void>;
 type JsonFn = <T>(path: string, init?: RequestInit) => Promise<T>;
+type ConfirmFn = ReturnType<typeof useConfirm>;
 
-function ListHeader({ list, submit, adminJson }: { list: AdminList; submit: SubmitFn; adminJson: JsonFn }) {
+function ListHeader({ list, submit, adminJson, confirm }: { list: AdminList; submit: SubmitFn; adminJson: JsonFn; confirm: ConfirmFn }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     name: list.name,
@@ -453,8 +489,15 @@ function ListHeader({ list, submit, adminJson }: { list: AdminList; submit: Subm
               'both',
             );
           }}>{list.active ? 'Desativar' : 'Ativar'}</button>
-          <button className='btn-danger' onClick={() => {
-            if (!confirm(`Excluir lista "${list.name}"?`)) return;
+          <button className='btn-danger' onClick={async () => {
+            const ok = await confirm({
+              title: 'Excluir lista?',
+              message: 'Esta ação irá remover permanentemente esta lista e todos os seus dados associados.',
+              highlightText: list.name,
+              danger: true,
+              confirmLabel: 'Sim, excluir',
+            });
+            if (!ok) return;
             void submit('Excluir lista', () => adminJson(`/admin/brazil-lists/${list.id}`, { method: 'DELETE' }), 'list');
           }}>Excluir</button>
         </div>
@@ -498,7 +541,7 @@ function ListHeader({ list, submit, adminJson }: { list: AdminList; submit: Subm
   );
 }
 
-function RosterPanel({ list, submit, adminJson }: { list: AdminList; submit: SubmitFn; adminJson: JsonFn }) {
+function RosterPanel({ list, submit, adminJson, confirm }: { list: AdminList; submit: SubmitFn; adminJson: JsonFn; confirm: ConfirmFn }) {
   const max = list.format === 'TOP_20' ? 20 : 10;
   const byPos = new Map<number, RosterDriver>();
   for (const r of list.roster) byPos.set(r.position, r);
@@ -582,8 +625,15 @@ function RosterPanel({ list, submit, adminJson }: { list: AdminList; submit: Sub
                       'both',
                     );
                   }}>{entry.isKing ? '👑 Remover' : 'Rei'}</button>
-                  <button className='btn-danger' onClick={() => {
-                    if (!confirm(`Remover ${entry.driverName} da posição ${entry.position}?`)) return;
+                  <button className='btn-danger' onClick={async () => {
+                    const ok = await confirm({
+                      title: 'Remover piloto da posição?',
+                      message: `Esta ação irá remover o piloto da posição #${entry.position} desta lista.`,
+                      highlightText: entry.driverName ?? 'Piloto',
+                      danger: true,
+                      confirmLabel: 'Sim, remover',
+                    });
+                    if (!ok) return;
                     void submit('Remover piloto', () => adminJson(`/admin/brazil-lists/${list.id}/roster/${entry.id}`, { method: 'DELETE' }), 'both');
                   }}>×</button>
                 </div>
@@ -597,17 +647,19 @@ function RosterPanel({ list, submit, adminJson }: { list: AdminList; submit: Sub
 }
 
 function EventsPanel({
-  list, submit, adminJson, newEvent, setNewEvent, selectedEventId, setSelectedEventId,
+  list, submit, adminJson, confirm, newEvent, setNewEvent, selectedEventId, setSelectedEventId,
 }: {
   list: AdminList;
   submit: SubmitFn;
   adminJson: JsonFn;
-  newEvent: { name: string; scheduledAt: string; notes: string };
-  setNewEvent: (s: { name: string; scheduledAt: string; notes: string }) => void;
+  confirm: ConfirmFn;
+  newEvent: { name: string; scheduledAt: string; endsAt: string; notes: string; bannerUrl: string; featured: boolean; type: 'REGULAR' | 'ARMAGEDDON' | 'SHARK_TANK' };
+  setNewEvent: (s: { name: string; scheduledAt: string; endsAt: string; notes: string; bannerUrl: string; featured: boolean; type: 'REGULAR' | 'ARMAGEDDON' | 'SHARK_TANK' }) => void;
   selectedEventId: string | null;
   setSelectedEventId: (id: string | null) => void;
 }) {
   const selectedEvent = list.events?.find((e) => e.id === selectedEventId) ?? null;
+  const [formError, setFormError] = useState<string>('');
 
   return (
     <>
@@ -617,23 +669,66 @@ function EventsPanel({
           className='mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2'
           onSubmit={(e) => {
             e.preventDefault();
-            if (!newEvent.name || !newEvent.scheduledAt) return;
+            setFormError('');
+            if (!newEvent.name || !newEvent.scheduledAt) {
+              setFormError('Informe nome e data de início');
+              return;
+            }
+            if (newEvent.endsAt) {
+              const start = new Date(newEvent.scheduledAt).getTime();
+              const end = new Date(newEvent.endsAt).getTime();
+              if (end <= start) {
+                setFormError('A data de fim deve ser posterior à data de início');
+                return;
+              }
+            }
             void submit('Criar evento', () =>
               adminJson(`/admin/brazil-lists/${list.id}/events`, {
                 method: 'POST',
                 body: JSON.stringify({
                   name: newEvent.name,
                   scheduledAt: new Date(newEvent.scheduledAt).toISOString(),
+                  endsAt: newEvent.endsAt ? new Date(newEvent.endsAt).toISOString() : undefined,
+                  type: newEvent.type,
+                  bannerUrl: newEvent.bannerUrl || undefined,
+                  featured: newEvent.featured,
                   notes: newEvent.notes || undefined,
                 }),
               }),
             );
-            setNewEvent({ name: '', scheduledAt: '', notes: '' });
+            setNewEvent({ name: '', scheduledAt: '', endsAt: '', notes: '', bannerUrl: '', featured: false, type: 'REGULAR' });
           }}
         >
-          <input className='field-sm' placeholder='Nome do evento' value={newEvent.name} onChange={(e) => setNewEvent({ ...newEvent, name: e.target.value })} />
-          <input className='field-sm' type='datetime-local' value={newEvent.scheduledAt} onChange={(e) => setNewEvent({ ...newEvent, scheduledAt: e.target.value })} />
+          <input className='field-sm sm:col-span-2' placeholder='Nome do evento' value={newEvent.name} onChange={(e) => setNewEvent({ ...newEvent, name: e.target.value })} />
+          <div className='sm:col-span-1'>
+            <label className='text-[10px] font-semibold text-white/40 uppercase tracking-wider'>Início</label>
+            <input className='field-sm mt-1' type='datetime-local' value={newEvent.scheduledAt} onChange={(e) => setNewEvent({ ...newEvent, scheduledAt: e.target.value })} />
+          </div>
+          <div className='sm:col-span-1'>
+            <label className='text-[10px] font-semibold text-white/40 uppercase tracking-wider'>Fim (opcional)</label>
+            <input className='field-sm mt-1' type='datetime-local' value={newEvent.endsAt} onChange={(e) => setNewEvent({ ...newEvent, endsAt: e.target.value })} />
+          </div>
+          <select
+            className='field-sm sm:col-span-2'
+            value={newEvent.type}
+            onChange={(e) => setNewEvent({ ...newEvent, type: e.target.value as 'REGULAR' | 'ARMAGEDDON' | 'SHARK_TANK' })}
+          >
+            <option value='REGULAR'>🏁 Regular (Lista padrão)</option>
+            <option value='ARMAGEDDON'>⚔️ Armageddon</option>
+            <option value='SHARK_TANK'>🦈 Shark Tank</option>
+          </select>
+          <input className='field-sm sm:col-span-2' placeholder='URL do banner (1600×900, JPG/PNG/WebP, max 2MB)' value={newEvent.bannerUrl} onChange={(e) => setNewEvent({ ...newEvent, bannerUrl: e.target.value })} />
+          {newEvent.bannerUrl && (
+            <div className='sm:col-span-2 rounded-xl overflow-hidden border border-white/10 bg-black/30'>
+              <img src={newEvent.bannerUrl} alt='preview' className='w-full aspect-[16/9] object-cover' onError={(e) => (e.currentTarget.style.display = 'none')} />
+            </div>
+          )}
+          <label className='sm:col-span-2 flex items-center gap-2 text-xs text-white/70'>
+            <input type='checkbox' checked={newEvent.featured} onChange={(e) => setNewEvent({ ...newEvent, featured: e.target.checked })} />
+            ⭐ Destacar na home page
+          </label>
           <input className='field-sm sm:col-span-2' placeholder='Notas (opc)' value={newEvent.notes} onChange={(e) => setNewEvent({ ...newEvent, notes: e.target.value })} />
+          {formError && <p className='sm:col-span-2 text-xs text-red-400'>● {formError}</p>}
           <button type='submit' className='btn-primary sm:col-span-2'>Criar evento</button>
         </form>
       </div>
@@ -648,11 +743,23 @@ function EventsPanel({
                 className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${selectedEventId === ev.id ? 'border-white/30 bg-white/5' : 'border-white/10 bg-white/[0.02] hover:bg-white/5'}`}
               >
                 <div className='flex items-center justify-between gap-3'>
-                  <div>
-                    <p className='text-sm font-semibold'>{ev.name}</p>
-                    <p className='text-[10px] text-white/40'>{new Date(ev.scheduledAt).toLocaleString('pt-BR')}</p>
+                  <div className='flex-1 min-w-0'>
+                    <div className='flex items-center gap-2 mb-1'>
+                      <p className='text-sm font-semibold truncate'>{ev.name}</p>
+                      {ev.type === 'ARMAGEDDON' && <span className='rounded-full bg-red-500/20 px-2 py-0.5 text-[9px] font-bold text-red-300'>⚔️ ARMAGEDDON</span>}
+                      {ev.type === 'SHARK_TANK' && <span className='rounded-full bg-cyan-500/20 px-2 py-0.5 text-[9px] font-bold text-cyan-300'>🦈 SHARK TANK</span>}
+                    </div>
+                    <p className='text-[10px] text-white/40'>
+                      {new Date(ev.scheduledAt).toLocaleString('pt-BR')}
+                      {ev.endsAt && <> — até {new Date(ev.endsAt).toLocaleString('pt-BR')}</>}
+                    </p>
                   </div>
-                  <span className='rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold'>{ev.status}</span>
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                    ev.status === 'IN_PROGRESS' ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300' :
+                    ev.status === 'FINISHED' ? 'border-white/10 bg-white/5 text-white/50' :
+                    ev.status === 'CANCELED' ? 'border-red-500/30 bg-red-500/15 text-red-300' :
+                    'border-amber-500/30 bg-amber-500/15 text-amber-300'
+                  }`}>{ev.status}</span>
                 </div>
               </button>
             ))}
@@ -668,6 +775,7 @@ function EventsPanel({
           event={selectedEvent}
           submit={submit}
           adminJson={adminJson}
+          confirm={confirm}
         />
       )}
     </>
@@ -675,8 +783,8 @@ function EventsPanel({
 }
 
 function EventDetailPanel({
-  list, event, submit, adminJson,
-}: { list: AdminList; event: ListEvent; submit: SubmitFn; adminJson: JsonFn }) {
+  list, event, submit, adminJson, confirm,
+}: { list: AdminList; event: ListEvent; submit: SubmitFn; adminJson: JsonFn; confirm: ConfirmFn }) {
   const grouped = new Map<string, Matchup[]>();
   for (const m of event.matchups) {
     const k = `${m.roundNumber}-${m.roundType}`;
@@ -708,8 +816,26 @@ function EventDetailPanel({
               }),
             );
           }}>+ Rodada PAR</button>
-          <select className='field-sm' value={event.status} onChange={(e) => {
+          <select className='field-sm' value={event.status} onChange={async (e) => {
             const newStatus = e.target.value;
+            const target = e.target;
+            const oldStatus = event.status;
+            // Confirmacao para mudanca destrutiva
+            if (newStatus === 'FINISHED' || newStatus === 'CANCELED') {
+              const ok = await confirm({
+                title: newStatus === 'FINISHED' ? 'Encerrar evento?' : 'Cancelar evento?',
+                message: newStatus === 'FINISHED'
+                  ? 'Confirma encerrar este evento? Verifique se todas as rodadas pendentes foram auditadas - apostas em rodadas nao auditadas ficam orfas.'
+                  : 'Confirma cancelar este evento?',
+                highlightText: event.name,
+                danger: true,
+                confirmLabel: 'Sim, confirmar',
+              });
+              if (!ok) {
+                target.value = oldStatus;
+                return;
+              }
+            }
             void submit('Atualizar status', () =>
               adminJson(`/admin/brazil-list-events/${event.id}`, {
                 method: 'PATCH',
@@ -722,8 +848,15 @@ function EventDetailPanel({
             <option value='FINISHED'>ENCERRADO</option>
             <option value='CANCELED'>CANCELADO</option>
           </select>
-          <button className='btn-danger' onClick={() => {
-            if (!confirm('Excluir evento e todos os seus confrontos?')) return;
+          <button className='btn-danger' onClick={async () => {
+            const ok = await confirm({
+              title: 'Excluir evento?',
+              message: 'Esta ação irá remover o evento e todos os seus confrontos. Apostas existentes podem ser afetadas.',
+              highlightText: event.name,
+              danger: true,
+              confirmLabel: 'Sim, excluir',
+            });
+            if (!ok) return;
             void submit('Excluir evento', () => adminJson(`/admin/brazil-list-events/${event.id}`, { method: 'DELETE' }));
           }}>Excluir evento</button>
         </div>
@@ -743,7 +876,7 @@ function EventDetailPanel({
                   <p className='text-[10px] font-semibold uppercase tracking-widest text-white/40'>Rodada {first.roundNumber} · {label}</p>
                   <div className='mt-2 grid grid-cols-1 gap-2'>
                     {ms.slice().sort((a, b) => a.order - b.order).map((m) => (
-                      <MatchupRow key={m.id} list={list} matchup={m} submit={submit} adminJson={adminJson} />
+                      <MatchupRow key={m.id} list={list} matchup={m} submit={submit} adminJson={adminJson} confirm={confirm} />
                     ))}
                   </div>
                 </div>
@@ -755,7 +888,7 @@ function EventDetailPanel({
   );
 }
 
-function MatchupRow({ list, matchup, submit, adminJson }: { list: AdminList; matchup: Matchup; submit: SubmitFn; adminJson: JsonFn }) {
+function MatchupRow({ list, matchup, submit, adminJson, confirm }: { list: AdminList; matchup: Matchup; submit: SubmitFn; adminJson: JsonFn; confirm: ConfirmFn }) {
   const [editing, setEditing] = useState(false);
   const [leftDriverId, setLeftDriverId] = useState(matchup.leftDriverId ?? '');
   const [rightDriverId, setRightDriverId] = useState(matchup.rightDriverId ?? '');
@@ -798,16 +931,45 @@ function MatchupRow({ list, matchup, submit, adminJson }: { list: AdminList; mat
           {matchup.marketOpen ? 'Fechar mercado' : 'Abrir mercado'}
         </button>
         <button className={`btn-outline ${matchup.winnerSide === 'LEFT' ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-200' : ''}`}
-          onClick={() => void submit('Definir vencedor', () => adminJson(`/admin/brazil-list-events/matchups/${matchup.id}/settle`, { method: 'POST', body: JSON.stringify({ winnerSide: 'LEFT' }) }))}>
+          disabled={settled}
+          onClick={async () => {
+            const name = matchup.leftDriverName ?? 'piloto da esquerda';
+            const ok = await confirm({
+              title: 'Auditar vencedor da rodada?',
+              message: 'Deseja declarar este piloto como VENCEDOR da rodada? Esta ação é IMUTÁVEL e irá liquidar todas as apostas desta rodada imediatamente.',
+              highlightText: `🏆 ${name}`,
+              confirmLabel: 'Sim, auditar vitória',
+            });
+            if (!ok) return;
+            void submit('Auditar vencedor', () => adminJson(`/admin/brazil-list-events/matchups/${matchup.id}/settle`, { method: 'POST', body: JSON.stringify({ winnerSide: 'LEFT' }) }));
+          }}>
           ◄ Vence ESQ
         </button>
         <button className={`btn-outline ${matchup.winnerSide === 'RIGHT' ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-200' : ''}`}
-          onClick={() => void submit('Definir vencedor', () => adminJson(`/admin/brazil-list-events/matchups/${matchup.id}/settle`, { method: 'POST', body: JSON.stringify({ winnerSide: 'RIGHT' }) }))}>
+          disabled={settled}
+          onClick={async () => {
+            const name = matchup.rightDriverName ?? 'piloto da direita';
+            const ok = await confirm({
+              title: 'Auditar vencedor da rodada?',
+              message: 'Deseja declarar este piloto como VENCEDOR da rodada? Esta ação é IMUTÁVEL e irá liquidar todas as apostas desta rodada imediatamente.',
+              highlightText: `🏆 ${name}`,
+              confirmLabel: 'Sim, auditar vitória',
+            });
+            if (!ok) return;
+            void submit('Auditar vencedor', () => adminJson(`/admin/brazil-list-events/matchups/${matchup.id}/settle`, { method: 'POST', body: JSON.stringify({ winnerSide: 'RIGHT' }) }));
+          }}>
           Vence DIR ►
         </button>
-        <button className='btn-outline' onClick={() => setEditing((v) => !v)}>{editing ? 'Cancelar' : 'Editar'}</button>
-        <button className='btn-danger' onClick={() => {
-          if (!confirm('Excluir confronto?')) return;
+        <button className='btn-outline' disabled={settled} onClick={() => setEditing((v) => !v)}>{editing ? 'Cancelar' : 'Editar'}</button>
+        <button className='btn-danger' disabled={settled} onClick={async () => {
+          const ok = await confirm({
+            title: 'Excluir confronto?',
+            message: 'Esta ação removerá este confronto da rodada. Não pode ser desfeita.',
+            highlightText: `${matchup.leftDriverName ?? '—'} vs ${matchup.rightDriverName ?? '—'}`,
+            danger: true,
+            confirmLabel: 'Sim, excluir',
+          });
+          if (!ok) return;
           void submit('Excluir confronto', () => adminJson(`/admin/brazil-list-events/matchups/${matchup.id}`, { method: 'DELETE' }));
         }}>×</button>
       </div>
@@ -849,11 +1011,12 @@ function MatchupRow({ list, matchup, submit, adminJson }: { list: AdminList; mat
 }
 
 function SharkPanel({
-  list, submit, adminJson, selectedEventId, setSelectedEventId,
+  list, submit, adminJson, confirm, selectedEventId, setSelectedEventId,
 }: {
   list: AdminList;
   submit: SubmitFn;
   adminJson: JsonFn;
+  confirm: ConfirmFn;
   selectedEventId: string | null;
   setSelectedEventId: (id: string | null) => void;
 }) {
@@ -932,8 +1095,15 @@ function SharkPanel({
                         <option value='FINALIST'>FINALISTA</option>
                         <option value='PROMOTED'>PROMOVIDO</option>
                       </select>
-                      <button className='btn-danger' onClick={() => {
-                        if (!confirm('Remover inscrição?')) return;
+                      <button className='btn-danger' onClick={async () => {
+                        const ok = await confirm({
+                          title: 'Remover inscrição?',
+                          message: 'Remover este piloto do Shark Tank?',
+                          highlightText: entry.driverName ?? entry.driverId,
+                          danger: true,
+                          confirmLabel: 'Sim, remover',
+                        });
+                        if (!ok) return;
                         void submit('Remover Shark Tank', () =>
                           adminJson(`/admin/brazil-list-events/shark-tank/entries/${entry.id}`, { method: 'DELETE' }),
                         );
@@ -947,6 +1117,127 @@ function SharkPanel({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function NextRoundPanel({
+  list, submit, adminJson, confirm, setActiveTab, setSelectedEventId,
+}: {
+  list: AdminList;
+  submit: SubmitFn;
+  adminJson: JsonFn;
+  confirm: ConfirmFn;
+  setActiveTab: (t: 'roster' | 'events' | 'shark') => void;
+  setSelectedEventId: (id: string | null) => void;
+}) {
+  // Find next pending matchup across all in-progress events
+  const pending = useMemo(() => {
+    if (!list.events) return null;
+    for (const ev of list.events) {
+      if (ev.status === 'CANCELED' || ev.status === 'FINISHED') continue;
+      const sorted = ev.matchups
+        .filter((m) => !m.winnerSide)
+        .sort((a, b) => a.roundNumber - b.roundNumber || a.order - b.order);
+      const first = sorted[0];
+      if (first) return { event: ev, matchup: first };
+    }
+    return null;
+  }, [list.events]);
+
+  if (!pending) {
+    return (
+      <div className='rounded-2xl border border-white/10 bg-[#101525] p-5'>
+        <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30'>Próxima rodada</p>
+        <p className='mt-2 text-sm text-white/50'>Nenhuma rodada pendente. Crie um evento e gere as chaves para começar.</p>
+      </div>
+    );
+  }
+
+  const { event, matchup } = pending;
+  const roundLabel = matchup.roundType === 'ODD' ? 'ÍMPAR' : matchup.roundType === 'EVEN' ? 'PAR' : 'SHARK TANK';
+
+  return (
+    <div className={`rounded-2xl border-2 p-4 sm:p-5 ${matchup.marketOpen ? 'border-emerald-500/40 bg-gradient-to-br from-emerald-500/10 to-emerald-500/5' : 'border-amber-500/40 bg-gradient-to-br from-amber-500/10 to-amber-500/5'}`}>
+      <div className='flex items-start justify-between gap-3 mb-3'>
+        <div className='flex-1 min-w-0'>
+          <p className={`text-[10px] font-bold uppercase tracking-widest ${matchup.marketOpen ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {matchup.marketOpen ? '🟢 Próxima rodada — apostas abertas' : '⚠️ Próxima rodada — aguardando'}
+          </p>
+          <h3 className='mt-1 text-base sm:text-lg font-bold tracking-tight truncate'>{event.name}</h3>
+          <p className='text-xs text-white/50'>Rodada {matchup.roundNumber} · {roundLabel} · Conf. #{matchup.order}</p>
+        </div>
+        <button
+          className='btn-outline text-xs whitespace-nowrap shrink-0'
+          onClick={() => { setActiveTab('events'); setSelectedEventId(event.id); }}
+        >
+          Ver evento →
+        </button>
+      </div>
+
+      <div className='grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-3 my-3 sm:my-4 rounded-xl bg-black/20 p-3 sm:p-4'>
+        <div className='text-center min-w-0'>
+          {matchup.leftPosition && <p className='text-[10px] text-white/40'>Pos {matchup.leftPosition}</p>}
+          <p className='text-sm sm:text-base font-bold truncate'>{matchup.leftDriverName ?? '—'}</p>
+        </div>
+        <div className='text-lg sm:text-2xl font-bold text-white/30'>VS</div>
+        <div className='text-center min-w-0'>
+          {matchup.rightPosition && <p className='text-[10px] text-white/40'>Pos {matchup.rightPosition}</p>}
+          <p className='text-sm sm:text-base font-bold truncate'>{matchup.rightDriverName ?? '—'}</p>
+        </div>
+      </div>
+
+      <div className='grid grid-cols-1 sm:grid-cols-2 gap-2'>
+        {!matchup.marketOpen && (
+          <button
+            className='sm:col-span-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-bold text-black hover:bg-emerald-400 active:scale-[0.98]'
+            onClick={() => void submit('Abrir mercado', () =>
+              adminJson(`/admin/brazil-list-events/matchups/${matchup.id}/market`, {
+                method: 'PATCH',
+                body: JSON.stringify({ open: true }),
+              }),
+            )}
+          >
+            🚀 Abrir apostas desta rodada
+          </button>
+        )}
+        {matchup.marketOpen && (
+          <>
+            <button
+              className='rounded-lg bg-emerald-400 px-3 py-2.5 text-xs sm:text-sm font-bold text-black hover:bg-emerald-300 active:scale-[0.98] truncate'
+              onClick={async () => {
+                const name = matchup.leftDriverName ?? 'Esquerda';
+                const ok = await confirm({
+                  title: 'Auditar vencedor da rodada?',
+                  message: 'Deseja declarar este piloto como VENCEDOR? Esta ação é IMUTÁVEL e irá liquidar todas as apostas.\n\nA próxima rodada será aberta automaticamente.',
+                  highlightText: `🏆 ${name}`,
+                  confirmLabel: 'Sim, auditar vitória',
+                });
+                if (!ok) return;
+                void submit('Auditar vencedor', () => adminJson(`/admin/brazil-list-events/matchups/${matchup.id}/settle`, { method: 'POST', body: JSON.stringify({ winnerSide: 'LEFT' }) }));
+              }}
+            >
+              🏆 {matchup.leftDriverName ?? 'ESQ'} venceu
+            </button>
+            <button
+              className='rounded-lg bg-emerald-400 px-3 py-2.5 text-xs sm:text-sm font-bold text-black hover:bg-emerald-300 active:scale-[0.98] truncate'
+              onClick={async () => {
+                const name = matchup.rightDriverName ?? 'Direita';
+                const ok = await confirm({
+                  title: 'Auditar vencedor da rodada?',
+                  message: 'Deseja declarar este piloto como VENCEDOR? Esta ação é IMUTÁVEL e irá liquidar todas as apostas.\n\nA próxima rodada será aberta automaticamente.',
+                  highlightText: `🏆 ${name}`,
+                  confirmLabel: 'Sim, auditar vitória',
+                });
+                if (!ok) return;
+                void submit('Auditar vencedor', () => adminJson(`/admin/brazil-list-events/matchups/${matchup.id}/settle`, { method: 'POST', body: JSON.stringify({ winnerSide: 'RIGHT' }) }));
+              }}
+            >
+              🏆 {matchup.rightDriverName ?? 'DIR'} venceu
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

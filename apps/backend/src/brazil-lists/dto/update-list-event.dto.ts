@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
 import { ListEventStatus } from '@prisma/client';
 
 export class UpdateListEventDto {
@@ -13,8 +13,21 @@ export class UpdateListEventDto {
   scheduledAt?: string;
 
   @IsOptional()
+  @IsDateString()
+  endsAt?: string;
+
+  @IsOptional()
   @IsEnum(ListEventStatus)
   status?: ListEventStatus;
+
+  @IsOptional()
+  @IsUrl({ require_protocol: true })
+  @MaxLength(2048)
+  bannerUrl?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  featured?: boolean;
 
   @IsOptional()
   @IsString()

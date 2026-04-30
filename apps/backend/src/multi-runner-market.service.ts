@@ -124,31 +124,51 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (state.status !== MarketStatus.OPEN) {
-      throw new Error('Este mercado não está aberto para apostas');
+      throw new BadRequestException('Este mercado não está aberto para apostas');
     }
 
     if (Date.now() >= state.bookingCloseAt.getTime()) {
-      throw new Error('O período de apostas deste mercado já encerrou');
+      throw new BadRequestException('O período de apostas deste mercado já encerrou');
     }
 
     const amount = Number(input.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      throw new Error('Informe um valor de aposta válido');
+      throw new BadRequestException('Informe um valor de aposta válido');
     }
 
     const minBet = this.getMinBet();
     if (amount < minBet) {
-      throw new Error(`A aposta mínima é de R$ ${minBet.toFixed(2).replace('.', ',')}`);
+      throw new BadRequestException(`A aposta mínima é de R$ ${minBet.toFixed(2).replace('.', ',')}`);
     }
 
     const runner = state.runners.find((r) => r.oddId === input.oddId);
     if (!runner) {
-      throw new Error('Opção não encontrada neste mercado');
+      throw new NotFoundException('Opção não encontrada neste mercado');
     }
 
     const oddAtPlacement = runner.odd;
     const amountDecimal = new Prisma.Decimal(amount.toFixed(4));
     const potentialWin = amountDecimal.mul(new Prisma.Decimal(oddAtPlacement.toFixed(4)));
+
+    // Re-valida estado do mercado direto no DB (evita janela de 30s do refresh em memoria)
+    const dbMarket = await this.prisma.market.findUnique({
+      where: { id: input.marketId },
+      select: { status: true, bookingCloseAt: true },
+    });
+    if (!dbMarket) {
+      throw new NotFoundException('Mercado não encontrado');
+    }
+    if (dbMarket.status !== 'OPEN') {
+      throw new BadRequestException('Este mercado não está aberto para apostas');
+    }
+    if (dbMarket.bookingCloseAt && Date.now() >= dbMarket.bookingCloseAt.getTime()) {
+      throw new BadRequestException('O período de apostas deste mercado já encerrou');
+    }
+
+    // BUG-8: se nao tem bookingCloseAt configurado, bloqueia (mercado mal configurado)
+    if (!dbMarket.bookingCloseAt) {
+      throw new BadRequestException('Mercado sem data de encerramento configurada. Contate o admin.');
+    }
 
     const placed = await this.prisma.$transaction(async (tx) => {
       // SELECT FOR UPDATE to prevent double-spend race condition
@@ -156,11 +176,11 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
         SELECT id, balance FROM "Wallet" WHERE "userId" = ${input.userId} FOR UPDATE
       `.then((rows) => rows[0] ?? null);
       if (!wallet) {
-        throw new Error('Carteira do usuário não encontrada');
+        throw new NotFoundException('Carteira do usuário não encontrada');
       }
 
       if (new Prisma.Decimal(String(wallet.balance)).lt(amountDecimal)) {
-        throw new Error('Saldo insuficiente para realizar essa aposta');
+        throw new BadRequestException('Saldo insuficiente para realizar essa aposta');
       }
 
       const bet = await tx.bet.create({
@@ -374,6 +394,6 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
 
   private getMinBet(): number {
     const env = Number(process.env.MIN_BET_AMOUNT ?? '10');
-    return Number.isFinite(env) ? Math.max(0, env) : 10;
+    return Number.isFinite(env) ? Math.max(1, env) : 10;
   }
 }

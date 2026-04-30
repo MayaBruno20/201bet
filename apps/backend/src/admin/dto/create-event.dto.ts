@@ -2,12 +2,15 @@ import { EventStatus, MarketStatus, OddStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
+  IsUrl,
+  MaxLength,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -49,6 +52,20 @@ export class CreateEventDto {
   @IsString()
   @MinLength(3)
   name: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @IsOptional()
+  @IsUrl({ require_protocol: true })
+  @MaxLength(2048)
+  bannerUrl?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  featured?: boolean;
 
   @IsDateString()
   startAt: string;

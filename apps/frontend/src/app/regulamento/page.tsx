@@ -8,7 +8,7 @@ export const metadata = {
 export default function RegulamentoPage() {
   return (
     <main className='min-h-screen bg-[#090b11] text-white'>
-      <div className='mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8'>
+      <div className='mx-auto max-w-5xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
         <MainNav />
 
         <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-6 sm:p-8'>

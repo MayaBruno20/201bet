@@ -27,6 +27,13 @@ export type MarketSnapshot = {
     lockedSide: 'LEFT' | 'RIGHT' | 'BOTH' | 'NONE';
     reason?: string;
   }>;
+  settlement?: {
+    winnerSide: 'LEFT' | 'RIGHT';
+    winnerLabel: string;
+    finalPool: number;
+    finalOdd: number;
+    settledAt: string;
+  };
 };
 
 export type MultiRunnerSnapshot = {
@@ -55,6 +62,13 @@ export type MultiRunnerSnapshot = {
     odds: Record<string, number>;
     totalPool: number;
   }>;
+  settlement?: {
+    winnerOddId: string;
+    winnerLabel: string;
+    finalPool: number;
+    finalOdd: number;
+    settledAt: string;
+  };
 };
 
 export type BettingBoard = {
