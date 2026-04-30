@@ -19,7 +19,9 @@ import type { AppEnv } from '../config/env.validation';
             config.get('REDIS_TLS', { infer: true }) === 'true'
               ? {}
               : undefined,
-          lazyConnect: true,
+          // Render/RedisCloud: evitar race com enableOfflineQueue=false.
+          // Conecte imediatamente para que os primeiros comandos (AUTH/INFO) não falhem.
+          lazyConnect: false,
           enableOfflineQueue: false,
           maxRetriesPerRequest: null,
         },
