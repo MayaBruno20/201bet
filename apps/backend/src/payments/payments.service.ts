@@ -29,6 +29,9 @@ export class PaymentsService {
    * Wallet is NOT credited yet — only when webhook confirms payment.
    */
   async createDeposit(userId: string, payload: CreateDepositDto) {
+    this.logger.log(
+      `createDeposit start userId=${userId} amount=${payload.amount}`,
+    );
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
     if (!wallet) throw new NotFoundException('Carteira não encontrada');
 
@@ -57,8 +60,12 @@ export class PaymentsService {
         provider: 'VALUT_PIX',
       },
     });
+    this.logger.log(
+      `createDeposit payment created id=${payment.id} status=${payment.status}`,
+    );
 
     try {
+      this.logger.log(`createDeposit calling Valut createPixQrCode paymentId=${payment.id}`);
       const pix = await this.valut.createPixQrCode({
         amountCents,
         externalId: payment.id,
@@ -71,6 +78,9 @@ export class PaymentsService {
         where: { id: payment.id },
         data: { providerRef: pix.pix_id },
       });
+      this.logger.log(
+        `createDeposit success paymentId=${payment.id} pixId=${pix.pix_id}`,
+      );
 
       return {
         paymentId: payment.id,
@@ -83,6 +93,9 @@ export class PaymentsService {
         balance: Number(wallet.balance),
       };
     } catch (err) {
+      this.logger.error(
+        `createDeposit failed paymentId=${payment.id} err=${err instanceof Error ? err.message : String(err)}`,
+      );
       // Mark payment as failed if Valut call fails
       await this.prisma.payment.update({
         where: { id: payment.id },
