@@ -20,6 +20,7 @@ function logRuntimeEnv() {
       `REDIS_HOST=${pick('REDIS_HOST') || 'localhost'}`,
       `REDIS_PORT=${pick('REDIS_PORT') || '3505'}`,
       `REDIS_TLS=${pick('REDIS_TLS') || 'false'}`,
+      `REDIS_USERNAME=${pick('REDIS_USERNAME') || 'default'}`,
     ].join(' '),
   );
 }
@@ -28,12 +29,14 @@ async function probeRedisConnection(): Promise<void> {
   const logger = new Logger('RedisProbe');
   const host = process.env.REDIS_HOST || 'localhost';
   const port = Number(process.env.REDIS_PORT || 3505);
+  const username = process.env.REDIS_USERNAME || 'default';
   const password = process.env.REDIS_PASSWORD || undefined;
   const tls = process.env.REDIS_TLS === 'true' ? {} : undefined;
 
   const client = new Redis({
     host,
     port,
+    username,
     password,
     tls,
     lazyConnect: false,
@@ -43,10 +46,14 @@ async function probeRedisConnection(): Promise<void> {
 
   try {
     const pong = await client.ping();
-    logger.log(`PING ok host=${host} port=${port} tls=${tls ? 'true' : 'false'} (${pong})`);
+    logger.log(
+      `PING ok host=${host} port=${port} tls=${tls ? 'true' : 'false'} username=${username} (${pong})`,
+    );
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    logger.error(`PING failed host=${host} port=${port} tls=${tls ? 'true' : 'false'}: ${msg}`);
+    logger.error(
+      `PING failed host=${host} port=${port} tls=${tls ? 'true' : 'false'} username=${username}: ${msg}`,
+    );
   } finally {
     try {
       client.disconnect();

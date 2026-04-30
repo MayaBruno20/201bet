@@ -31,6 +31,7 @@ export const envValidationSchema = Joi.object({
 
   REDIS_HOST: Joi.string().default('localhost'),
   REDIS_PORT: Joi.number().default(3505),
+  REDIS_USERNAME: Joi.string().allow('').optional(),
   REDIS_PASSWORD: Joi.string().allow('').optional(),
   REDIS_TLS: Joi.string().valid('true', 'false').default('false'),
 
@@ -94,6 +95,7 @@ export interface AppEnv {
 
   REDIS_HOST: string;
   REDIS_PORT: number;
+  REDIS_USERNAME?: string;
   REDIS_PASSWORD?: string;
   REDIS_TLS: 'true' | 'false';
 

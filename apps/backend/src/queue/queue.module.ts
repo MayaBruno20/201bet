@@ -12,6 +12,8 @@ import type { AppEnv } from '../config/env.validation';
         connection: {
           host: config.get('REDIS_HOST', { infer: true }),
           port: config.get('REDIS_PORT', { infer: true }),
+          username:
+            config.get('REDIS_USERNAME', { infer: true }) || 'default',
           password: config.get('REDIS_PASSWORD', { infer: true }) || undefined,
           tls:
             config.get('REDIS_TLS', { infer: true }) === 'true'
