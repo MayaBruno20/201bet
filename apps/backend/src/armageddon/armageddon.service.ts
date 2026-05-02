@@ -122,6 +122,21 @@ export class ArmageddonService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // Cria Event de apostas EAGER para que o evento apareça em /admin/events
+      // (dropdown do Multi-Runner) já no momento da criação, antes de qualquer
+      // matchup abrir mercado.
+      const linkedEvent = await tx.event.create({
+        data: {
+          sport: 'DRAG_RACE',
+          name: dto.name,
+          description: dto.description,
+          bannerUrl: dto.bannerUrl ?? null,
+          featured: dto.featured ?? false,
+          startAt: startDate,
+          status: EventStatus.SCHEDULED,
+        },
+      });
+
       const event = await tx.armageddonEvent.create({
         data: {
           name: dto.name,
@@ -133,6 +148,7 @@ export class ArmageddonService {
           endsAt: endDate,
           notes: dto.notes,
           status: ArmageddonStatus.DRAFT,
+          eventId: linkedEvent.id,
         },
       });
       await this.logAudit(tx, 'ARMAGEDDON_EVENT_CREATE', 'ArmageddonEvent', event.id, dto, audit);

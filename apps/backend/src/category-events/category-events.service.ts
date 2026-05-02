@@ -4,7 +4,7 @@ import { PrismaService } from '../database/prisma.service';
 import { SettlementService } from '../settlement.service';
 import { CreateCategoryEventDto } from './dto/create-category-event.dto';
 import { UpdateCategoryEventDto } from './dto/update-category-event.dto';
-import { CreateBracketDto, SaveBracketLayoutDto, SettleCategoryMatchupDto, UpdateCompetitorDto, UpsertCompetitorDto } from './dto/bracket.dto';
+import { CreateBracketDto, SaveBracketLayoutDto, SettleCategoryMatchupDto, UpdateCompetitorDto, UpsertCompetitorDto, UpsertSuperFinalDto } from './dto/bracket.dto';
 import { ImportCompetitorsDto } from './dto/import-competitors.dto';
 
 type AuditContext = { actorUserId?: string; ipAddress?: string; userAgent?: string };
@@ -99,6 +99,21 @@ export class CategoryEventsService {
 
     const created = await this.prisma.$transaction(
       async (tx) => {
+        // Cria Event de apostas EAGER para que apareça em /admin/events
+        // (dropdown do Multi-Runner) já no momento da criação da Copa,
+        // antes de qualquer matchup abrir mercado.
+        const linkedEvent = await tx.event.create({
+          data: {
+            sport: 'DRAG_RACE',
+            name: dto.name.trim(),
+            description: dto.description?.trim(),
+            bannerUrl: dto.bannerUrl ?? null,
+            featured: dto.featured ?? false,
+            startAt: startDate,
+            status: EventStatus.SCHEDULED,
+          },
+        });
+
         const event = await tx.categoryEvent.create({
           data: {
             name: dto.name.trim(),
@@ -109,6 +124,7 @@ export class CategoryEventsService {
             featured: dto.featured ?? false,
             status: CategoryEventStatus.DRAFT,
             notes: dto.notes,
+            eventId: linkedEvent.id,
           },
         });
 
@@ -784,6 +800,126 @@ export class CategoryEventsService {
     });
   }
 
+  // ── Admin: Super Final ──────────────────────────────
+  // Cada categoria pode ter UMA Super Final montada manualmente após as rodadas
+  // normais. Usamos roundNumber=99 + position=0 (sentinela longe das rodadas
+  // normais) e isSuperFinal=true. Permite definir os dois pilotos por driverId
+  // ou driverName (cria Driver novo se não existir, mesmo padrão do upsertCompetitor).
+
+  private static readonly SUPER_FINAL_ROUND = 99;
+  private static readonly SUPER_FINAL_POSITION = 0;
+
+  async adminUpsertSuperFinal(bracketId: string, dto: UpsertSuperFinalDto, audit: AuditContext = {}) {
+    const bracket = await this.prisma.categoryBracket.findUnique({ where: { id: bracketId } });
+    if (!bracket) throw new NotFoundException('Chave não encontrada');
+
+    const existing = await this.prisma.categoryMatchup.findFirst({
+      where: { bracketId, isSuperFinal: true },
+    });
+    if (existing && existing.winnerSide && existing.settledAt) {
+      throw new BadRequestException('Super Final já liquidada — vencedor é imutável');
+    }
+
+    const matchupId = await this.prisma.$transaction(async (tx) => {
+      const leftCompetitorId = await this.resolveSuperFinalCompetitor(tx, bracketId, dto.left, 'left');
+      const rightCompetitorId = await this.resolveSuperFinalCompetitor(tx, bracketId, dto.right, 'right');
+
+      if (leftCompetitorId === rightCompetitorId) {
+        throw new BadRequestException('Os dois lados da Super Final não podem ser o mesmo piloto');
+      }
+
+      let id: string;
+      if (existing) {
+        const updated = await tx.categoryMatchup.update({
+          where: { id: existing.id },
+          data: { leftCompetitorId, rightCompetitorId },
+        });
+        id = updated.id;
+      } else {
+        const created = await tx.categoryMatchup.create({
+          data: {
+            bracketId,
+            roundNumber: CategoryEventsService.SUPER_FINAL_ROUND,
+            position: CategoryEventsService.SUPER_FINAL_POSITION,
+            isSuperFinal: true,
+            leftCompetitorId,
+            rightCompetitorId,
+            status: CategoryMatchupStatus.PENDING,
+          },
+        });
+        id = created.id;
+      }
+
+      await this.logAudit(
+        tx,
+        'CATEGORY_SUPER_FINAL_UPSERT',
+        'CategoryMatchup',
+        id,
+        { bracketId, leftCompetitorId, rightCompetitorId, openMarket: !!dto.openMarket },
+        audit,
+      );
+      return id;
+    }, { timeout: 20000, maxWait: 5000 });
+
+    if (dto.openMarket) {
+      await this.adminToggleMatchupMarket(matchupId, true, audit);
+    }
+
+    return this.prisma.categoryMatchup.findUnique({
+      where: { id: matchupId },
+      include: {
+        leftCompetitor: { include: { driver: true } },
+        rightCompetitor: { include: { driver: true } },
+      },
+    });
+  }
+
+  private async resolveSuperFinalCompetitor(
+    tx: Prisma.TransactionClient,
+    bracketId: string,
+    side: { driverId?: string; driverName?: string; driverNickname?: string; driverTeam?: string; carName?: string; carNumber?: string },
+    label: 'left' | 'right',
+  ): Promise<string> {
+    let driverId = side.driverId;
+    if (!driverId) {
+      const name = side.driverName?.trim();
+      if (!name) {
+        throw new BadRequestException(`Informe driverId ou driverName para o lado ${label === 'left' ? '1' : '2'}`);
+      }
+      const found = await tx.driver.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } });
+      if (found) {
+        driverId = found.id;
+      } else {
+        const created = await tx.driver.create({
+          data: {
+            name,
+            nickname: side.driverNickname?.trim() || null,
+            team: side.driverTeam?.trim() || null,
+            carNumber: side.carNumber ?? null,
+          },
+        });
+        driverId = created.id;
+      }
+    }
+
+    const carNameTrimmed = side.carName?.trim() || null;
+    const competitor = await tx.categoryCompetitor.upsert({
+      where: { bracketId_driverId: { bracketId, driverId } },
+      create: {
+        bracketId,
+        driverId,
+        carName: carNameTrimmed,
+        carNumber: side.carNumber ?? null,
+      },
+      update: {
+        // Atualiza o carro só se foi enviado, sem apagar dados de qualificação
+        carName: carNameTrimmed ?? undefined,
+        carNumber: side.carNumber ?? undefined,
+      },
+    });
+    return competitor.id;
+  }
+
   // ── Admin: Bracket layout (drag-and-drop save) ─────
 
   async adminSaveBracketLayout(bracketId: string, dto: SaveBracketLayoutDto, audit: AuditContext = {}) {
@@ -805,9 +941,11 @@ export class CategoryEventsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      // Apaga matchups pendentes (não auditados) e recria
+      // Apaga matchups pendentes (não auditados) e recria.
+      // IMPORTANTE: Super Final é gerenciada por endpoint próprio — não pode ser
+      // afetada pelo save da chave normal.
       await tx.categoryMatchup.deleteMany({
-        where: { bracketId, status: CategoryMatchupStatus.PENDING },
+        where: { bracketId, status: CategoryMatchupStatus.PENDING, isSuperFinal: false },
       });
 
       for (const slot of dto.slots) {
@@ -815,7 +953,7 @@ export class CategoryEventsService {
           where: { bracketId_roundNumber_position: { bracketId, roundNumber: slot.roundNumber, position: slot.position } },
         });
         if (existing) {
-          // Já liquidado - não sobrescreve competidores
+          // Já liquidado ou é Super Final - não sobrescreve competidores
           continue;
         }
         await tx.categoryMatchup.create({

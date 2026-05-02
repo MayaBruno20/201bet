@@ -7,7 +7,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { CategoryEventsService } from './category-events.service';
 import { CreateCategoryEventDto } from './dto/create-category-event.dto';
 import { UpdateCategoryEventDto } from './dto/update-category-event.dto';
-import { CreateBracketDto, SaveBracketLayoutDto, SettleCategoryMatchupDto, UpdateCompetitorDto, UpsertCompetitorDto } from './dto/bracket.dto';
+import { CreateBracketDto, SaveBracketLayoutDto, SettleCategoryMatchupDto, UpdateCompetitorDto, UpsertCompetitorDto, UpsertSuperFinalDto } from './dto/bracket.dto';
 import { ImportCompetitorsDto } from './dto/import-competitors.dto';
 
 type ReqUser = Request & { user?: { userId?: string } };
@@ -106,6 +106,12 @@ export class CategoryEventsAdminController {
   @Post('brackets/:bracketId/layout')
   saveLayout(@Param('bracketId', ParseUUIDPipe) bracketId: string, @Body() dto: SaveBracketLayoutDto, @Req() req: ReqUser) {
     return this.svc.adminSaveBracketLayout(bracketId, dto, this.audit(req));
+  }
+
+  // Super Final (uma final por categoria, montada manualmente)
+  @Post('brackets/:bracketId/super-final')
+  upsertSuperFinal(@Param('bracketId', ParseUUIDPipe) bracketId: string, @Body() dto: UpsertSuperFinalDto, @Req() req: ReqUser) {
+    return this.svc.adminUpsertSuperFinal(bracketId, dto, this.audit(req));
   }
 
   // Toggle market (abre/fecha apostas para o matchup)

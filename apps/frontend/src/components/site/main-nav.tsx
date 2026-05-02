@@ -145,7 +145,7 @@ export function MainNav() {
                 width={360}
                 height={104}
                 priority
-                className='h-11 sm:h-16 md:h-20 w-auto'
+                className='h-20 sm:h-16 md:h-20 w-auto'
               />
             </Link>
 
