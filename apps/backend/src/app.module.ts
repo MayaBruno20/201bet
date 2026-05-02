@@ -14,6 +14,7 @@ import { EventsModule } from './events/events.module';
 import { MailModule } from './mail/mail.module';
 import { PaymentsModule } from './payments/payments.module';
 import { QueueModule } from './queue/queue.module';
+import { SiteDisclaimersModule } from './site-disclaimers/site-disclaimers.module';
 import { TokensModule } from './tokens/tokens.module';
 import { MarketGateway } from './market.gateway';
 import { MarketService } from './market.service';
@@ -35,6 +36,7 @@ import { SettlementService } from './settlement.service';
     ArmageddonModule,
     AdminModule,
     PaymentsModule,
+    SiteDisclaimersModule,
     ThrottlerModule.forRoot({
       throttlers: [{ ttl: 60_000, limit: 120 }],
     }),

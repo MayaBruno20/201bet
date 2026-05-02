@@ -9,6 +9,7 @@ import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@
 import { getPublicApiUrl } from '@/lib/env-public';
 import { ImportPilotsModal } from './import-pilots-modal';
 import { EventBanner } from '@/components/event-banner';
+import { MultiRunnerMarketsManager } from '@/components/admin/multi-runner-markets-manager';
 
 const apiUrl = getPublicApiUrl();
 
@@ -75,6 +76,7 @@ type Bracket = {
 
 type CategoryEvent = {
   id: string;
+  eventId: string | null;
   name: string;
   description: string | null;
   scheduledAt: string;
@@ -352,6 +354,14 @@ export default function AdminCopaCategoriasPage() {
                     Importar Excel
                   </button>
                 </div>
+
+                {/* Mercados Multi-Runner do evento */}
+                <MultiRunnerMarketsManager
+                  eventId={detail.eventId}
+                  defaultRunners={detail.brackets
+                    .flatMap((b) => b.competitors)
+                    .map((c) => ({ label: c.driver.name }))}
+                />
 
                 {/* Categorias / Brackets tabs */}
                 <div className='rounded-2xl border border-white/10 bg-[#101525] p-2'>

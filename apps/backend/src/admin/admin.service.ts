@@ -1144,9 +1144,86 @@ export class AdminService {
 
   // ── Multi-Runner Markets ──
 
-  async listMultiRunnerMarkets() {
+  /**
+   * Cria registros `Event` (entidade de apostas) para CategoryEvent/ListEvent/ArmageddonEvent
+   * que ainda não tenham vínculo (`eventId === null`). Idempotente — registros já vinculados
+   * são ignorados. Útil para regularizar eventos legados antes do auto-link existir.
+   */
+  async backfillEventLinks(audit: AuditContext = {}) {
+    const result = { categoryEvents: 0, listEvents: 0, armageddonEvents: 0 };
+
+    await this.prisma.$transaction(async (tx) => {
+      const orphanCategories = await tx.categoryEvent.findMany({
+        where: { eventId: null },
+        select: { id: true, name: true, description: true, bannerUrl: true, featured: true, scheduledAt: true },
+      });
+      for (const ce of orphanCategories) {
+        const ev = await tx.event.create({
+          data: {
+            sport: 'DRAG_RACE',
+            name: ce.name,
+            description: ce.description,
+            bannerUrl: ce.bannerUrl,
+            featured: ce.featured,
+            startAt: ce.scheduledAt,
+            status: EventStatus.SCHEDULED,
+          },
+        });
+        await tx.categoryEvent.update({ where: { id: ce.id }, data: { eventId: ev.id } });
+        result.categoryEvents += 1;
+      }
+
+      const orphanListEvents = await tx.listEvent.findMany({
+        where: { eventId: null },
+        select: { id: true, name: true, scheduledAt: true, bannerUrl: true, featured: true, list: { select: { name: true } } },
+      });
+      for (const le of orphanListEvents) {
+        const ev = await tx.event.create({
+          data: {
+            sport: 'DRAG_RACE',
+            name: `${le.list.name} — ${le.name}`,
+            bannerUrl: le.bannerUrl,
+            featured: le.featured,
+            startAt: le.scheduledAt,
+            status: EventStatus.SCHEDULED,
+          },
+        });
+        await tx.listEvent.update({ where: { id: le.id }, data: { eventId: ev.id } });
+        result.listEvents += 1;
+      }
+
+      const orphanArma = await tx.armageddonEvent.findMany({
+        where: { eventId: null },
+        select: { id: true, name: true, description: true, bannerUrl: true, featured: true, scheduledAt: true },
+      });
+      for (const ae of orphanArma) {
+        const ev = await tx.event.create({
+          data: {
+            sport: 'DRAG_RACE',
+            name: ae.name,
+            description: ae.description,
+            bannerUrl: ae.bannerUrl,
+            featured: ae.featured,
+            startAt: ae.scheduledAt,
+            status: EventStatus.SCHEDULED,
+          },
+        });
+        await tx.armageddonEvent.update({ where: { id: ae.id }, data: { eventId: ev.id } });
+        result.armageddonEvents += 1;
+      }
+
+      await this.logAction(tx, 'ADMIN_BACKFILL_EVENT_LINKS', 'Event', null, result, audit);
+    });
+
+    return result;
+  }
+
+  async listMultiRunnerMarkets(eventId?: string) {
     return this.prisma.market.findMany({
-      where: { type: { not: MarketType.DUEL } },
+      where: {
+        type: { not: MarketType.DUEL },
+        ...(eventId ? { eventId } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         event: { select: { id: true, name: true } },

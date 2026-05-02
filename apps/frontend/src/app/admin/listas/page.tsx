@@ -8,6 +8,7 @@ import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@
 import { getPublicApiUrl } from '@/lib/env-public';
 import { useConfirm } from '@/components/confirm-dialog';
 import { EventBanner } from '@/components/event-banner';
+import { MultiRunnerMarketsManager } from '@/components/admin/multi-runner-markets-manager';
 
 const apiUrl = getPublicApiUrl();
 
@@ -52,6 +53,7 @@ type SharkTankEntry = {
 
 type ListEvent = {
   id: string;
+  eventId: string | null;
   name: string;
   scheduledAt: string;
   endsAt: string | null;
@@ -863,6 +865,13 @@ function EventDetailPanel({
             void submit('Excluir evento', () => adminJson(`/admin/brazil-list-events/${event.id}`, { method: 'DELETE' }));
           }}>Excluir evento</button>
         </div>
+      </div>
+
+      <div className='mt-4'>
+        <MultiRunnerMarketsManager
+          eventId={event.eventId}
+          defaultRunners={list.roster.map((r) => ({ label: r.driverName ?? `Posição ${r.position}` }))}
+        />
       </div>
 
       {event.matchups.length === 0 ? (

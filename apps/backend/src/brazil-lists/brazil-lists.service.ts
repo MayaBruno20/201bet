@@ -1050,6 +1050,7 @@ export class BrazilListsService {
     if (options.includeEvents && list.events) {
       base.events = list.events.map((event: any) => ({
         id: event.id,
+        eventId: event.eventId ?? null,
         name: event.name,
         scheduledAt: event.scheduledAt,
         endsAt: event.endsAt,

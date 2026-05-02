@@ -73,7 +73,18 @@ type EventPerformanceRow = {
 type MarketConfig = { marginPercent: number; minBetAmount: number };
 type LiveProfit = { totalVolume: number; totalRake: number; markets: Array<{ name: string; type: string; pool: number; rake: number }> };
 
-type AdminSection = 'config' | 'user' | 'driver' | 'car' | 'market' | 'affiliate' | 'profit' | 'setting' | 'analytics' | 'audit';
+type AdminSection = 'config' | 'user' | 'driver' | 'car' | 'market' | 'disclaimer' | 'affiliate' | 'profit' | 'setting' | 'analytics' | 'audit';
+
+type SiteDisclaimer = {
+  id: string;
+  message: string;
+  active: boolean;
+  variant: string;
+  scrolling: boolean;
+  priority: number;
+  createdAt: string;
+  updatedAt: string;
+};
 
 type AdminMarket = {
   id: string; name: string; type: string; status: string;
@@ -100,6 +111,7 @@ const ADMIN_SECTIONS: { id: AdminSection; title: string; description: string }[]
   { id: 'driver', title: 'Cadastro de piloto', description: 'CRUD completo de pilotos.' },
   { id: 'car', title: 'Cadastro de carro', description: 'CRUD completo de carros.' },
   { id: 'market', title: 'Mercados Multi-Runner', description: 'Criar, liquidar e gerenciar mercados especiais.' },
+  { id: 'disclaimer', title: 'Disclaimers', description: 'Avisos no topo do site (cor, mensagem, animacao).' },
   { id: 'affiliate', title: 'Afiliados', description: 'Gestao de afiliados e comissoes.' },
   { id: 'profit', title: 'Lucro & Dashboard', description: 'Lucro por mercado e resumo financeiro.' },
   { id: 'setting', title: 'Configuracoes globais', description: 'CRUD de parametros globais.' },
@@ -140,6 +152,7 @@ export default function AdminPage() {
   const [analyticsOverview, setAnalyticsOverview] = useState<AnalyticsOverview | null>(null);
   const [analyticsEvents, setAnalyticsEvents] = useState<EventPerformanceRow[]>([]);
   const [markets, setMarkets] = useState<AdminMarket[]>([]);
+  const [disclaimers, setDisclaimers] = useState<SiteDisclaimer[]>([]);
   const [affiliates, setAffiliates] = useState<AdminAffiliate[]>([]);
   const [profitByMarket, setProfitByMarket] = useState<ProfitByMarket[]>([]);
   const [profitSummary, setProfitSummary] = useState<ProfitSummary | null>(null);
@@ -247,6 +260,7 @@ export default function AdminPage() {
         profitSumRes,
         configRes,
         liveProfitRes,
+        disclaimersRes,
       ] = await Promise.all([
         fetchWithCredentials(`${apiUrl}/admin/dashboard`, {}),
         fetchWithCredentials(`${apiUrl}/admin/users`, {}),
@@ -263,6 +277,7 @@ export default function AdminPage() {
         fetchWithCredentials(`${apiUrl}/admin/analytics/profit-summary`, {}),
         fetchWithCredentials(`${apiUrl}/market/config`, {}),
         fetchWithCredentials(`${apiUrl}/market/profit-live`, {}),
+        fetchWithCredentials(`${apiUrl}/admin/site-disclaimers`, {}),
       ]);
 
       for (const res of [dashboardRes, usersRes, driversRes, carsRes, eventsRes, settingsRes, overviewRes, perfRes]) {
@@ -291,6 +306,7 @@ export default function AdminPage() {
       if (profitSumRes.ok) setProfitSummary((await profitSumRes.json()) as ProfitSummary);
       if (configRes.ok) setMarketConfig((await configRes.json()) as MarketConfig);
       if (liveProfitRes.ok) setLiveProfit((await liveProfitRes.json()) as LiveProfit);
+      if (disclaimersRes.ok) setDisclaimers((await disclaimersRes.json()) as SiteDisclaimer[]);
     } catch (err) {
       setStatusMessage(err instanceof Error ? err.message : 'Erro ao carregar painel');
     } finally {
@@ -845,6 +861,28 @@ export default function AdminPage() {
         {/* ── Mercados Multi-Runner ── */}
         {activeSection === 'market' ? (
           <Panel title='Mercados Multi-Runner'>
+            <div className='mb-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100 flex flex-wrap items-center justify-between gap-3'>
+              <div>
+                <p className='font-semibold'>Eventos antigos sem vínculo de apostas?</p>
+                <p className='mt-0.5 text-amber-200/80'>
+                  Cria registros de Event para Copa Categorias / Listas / Armageddon que ainda não tenham. Idempotente — só age sobre os faltantes.
+                </p>
+              </div>
+              <button
+                type='button'
+                className='rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-bold text-black hover:bg-amber-300'
+                onClick={() => {
+                  void submit('Vincular eventos para apostas', async () => {
+                    const res = await apiFetch(`${apiUrl}/admin/events/backfill-links`, { method: 'POST' });
+                    if (!res.ok) throw new Error(await res.text());
+                    const r = (await res.json()) as { categoryEvents: number; listEvents: number; armageddonEvents: number };
+                    setStatusMessage(`Vinculados: ${r.categoryEvents} Copa Categorias, ${r.listEvents} Lista, ${r.armageddonEvents} Armageddon.`);
+                  });
+                }}
+              >
+                Vincular eventos antigos
+              </button>
+            </div>
             <div className='mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4'>
               <input id='mrName' placeholder='Nome do mercado' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
               <select id='mrType' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none'>
@@ -852,7 +890,10 @@ export default function AdminPage() {
                 <option value='BEST_REACTION'>Melhor Reacao</option>
                 <option value='FALSE_START'>Queimada</option>
               </select>
-              <select id='mrEvent' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none'>
+              <select id='mrEvent' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' defaultValue=''>
+                <option value='' disabled>
+                  {events.length ? `Selecione um evento (${events.length})` : 'Nenhum evento cadastrado — crie em Copa Categorias / Listas / Armageddon'}
+                </option>
                 {events.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
               <input id='mrRunners' placeholder='Opcoes (separar por virgula)' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' />
@@ -923,6 +964,48 @@ export default function AdminPage() {
                 </div>
               ))}
               {!markets.length && <p className='text-sm text-white/40'>Nenhum mercado multi-runner criado.</p>}
+            </div>
+          </Panel>
+        ) : null}
+
+        {/* ── Disclaimers ── */}
+        {activeSection === 'disclaimer' ? (
+          <Panel title='Disclaimers do site'>
+            <p className='mb-4 text-xs text-white/50'>
+              Avisos exibidos no topo do site, acima da navbar. Vários disclaimers ativos aparecem empilhados ordenados por prioridade (maior primeiro). A animação "correndo" exibe a mensagem em scroll horizontal infinito.
+            </p>
+
+            <DisclaimerForm onSubmit={async (payload) => {
+              await submit('Criar disclaimer', () => apiFetch(`${apiUrl}/admin/site-disclaimers`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              }));
+            }} />
+
+            <div className='mt-5 space-y-3'>
+              {disclaimers.length === 0 && (
+                <p className='rounded-lg border border-dashed border-white/10 p-4 text-xs text-white/40'>
+                  Nenhum disclaimer cadastrado. Crie um acima.
+                </p>
+              )}
+              {disclaimers.map((d) => (
+                <DisclaimerRow
+                  key={d.id}
+                  disclaimer={d}
+                  onUpdate={async (payload) => {
+                    await submit('Atualizar disclaimer', () => apiFetch(`${apiUrl}/admin/site-disclaimers/${d.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(payload),
+                    }));
+                  }}
+                  onDelete={async () => {
+                    if (!window.confirm(`Excluir disclaimer "${d.message.slice(0, 50)}..."?`)) return;
+                    await submit('Excluir disclaimer', () => apiFetch(`${apiUrl}/admin/site-disclaimers/${d.id}`, { method: 'DELETE' }));
+                  }}
+                />
+              ))}
             </div>
           </Panel>
         ) : null}
@@ -1129,6 +1212,175 @@ function AdminModal({ state, onClose }: { state: ModalState; onClose: () => void
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+const DISCLAIMER_VARIANTS: Array<{ value: string; label: string; preview: string }> = [
+  { value: 'amber', label: 'Âmbar (aviso)', preview: 'bg-amber-500/30 border-amber-400/40 text-amber-100' },
+  { value: 'red', label: 'Vermelho (urgente)', preview: 'bg-red-500/30 border-red-400/40 text-red-100' },
+  { value: 'blue', label: 'Azul (informativo)', preview: 'bg-blue-500/30 border-blue-400/40 text-blue-100' },
+  { value: 'emerald', label: 'Verde (sucesso)', preview: 'bg-emerald-500/30 border-emerald-400/40 text-emerald-100' },
+  { value: 'violet', label: 'Roxo (destaque)', preview: 'bg-violet-500/30 border-violet-400/40 text-violet-100' },
+  { value: 'neutral', label: 'Neutro (cinza)', preview: 'bg-white/10 border-white/20 text-white/85' },
+];
+
+type DisclaimerPayload = { message: string; variant: string; scrolling: boolean; active: boolean; priority: number };
+
+function DisclaimerForm({ onSubmit }: { onSubmit: (payload: DisclaimerPayload) => Promise<void> }) {
+  const [message, setMessage] = useState('');
+  const [variant, setVariant] = useState('amber');
+  const [scrolling, setScrolling] = useState(false);
+  const [active, setActive] = useState(true);
+  const [priority, setPriority] = useState(0);
+
+  const previewClass = DISCLAIMER_VARIANTS.find((v) => v.value === variant)?.preview ?? '';
+
+  return (
+    <div className='rounded-xl border border-white/10 bg-white/[0.02] p-4'>
+      <p className='text-xs font-semibold uppercase tracking-widest text-white/50 mb-3'>Novo disclaimer</p>
+      <div className='grid gap-3 sm:grid-cols-2'>
+        <div className='sm:col-span-2'>
+          <label className='text-[10px] uppercase tracking-wider text-white/40'>Mensagem</label>
+          <textarea
+            className='mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/30'
+            rows={2}
+            placeholder='Ex: As apostas do 2º Festival do Opala serão abertas após as classificatórias...'
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className='text-[10px] uppercase tracking-wider text-white/40'>Cor</label>
+          <select className='mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' value={variant} onChange={(e) => setVariant(e.target.value)}>
+            {DISCLAIMER_VARIANTS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className='text-[10px] uppercase tracking-wider text-white/40'>Prioridade (maior aparece em cima)</label>
+          <input type='number' className='mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' value={priority} onChange={(e) => setPriority(Number(e.target.value) || 0)} />
+        </div>
+        <label className='flex items-center gap-2 text-sm text-white/80'>
+          <input type='checkbox' checked={scrolling} onChange={(e) => setScrolling(e.target.checked)} />
+          Animação correndo (marquee)
+        </label>
+        <label className='flex items-center gap-2 text-sm text-white/80'>
+          <input type='checkbox' checked={active} onChange={(e) => setActive(e.target.checked)} />
+          Ativo (visível no site)
+        </label>
+      </div>
+
+      {message.trim() && (
+        <div className='mt-4'>
+          <p className='text-[10px] uppercase tracking-wider text-white/40 mb-1'>Pré-visualização</p>
+          <div className={`rounded-lg border px-3 py-2 text-xs font-semibold overflow-hidden ${previewClass}`}>
+            {scrolling ? (
+              <span className='inline-block whitespace-nowrap' style={{ animation: 'admin-marquee 12s linear infinite' }}>{message}</span>
+            ) : (
+              <span className='block text-center'>{message}</span>
+            )}
+          </div>
+          <style jsx>{`
+            @keyframes admin-marquee {
+              0% { transform: translateX(100%); }
+              100% { transform: translateX(-100%); }
+            }
+          `}</style>
+        </div>
+      )}
+
+      <button
+        type='button'
+        className='mt-4 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black disabled:opacity-50'
+        disabled={!message.trim()}
+        onClick={async () => {
+          await onSubmit({ message: message.trim(), variant, scrolling, active, priority });
+          setMessage('');
+          setVariant('amber');
+          setScrolling(false);
+          setActive(true);
+          setPriority(0);
+        }}
+      >
+        + Criar disclaimer
+      </button>
+    </div>
+  );
+}
+
+function DisclaimerRow({ disclaimer, onUpdate, onDelete }: {
+  disclaimer: SiteDisclaimer;
+  onUpdate: (payload: Partial<DisclaimerPayload>) => Promise<void>;
+  onDelete: () => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [message, setMessage] = useState(disclaimer.message);
+  const [variant, setVariant] = useState(disclaimer.variant);
+  const [scrolling, setScrolling] = useState(disclaimer.scrolling);
+  const [priority, setPriority] = useState(disclaimer.priority);
+
+  const previewClass = DISCLAIMER_VARIANTS.find((v) => v.value === disclaimer.variant)?.preview ?? '';
+
+  return (
+    <div className='rounded-xl border border-white/10 bg-white/[0.03] p-4'>
+      <div className='flex flex-wrap items-start justify-between gap-2 mb-2'>
+        <div className='flex flex-wrap items-center gap-2 text-xs'>
+          <span className={`rounded-full px-2 py-0.5 font-bold ${disclaimer.active ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-white/40'}`}>
+            {disclaimer.active ? 'ATIVO' : 'INATIVO'}
+          </span>
+          <span className='rounded-full bg-white/10 px-2 py-0.5 text-white/70'>Cor: {disclaimer.variant}</span>
+          {disclaimer.scrolling && <span className='rounded-full bg-white/10 px-2 py-0.5 text-white/70'>Correndo</span>}
+          <span className='text-white/40'>Prio: {disclaimer.priority}</span>
+        </div>
+        <div className='flex gap-2'>
+          <button type='button' className='rounded-lg bg-white/10 px-3 py-1 text-xs font-bold text-white hover:bg-white/20' onClick={() => void onUpdate({ active: !disclaimer.active })}>
+            {disclaimer.active ? 'Desativar' : 'Ativar'}
+          </button>
+          <button type='button' className='rounded-lg bg-white/10 px-3 py-1 text-xs font-bold text-white hover:bg-white/20' onClick={() => setEditing((v) => !v)}>
+            {editing ? 'Cancelar' : 'Editar'}
+          </button>
+          <button type='button' className='rounded-lg bg-red-500/80 px-3 py-1 text-xs font-bold text-white hover:bg-red-500' onClick={() => void onDelete()}>
+            Excluir
+          </button>
+        </div>
+      </div>
+
+      {!editing && (
+        <div className={`rounded-lg border px-3 py-2 text-xs font-semibold overflow-hidden ${previewClass}`}>
+          {disclaimer.scrolling ? (
+            <span className='inline-block whitespace-nowrap' style={{ animation: 'admin-marquee 12s linear infinite' }}>{disclaimer.message}</span>
+          ) : (
+            <span className='block text-center'>{disclaimer.message}</span>
+          )}
+        </div>
+      )}
+
+      {editing && (
+        <div className='space-y-3 mt-2'>
+          <textarea className='w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' rows={2} value={message} onChange={(e) => setMessage(e.target.value)} />
+          <div className='grid gap-3 sm:grid-cols-3'>
+            <select className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' value={variant} onChange={(e) => setVariant(e.target.value)}>
+              {DISCLAIMER_VARIANTS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+            </select>
+            <input type='number' className='rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none' value={priority} onChange={(e) => setPriority(Number(e.target.value) || 0)} />
+            <label className='flex items-center gap-2 text-sm text-white/80'>
+              <input type='checkbox' checked={scrolling} onChange={(e) => setScrolling(e.target.checked)} />
+              Correndo
+            </label>
+          </div>
+          <button
+            type='button'
+            className='rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black disabled:opacity-50'
+            disabled={!message.trim()}
+            onClick={async () => {
+              await onUpdate({ message: message.trim(), variant, scrolling, priority });
+              setEditing(false);
+            }}
+          >
+            Salvar alterações
+          </button>
+        </div>
+      )}
     </div>
   );
 }

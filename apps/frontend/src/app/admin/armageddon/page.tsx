@@ -7,6 +7,7 @@ import { apiFetch } from '@/lib/api-request';
 import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
 import { getPublicApiUrl } from '@/lib/env-public';
 import { useConfirm } from '@/components/confirm-dialog';
+import { MultiRunnerMarketsManager } from '@/components/admin/multi-runner-markets-manager';
 
 const apiUrl = getPublicApiUrl();
 
@@ -42,6 +43,7 @@ type Matchup = {
 
 type ArmageddonEvent = {
   id: string;
+  eventId: string | null;
   name: string;
   description: string | null;
   bannerUrl: string | null;
@@ -436,6 +438,11 @@ export default function AdminArmageddonPage() {
                     ))}
                   </div>
                 </div>
+
+                <MultiRunnerMarketsManager
+                  eventId={detail.eventId}
+                  defaultRunners={detail.roster.map((r) => ({ label: r.driverName ?? `Posição ${r.position}` }))}
+                />
 
                 {tab === 'importar' && (
                   <ImportPilotsPanel

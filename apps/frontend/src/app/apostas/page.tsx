@@ -172,6 +172,14 @@ export default function ApostasPage() {
     return Object.values(multiRunnerSnapshots).filter((mr) => mr.eventId === selectedEventId);
   }, [multiRunnerSnapshots, selectedEventId]);
 
+  const availableTabs = useMemo(() => {
+    return TABS.filter((tab) => {
+      if (tab.id === 'passadas') return true;
+      const type = MARKET_TYPE_MAP[tab.id];
+      return eventMultiRunnerMarkets.some((mr) => mr.marketType === type);
+    });
+  }, [eventMultiRunnerMarkets]);
+
   const currentTabMarkets = useMemo(() => {
     const type = MARKET_TYPE_MAP[activeTab];
     return eventMultiRunnerMarkets.filter((mr) => mr.marketType === type);
@@ -185,6 +193,13 @@ export default function ApostasPage() {
       setSelectedMarketId(currentTabMarkets[0].marketId);
     }
   }, [activeTab, currentTabMarkets]);
+
+  // Fall back to Passadas if the active tab disappears (e.g. trocou de evento sem mercado)
+  useEffect(() => {
+    if (!availableTabs.some((t) => t.id === activeTab)) {
+      setActiveTab('passadas');
+    }
+  }, [availableTabs, activeTab]);
 
   async function loadSession() {
     try {
@@ -206,12 +221,20 @@ export default function ApostasPage() {
     setLoading(true);
     setMessage('');
     try {
-      const [boardRes, snapshotRes] = await Promise.all([fetch(`${apiUrl}/market/board`), fetch(`${apiUrl}/market/snapshot`)]);
+      const [boardRes, snapshotRes, mrRes] = await Promise.all([
+        fetch(`${apiUrl}/market/board`),
+        fetch(`${apiUrl}/market/snapshot`),
+        fetch(`${apiUrl}/market/multi-runner/snapshots`),
+      ]);
       if (!boardRes.ok || !snapshotRes.ok) throw new Error('Não foi possível carregar os mercados');
       const boardData = (await boardRes.json()) as BettingBoard;
       const snapText = await snapshotRes.text();
       const firstSnapshot = snapText.trim() ? (JSON.parse(snapText) as MarketSnapshot | null) : null;
       setBoard(boardData);
+      if (mrRes.ok) {
+        const mrList = (await mrRes.json()) as MultiRunnerSnapshot[];
+        setMultiRunnerSnapshots(Object.fromEntries(mrList.map((s) => [s.marketId, s])));
+      }
       if (firstSnapshot) {
         setSnapshots({ [firstSnapshot.duelId]: firstSnapshot });
         setSelectedEventId(firstSnapshot.eventId);
@@ -339,7 +362,7 @@ export default function ApostasPage() {
             {/* Tabs por modalidade — scroll horizontal no mobile */}
             <div className='mt-4 -mx-3 sm:mx-0 overflow-x-auto scrollbar-hide'>
               <div className='mx-3 sm:mx-0 flex gap-1 rounded-xl bg-[#101525] p-1 border border-white/10 min-w-fit'>
-                {TABS.map((tab) => {
+                {availableTabs.map((tab) => {
                   const { Icon } = tab;
                   const active = activeTab === tab.id;
                   return (
