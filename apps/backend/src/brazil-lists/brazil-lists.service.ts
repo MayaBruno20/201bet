@@ -336,6 +336,20 @@ export class BrazilListsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // Cria Event de apostas EAGER para que o evento apareça em /admin/events
+      // (dropdown do Multi-Runner) já no momento da criação, antes de qualquer
+      // matchup abrir mercado.
+      const linkedEvent = await tx.event.create({
+        data: {
+          sport: 'DRAG_RACE',
+          name: dto.name,
+          bannerUrl: dto.bannerUrl ?? null,
+          featured: dto.featured ?? false,
+          startAt: startDate,
+          status: EventStatus.SCHEDULED,
+        },
+      });
+
       const event = await tx.listEvent.create({
         data: {
           listId,
@@ -347,6 +361,7 @@ export class BrazilListsService {
           featured: dto.featured ?? false,
           notes: dto.notes,
           status: ListEventStatus.DRAFT,
+          eventId: linkedEvent.id,
         },
       });
       await this.logAudit(tx, 'BRAZIL_EVENT_CREATE', 'ListEvent', event.id, dto, audit);

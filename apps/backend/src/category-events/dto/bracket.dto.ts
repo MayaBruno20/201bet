@@ -80,6 +80,39 @@ export class SaveBracketLayoutDto {
   slots: BracketSlotDto[];
 }
 
+class SuperFinalSideDto {
+  @IsOptional() @IsUUID()
+  driverId?: string;
+
+  @IsOptional() @IsString() @MaxLength(120)
+  driverName?: string;
+
+  @IsOptional() @IsString() @MaxLength(60)
+  driverNickname?: string;
+
+  @IsOptional() @IsString() @MaxLength(120)
+  carName?: string;
+
+  @IsOptional() @IsString() @MaxLength(20)
+  carNumber?: string;
+
+  @IsOptional() @IsString() @MaxLength(120)
+  driverTeam?: string;
+}
+
+export class UpsertSuperFinalDto {
+  @ValidateNested()
+  @Type(() => SuperFinalSideDto)
+  left: SuperFinalSideDto;
+
+  @ValidateNested()
+  @Type(() => SuperFinalSideDto)
+  right: SuperFinalSideDto;
+
+  @IsOptional() @IsBoolean()
+  openMarket?: boolean;
+}
+
 export class SettleCategoryMatchupDto {
   @IsEnum(MatchupSide)
   winnerSide: MatchupSide;

@@ -91,7 +91,7 @@ export default function AdminCopaCategoriasPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<CategoryEvent | null>(null);
   const [activeBracketId, setActiveBracketId] = useState<string | null>(null);
-  const [tab, setTab] = useState<'inscritos' | 'chave'>('inscritos');
+  const [tab, setTab] = useState<'inscritos' | 'chave' | 'superfinal'>('inscritos');
   const [statusMessage, setStatusMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -374,18 +374,22 @@ export default function AdminCopaCategoriasPage() {
                 {activeBracket && (
                   <>
                     <div className='rounded-2xl border border-white/10 bg-[#101525] p-2'>
-                      <div className='flex gap-1'>
-                        <button onClick={() => setTab('inscritos')} className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold ${tab === 'inscritos' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>
+                      <div className='flex flex-wrap gap-1'>
+                        <button onClick={() => setTab('inscritos')} className={`flex-1 min-w-[110px] rounded-xl px-3 py-2 text-xs font-semibold ${tab === 'inscritos' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>
                           👥 Inscritos
                         </button>
-                        <button onClick={() => setTab('chave')} className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold ${tab === 'chave' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>
+                        <button onClick={() => setTab('chave')} className={`flex-1 min-w-[110px] rounded-xl px-3 py-2 text-xs font-semibold ${tab === 'chave' ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5'}`}>
                           🏆 Chave do Evento
+                        </button>
+                        <button onClick={() => setTab('superfinal')} className={`flex-1 min-w-[110px] rounded-xl px-3 py-2 text-xs font-semibold ${tab === 'superfinal' ? 'bg-amber-500/20 text-amber-300' : 'text-white/50 hover:bg-white/5'}`}>
+                          ⭐ Super Final
                         </button>
                       </div>
                     </div>
 
                     {tab === 'inscritos' && <CompetitorsPanel bracket={activeBracket} submit={submit} adminJson={adminJson} confirm={confirm} />}
                     {tab === 'chave' && <BracketBuilder bracket={activeBracket} submit={submit} adminJson={adminJson} confirm={confirm} />}
+                    {tab === 'superfinal' && <SuperFinalPanel bracket={activeBracket} submit={submit} adminJson={adminJson} confirm={confirm} />}
                   </>
                 )}
               </>
@@ -682,8 +686,10 @@ function BracketBuilder({ bracket, submit, adminJson, confirm }: { bracket: Brac
         map.set(`${r}-${i}`, { roundNumber: r, position: i, leftCompetitorId: null, rightCompetitorId: null });
       }
     }
-    // Sobrescreve com matchups existentes
+    // Sobrescreve com matchups existentes (Super Final é gerida por aba própria,
+    // tem roundNumber=99 e não deve aparecer nem ser regravada aqui)
     for (const m of bracket.matchups) {
+      if (m.isSuperFinal) continue;
       map.set(`${m.roundNumber}-${m.position}`, {
         roundNumber: m.roundNumber, position: m.position,
         leftCompetitorId: m.leftCompetitorId, rightCompetitorId: m.rightCompetitorId,
@@ -1002,6 +1008,318 @@ function SlotSide({
           🏆
         </button>
       )}
+    </div>
+  );
+}
+
+// ─── Super Final ───────────────────────────────────────────
+// Cada categoria pode ter UMA Super Final montada manualmente após as rodadas
+// normais. Os dois pilotos podem vir dos inscritos (autocomplete) ou ser
+// digitados livremente — neste caso o backend cria/encontra o Driver e
+// inscreve como CategoryCompetitor da chave.
+type DriverPick = { driverId?: string; driverName: string; driverNickname?: string; carName?: string; carNumber?: string; driverTeam?: string };
+
+function SuperFinalPanel({ bracket, submit, adminJson, confirm }: { bracket: Bracket; submit: SubmitFn; adminJson: JsonFn; confirm: ConfirmFn }) {
+  const meta = CATEGORIES.find((c) => c.value === bracket.category);
+  const existing = bracket.matchups.find((m) => m.isSuperFinal);
+  const settled = !!existing?.winnerSide && !!existing?.settledAt;
+
+  const initialFor = (competitorId: string | null | undefined): DriverPick => {
+    if (!competitorId) return { driverName: '' };
+    const c = bracket.competitors.find((x) => x.id === competitorId);
+    if (!c) return { driverName: '' };
+    return {
+      driverId: c.driverId,
+      driverName: c.driver.name,
+      driverNickname: c.driver.nickname ?? undefined,
+      carName: c.carName ?? undefined,
+      carNumber: c.carNumber ?? undefined,
+      driverTeam: c.driver.team ?? undefined,
+    };
+  };
+
+  const [left, setLeft] = useState<DriverPick>(() => initialFor(existing?.leftCompetitorId));
+  const [right, setRight] = useState<DriverPick>(() => initialFor(existing?.rightCompetitorId));
+
+  // Reset quando troca de chave
+  useEffect(() => {
+    setLeft(initialFor(existing?.leftCompetitorId));
+    setRight(initialFor(existing?.rightCompetitorId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bracket.id, existing?.id]);
+
+  const leftCompetitor = existing?.leftCompetitorId ? bracket.competitors.find((c) => c.id === existing.leftCompetitorId) : null;
+  const rightCompetitor = existing?.rightCompetitorId ? bracket.competitors.find((c) => c.id === existing.rightCompetitorId) : null;
+
+  function payloadSide(p: DriverPick) {
+    if (p.driverId) {
+      return {
+        driverId: p.driverId,
+        carName: p.carName || undefined,
+        carNumber: p.carNumber || undefined,
+      };
+    }
+    return {
+      driverName: p.driverName.trim(),
+      driverNickname: p.driverNickname || undefined,
+      carName: p.carName || undefined,
+      carNumber: p.carNumber || undefined,
+      driverTeam: p.driverTeam || undefined,
+    };
+  }
+
+  async function save(openMarket: boolean) {
+    const lname = left.driverName.trim();
+    const rname = right.driverName.trim();
+    if (!lname || !rname) return;
+    if (left.driverId && right.driverId && left.driverId === right.driverId) return;
+
+    if (openMarket) {
+      const ok = await confirm({
+        title: 'Salvar e abrir mercado?',
+        message: `A Super Final será criada e o mercado será aberto para apostas imediatamente.`,
+        highlightText: `${lname} × ${rname}`,
+        confirmLabel: 'Sim, abrir mercado',
+      });
+      if (!ok) return;
+    }
+
+    void submit('Salvar Super Final', () =>
+      adminJson(`/admin/category-events/brackets/${bracket.id}/super-final`, {
+        method: 'POST',
+        body: JSON.stringify({
+          left: payloadSide(left),
+          right: payloadSide(right),
+          openMarket,
+        }),
+      }),
+    );
+  }
+
+  async function toggleMarket() {
+    if (!existing) return;
+    const action = existing.marketOpen ? 'Fechar' : 'Abrir';
+    void submit(`${action} apostas`, () =>
+      adminJson(`/admin/category-events/matchups/${existing.id}/market`, {
+        method: 'PATCH', body: JSON.stringify({ open: !existing.marketOpen }),
+      }),
+    );
+  }
+
+  async function settleSide(winnerSide: 'LEFT' | 'RIGHT') {
+    if (!existing || !leftCompetitor || !rightCompetitor) return;
+    const winner = winnerSide === 'LEFT' ? leftCompetitor : rightCompetitor;
+    const ok = await confirm({
+      title: 'Auditar vencedor da Super Final?',
+      message: existing.marketOpen
+        ? 'Apostas serão liquidadas e creditadas aos vencedores. Ação IMUTÁVEL.'
+        : 'Esta ação fixa o vencedor desta Super Final (sem apostas vinculadas).',
+      highlightText: `🏆 ${winner.driver.name}`,
+      confirmLabel: 'Sim, auditar',
+    });
+    if (!ok) return;
+    void submit('Auditar Super Final', () =>
+      adminJson(`/admin/category-events/matchups/${existing.id}/settle`, {
+        method: 'POST', body: JSON.stringify({ winnerSide }),
+      }),
+    );
+  }
+
+  return (
+    <div className='space-y-4'>
+      <div className='rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-4 sm:p-5'>
+        <div className='flex items-start justify-between gap-3 mb-2'>
+          <div className='min-w-0'>
+            <p className='text-[10px] font-bold uppercase tracking-widest text-amber-400'>⭐ Super Final · {meta?.label}</p>
+            <h3 className='mt-1 text-base sm:text-lg font-bold'>Top 2 da categoria — final do campeonato</h3>
+            <p className='mt-1 text-xs text-white/60'>
+              Escolha os dois pilotos que disputarão a Super Final desta categoria. Use a busca por nome
+              {bracket.competitors.length > 0 && ` (sugestões: ${bracket.competitors.length} inscritos)`}
+              {' '}— se digitar um nome novo, o piloto é criado automaticamente.
+            </p>
+          </div>
+          {existing && (
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+              settled ? 'bg-emerald-500/20 text-emerald-300'
+                : existing.marketOpen ? 'bg-blue-500/20 text-blue-300'
+                : 'bg-white/10 text-white/60'
+            }`}>
+              {settled ? '✅ Auditada' : existing.marketOpen ? '🟢 Apostas abertas' : '⏸ Pendente'}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Pickers */}
+      <div className='grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-3 items-stretch'>
+        <DriverPickerCard label='Lado 1' value={left} onChange={setLeft} suggestions={bracket.competitors} disabled={settled} />
+        <div className='flex items-center justify-center text-2xl font-bold text-amber-400 lg:px-2'>×</div>
+        <DriverPickerCard label='Lado 2' value={right} onChange={setRight} suggestions={bracket.competitors} disabled={settled} />
+      </div>
+
+      {/* Actions */}
+      {!settled && (
+        <div className='flex flex-wrap gap-2'>
+          <button
+            type='button'
+            disabled={!left.driverName.trim() || !right.driverName.trim()}
+            onClick={() => void save(false)}
+            className='cc-btn-outline disabled:opacity-50 disabled:cursor-not-allowed'
+          >
+            💾 Salvar Super Final
+          </button>
+          <button
+            type='button'
+            disabled={!left.driverName.trim() || !right.driverName.trim()}
+            onClick={() => void save(true)}
+            className='cc-btn-primary disabled:opacity-50 disabled:cursor-not-allowed bg-amber-400 text-black hover:bg-amber-300'
+          >
+            🚀 Salvar e abrir mercado
+          </button>
+          {existing && (
+            <button type='button' onClick={() => void toggleMarket()} className='cc-btn-outline'>
+              {existing.marketOpen ? '⏸ Fechar apostas' : '🟢 Abrir apostas'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Existing matchup info + audit */}
+      {existing && leftCompetitor && rightCompetitor && (
+        <div className='rounded-2xl border border-white/10 bg-[#101525] p-4'>
+          <p className='text-[10px] font-bold uppercase tracking-widest text-white/40 mb-3'>Confronto atual</p>
+          <div className='grid grid-cols-2 gap-3'>
+            <div className={`rounded-xl border p-3 ${existing.winnerSide === 'LEFT' ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-white/10 bg-white/[0.03]'}`}>
+              <p className='text-[10px] uppercase tracking-wider text-white/40'>Lado 1</p>
+              <p className='mt-1 text-sm font-semibold truncate'>
+                {existing.winnerSide === 'LEFT' && '🏆 '}{leftCompetitor.driver.name}
+              </p>
+              <p className='text-[10px] text-white/40 truncate'>{leftCompetitor.carName || '—'}{leftCompetitor.carNumber ? ` #${leftCompetitor.carNumber}` : ''}</p>
+              {!settled && (
+                <button onClick={() => void settleSide('LEFT')} className='mt-2 w-full rounded bg-emerald-500/20 hover:bg-emerald-500/40 px-2 py-1.5 text-[11px] font-bold text-emerald-300'>
+                  🏆 Vencedor
+                </button>
+              )}
+            </div>
+            <div className={`rounded-xl border p-3 ${existing.winnerSide === 'RIGHT' ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-white/10 bg-white/[0.03]'}`}>
+              <p className='text-[10px] uppercase tracking-wider text-white/40'>Lado 2</p>
+              <p className='mt-1 text-sm font-semibold truncate'>
+                {existing.winnerSide === 'RIGHT' && '🏆 '}{rightCompetitor.driver.name}
+              </p>
+              <p className='text-[10px] text-white/40 truncate'>{rightCompetitor.carName || '—'}{rightCompetitor.carNumber ? ` #${rightCompetitor.carNumber}` : ''}</p>
+              {!settled && (
+                <button onClick={() => void settleSide('RIGHT')} className='mt-2 w-full rounded bg-emerald-500/20 hover:bg-emerald-500/40 px-2 py-1.5 text-[11px] font-bold text-emerald-300'>
+                  🏆 Vencedor
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DriverPickerCard({
+  label, value, onChange, suggestions, disabled,
+}: {
+  label: string;
+  value: DriverPick;
+  onChange: (next: DriverPick) => void;
+  suggestions: Competitor[];
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const term = value.driverName.trim().toLowerCase();
+  const filtered = term
+    ? suggestions.filter((c) => c.driver.name.toLowerCase().includes(term)).slice(0, 8)
+    : suggestions.slice(0, 8);
+
+  function pickCompetitor(c: Competitor) {
+    onChange({
+      driverId: c.driverId,
+      driverName: c.driver.name,
+      driverNickname: c.driver.nickname ?? undefined,
+      carName: c.carName ?? undefined,
+      carNumber: c.carNumber ?? undefined,
+      driverTeam: c.driver.team ?? undefined,
+    });
+    setOpen(false);
+  }
+
+  function clearPick() {
+    onChange({ driverName: '' });
+  }
+
+  return (
+    <div className='rounded-2xl border border-white/10 bg-[#101525] p-4'>
+      <p className='text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2'>{label}</p>
+      <div className='relative'>
+        <input
+          className='cc-field'
+          placeholder='Buscar piloto pelo nome…'
+          value={value.driverName}
+          disabled={disabled}
+          onChange={(e) => {
+            // Limpa driverId se o texto não corresponde mais à seleção
+            const text = e.target.value;
+            onChange({ ...value, driverName: text, driverId: undefined });
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 200)}
+        />
+        {value.driverId && !disabled && (
+          <button
+            type='button'
+            onClick={clearPick}
+            title='Limpar seleção'
+            className='absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-red-400 text-sm'
+          >
+            ×
+          </button>
+        )}
+        {open && filtered.length > 0 && !disabled && (
+          <div className='absolute left-0 right-0 top-full mt-1 z-10 max-h-60 overflow-auto rounded-xl border border-white/15 bg-[#0c0f1a] shadow-2xl'>
+            {filtered.map((c) => (
+              <button
+                key={c.id}
+                type='button'
+                onMouseDown={(e) => { e.preventDefault(); pickCompetitor(c); }}
+                className='block w-full text-left px-3 py-2 text-xs hover:bg-white/5 border-b border-white/5 last:border-0'
+              >
+                <p className='font-semibold truncate'>{c.driver.name}</p>
+                <p className='text-[10px] text-white/40 truncate'>
+                  {c.carName || '—'}{c.carNumber ? ` #${c.carNumber}` : ''}{c.driver.team ? ` · ${c.driver.team}` : ''}
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {value.driverId ? (
+        <p className='mt-2 text-[10px] text-emerald-400'>✓ Inscrito da categoria</p>
+      ) : value.driverName.trim() ? (
+        <p className='mt-2 text-[10px] text-amber-400'>⚠️ Piloto novo — será criado e inscrito</p>
+      ) : (
+        <p className='mt-2 text-[10px] text-white/30'>Digite o nome para buscar ou criar</p>
+      )}
+      <div className='mt-3 grid grid-cols-2 gap-2'>
+        <input
+          className='cc-field'
+          placeholder='Carro (opc)'
+          value={value.carName ?? ''}
+          disabled={disabled}
+          onChange={(e) => onChange({ ...value, carName: e.target.value })}
+        />
+        <input
+          className='cc-field'
+          placeholder='Nº (opc)'
+          value={value.carNumber ?? ''}
+          disabled={disabled}
+          onChange={(e) => onChange({ ...value, carNumber: e.target.value })}
+        />
+      </div>
     </div>
   );
 }
