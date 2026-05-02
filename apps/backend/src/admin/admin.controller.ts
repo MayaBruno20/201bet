@@ -223,9 +223,14 @@ export class AdminController {
 
   // ── Multi-Runner Markets ──
 
+  @Post('events/backfill-links')
+  backfillEventLinks(@Req() req: ReqUser) {
+    return this.adminService.backfillEventLinks(this.auditFromReq(req));
+  }
+
   @Get('markets')
-  listMarkets() {
-    return this.adminService.listMultiRunnerMarkets();
+  listMarkets(@Query('eventId') eventId?: string) {
+    return this.adminService.listMultiRunnerMarkets(eventId);
   }
 
   @Post('markets')

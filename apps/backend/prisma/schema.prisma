@@ -804,3 +804,19 @@ model ArmageddonMatchup {
   @@index([eventId, roundNumber, order])
   @@index([marketOpen])
 }
+
+
+// ─── Site Disclaimers / Avisos no header ──────────────────
+
+model SiteDisclaimer {
+  id        String   @id @default(uuid())
+  message   String
+  active    Boolean  @default(true)
+  variant   String   @default("amber") // amber | red | blue | emerald | violet | neutral
+  scrolling Boolean  @default(false)
+  priority  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, priority])
+}

@@ -13,6 +13,24 @@ const apiUrl = getPublicApiUrl();
 
 type NavLink = { href: string; label: string; requiresAuth?: boolean };
 
+type SiteDisclaimer = {
+  id: string;
+  message: string;
+  active: boolean;
+  variant: string;
+  scrolling: boolean;
+  priority: number;
+};
+
+const VARIANT_STYLES: Record<string, string> = {
+  amber: 'border-amber-400/30 bg-gradient-to-r from-amber-500/15 via-amber-400/20 to-amber-500/15 text-amber-100',
+  red: 'border-red-400/30 bg-gradient-to-r from-red-500/15 via-red-400/20 to-red-500/15 text-red-100',
+  blue: 'border-blue-400/30 bg-gradient-to-r from-blue-500/15 via-blue-400/20 to-blue-500/15 text-blue-100',
+  emerald: 'border-emerald-400/30 bg-gradient-to-r from-emerald-500/15 via-emerald-400/20 to-emerald-500/15 text-emerald-100',
+  violet: 'border-violet-400/30 bg-gradient-to-r from-violet-500/15 via-violet-400/20 to-violet-500/15 text-violet-100',
+  neutral: 'border-white/15 bg-white/5 text-white/85',
+};
+
 const baseLinks: NavLink[] = [
   { href: '/', label: 'Início' },
   { href: '/apostas', label: 'Apostas' },
@@ -44,10 +62,37 @@ export function MainNav() {
   const walletRef = useRef<HTMLDivElement | null>(null);
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [disclaimers, setDisclaimers] = useState<SiteDisclaimer[]>([]);
+  const fixedShellRef = useRef<HTMLDivElement | null>(null);
+  const [shellHeight, setShellHeight] = useState(64);
 
   useEffect(() => {
     setUser(getStoredUser());
   }, [pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${apiUrl}/site-disclaimers`, { cache: 'no-store' });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as SiteDisclaimer[];
+        if (!cancelled) setDisclaimers(data);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Mede a altura real do header + disclaimers para o spacer ficar exato
+  useEffect(() => {
+    if (!fixedShellRef.current) return;
+    const el = fixedShellRef.current;
+    const update = () => setShellHeight(el.offsetHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [disclaimers.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,8 +175,14 @@ export function MainNav() {
 
   return (
     <>
-      {/* Header Fixo Desktop/Mobile */}
-      <header className='fixed left-0 right-0 top-0 z-40 glass w-full transition-all duration-300'>
+      {/* Disclaimer + Header fixos */}
+      <div ref={fixedShellRef} className='fixed left-0 right-0 top-0 z-40 w-full'>
+        {/* Disclaimers / avisos oficiais */}
+        {disclaimers.map((d) => (
+          <DisclaimerBar key={d.id} disclaimer={d} />
+        ))}
+
+        <header className='glass w-full transition-all duration-300'>
         <div className='mx-auto max-w-7xl px-3 flex h-16 sm:h-20 items-center justify-between sm:px-6 lg:px-8'>
 
           <div className='flex items-center gap-3 md:gap-6 min-w-0'>
@@ -269,7 +320,8 @@ export function MainNav() {
             </button>
           </div>
         </div>
-      </header>
+        </header>
+      </div>
 
       {/* Mobile Menu Overlay */}
       <div 
@@ -368,8 +420,42 @@ export function MainNav() {
         </div>
       </div>
 
-      {/* Spacer para o fixed header não cobrir conteúdo principal */}
-      <div className='h-16 sm:h-20 w-full shrink-0'></div>
+      {/* Spacer para o fixed header (+ disclaimers) não cobrir conteúdo principal */}
+      <div className='w-full shrink-0' style={{ height: `${shellHeight}px` }} />
+      <style jsx global>{`
+        @keyframes site-disclaimer-marquee {
+          0% { transform: translateX(100%); }
+          100% { transform: translateX(-100%); }
+        }
+        .site-disclaimer-marquee {
+          display: inline-block;
+          white-space: nowrap;
+          padding-left: 100%;
+          animation: site-disclaimer-marquee 22s linear infinite;
+        }
+      `}</style>
     </>
+  );
+}
+
+function DisclaimerBar({ disclaimer }: { disclaimer: SiteDisclaimer }) {
+  const variantClass = VARIANT_STYLES[disclaimer.variant] ?? VARIANT_STYLES.amber;
+  return (
+    <div className={`border-b backdrop-blur-md ${variantClass}`}>
+      <div className='mx-auto flex max-w-7xl items-center gap-2 overflow-hidden px-3 py-1.5 sm:gap-3 sm:px-6 sm:py-2 lg:px-8'>
+        <svg className='hidden h-4 w-4 shrink-0 sm:inline opacity-80' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2.2}>
+          <path strokeLinecap='round' strokeLinejoin='round' d='M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z' />
+        </svg>
+        {disclaimer.scrolling ? (
+          <div className='flex-1 overflow-hidden text-[11px] font-semibold leading-tight sm:text-xs sm:leading-normal'>
+            <span className='site-disclaimer-marquee'>{disclaimer.message}</span>
+          </div>
+        ) : (
+          <p className='flex-1 text-center text-[11px] font-semibold leading-tight sm:text-xs sm:leading-normal'>
+            {disclaimer.message}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter, Roboto_Mono } from 'next/font/google';
 import { SiteFooter } from '@/components/site/site-footer';
+import { WhatsAppButton } from '@/components/site/whatsapp-button';
 import { ConfirmProvider } from '@/components/confirm-dialog';
 import './globals.css';
 
@@ -30,6 +31,7 @@ export default function RootLayout({
         <ConfirmProvider>
           {children}
           <SiteFooter />
+          <WhatsAppButton />
         </ConfirmProvider>
       </body>
     </html>

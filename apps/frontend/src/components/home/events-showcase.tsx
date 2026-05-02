@@ -11,10 +11,8 @@ import { getPublicApiUrl } from '@/lib/env-public';
 const apiUrl = getPublicApiUrl();
 
 const eventImages = [
-  '/images/events/event-1.jpg',
-  '/images/events/event-2.jpg',
-  '/images/events/event-3.jpg',
-  '/images/events/event-4.jpg',
+  '/images/events/event-5.png',
+  '/images/events/event-6.png',
 ];
 
 type DisplayEvent = {
