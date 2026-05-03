@@ -14,6 +14,7 @@ type Step = 'valor' | 'pix' | 'confirmado';
 
 export default function DepositoPage() {
   const [sessionOk, setSessionOk] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [balance, setBalance] = useState(0);
   const [amount, setAmount] = useState('');
@@ -50,6 +51,8 @@ export default function DepositoPage() {
         }
       } catch {
         /* ignore */
+      } finally {
+        setSessionChecked(true);
       }
     })();
   }, []);
@@ -136,6 +139,20 @@ export default function DepositoPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch { /* ignore */ }
+  }
+
+  if (!sessionChecked) {
+    return (
+      <main className='min-h-screen bg-[#090b11] text-white'>
+        <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
+          <MainNav />
+          <div className='mt-16 flex flex-col items-center justify-center gap-3 text-white/50'>
+            <div className='h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white/60' />
+            <p className='text-sm'>Carregando...</p>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   if (!sessionOk) {
@@ -236,11 +253,20 @@ export default function DepositoPage() {
               ))}
             </div>
 
-            <div className='flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 mb-5'>
+            <div className='flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 mb-3'>
               <svg className='h-4 w-4 text-amber-400 shrink-0' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
                 <path strokeLinecap='round' strokeLinejoin='round' d='M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' />
               </svg>
               <p className='text-xs text-amber-400/80'>Depósito mínimo de R$ 20,00 e máximo de R$ 1.000,00 por operação.</p>
+            </div>
+
+            <div className='flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 mb-5'>
+              <svg className='h-4 w-4 text-red-400 shrink-0 mt-0.5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+                <path strokeLinecap='round' strokeLinejoin='round' d='M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' />
+              </svg>
+              <p className='text-xs text-red-300 leading-relaxed'>
+                <strong className='font-semibold text-red-200'>Atenção:</strong> a conta bancária utilizada precisa ter chave PIX cadastrada com o <strong>mesmo CPF da sua conta na 201Bet</strong>. Pagamentos originados de contas com CPF diferente serão recusados.
+              </p>
             </div>
 
             {error && <p className='text-sm text-red-400 mb-4 rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-2'>{error}</p>}

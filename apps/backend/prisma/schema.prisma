@@ -155,6 +155,7 @@ enum TimeCategory {
   CAT_6S
   CAT_5_5S
   TUDOKIDA
+  APRESENTACAO
 }
 
 enum CategoryMatchupStatus {
@@ -304,6 +305,7 @@ model Car {
   name      String
   category  String
   number    String?
+  photoUrl  String?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

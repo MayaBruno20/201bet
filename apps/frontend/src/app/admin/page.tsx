@@ -34,7 +34,7 @@ type AdminUser = {
 };
 
 type AdminDriver = { id: string; name: string; nickname?: string | null; active: boolean };
-type AdminCar = { id: string; name: string; category: string; number?: string | null; active: boolean; driver: { id: string; name: string } };
+type AdminCar = { id: string; name: string; category: string; number?: string | null; photoUrl?: string | null; active: boolean; driver: { id: string; name: string } };
 type AdminEvent = { id: string; name: string; sport: string; status: string; startAt: string };
 type AdminSetting = { id: string; key: string; value: string; description?: string | null };
 type AuditLog = { id: string; action: string; entity: string; createdAt: string; actorUser?: { email: string } | null };
@@ -739,9 +739,66 @@ export default function AdminPage() {
             <div className='mt-5 space-y-2'>
               {cars.map((car) => (
                 <article key={car.id} className='rounded-lg border border-white/10 bg-white/5 p-3'>
-                  <p className='font-semibold'>{car.name} • {car.category} • {car.driver.name}</p>
-                  <p className='text-xs text-white/70'>{car.active ? 'Ativo' : 'Inativo'}</p>
-                  <div className='mt-2 flex gap-2'>
+                  <div className='flex items-start gap-3'>
+                    {car.photoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={car.photoUrl.startsWith('http') ? car.photoUrl : `${apiUrl.replace(/\/api$/, '')}${car.photoUrl}`}
+                        alt={car.name}
+                        className='h-16 w-24 rounded-md object-cover ring-1 ring-white/10'
+                      />
+                    ) : (
+                      <div className='flex h-16 w-24 items-center justify-center rounded-md bg-white/5 text-[10px] uppercase text-white/40 ring-1 ring-dashed ring-white/15'>
+                        Sem foto
+                      </div>
+                    )}
+                    <div className='flex-1'>
+                      <p className='font-semibold'>{car.name} • {car.category} • {car.driver.name}</p>
+                      <p className='text-xs text-white/70'>{car.active ? 'Ativo' : 'Inativo'}{car.number ? ` • #${car.number}` : ''}</p>
+                    </div>
+                  </div>
+                  <div className='mt-2 flex flex-wrap gap-2'>
+                    <label className='cursor-pointer rounded-md bg-emerald-500/20 px-2 py-1 text-xs text-emerald-200 hover:bg-emerald-500/30'>
+                      {car.photoUrl ? 'Trocar foto' : 'Enviar foto'}
+                      <input
+                        type='file'
+                        accept='image/png,image/jpeg,image/webp,image/gif'
+                        className='hidden'
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          if (!file) return;
+                          if (file.size > 20 * 1024 * 1024) {
+                            setStatusMessage('Imagem muito grande (máx. 20MB).');
+                            return;
+                          }
+                          void submit('Envio de foto do carro', async () => {
+                            const fd = new FormData();
+                            fd.append('photo', file);
+                            const response = await fetchWithCredentials(`${apiUrl}/admin/cars/${car.id}/photo`, {
+                              method: 'POST',
+                              body: fd,
+                            });
+                            if (!response.ok) {
+                              const raw = await response.text();
+                              throw new Error(raw || 'Falha ao enviar foto');
+                            }
+                            return response.json();
+                          });
+                        }}
+                      />
+                    </label>
+                    {car.photoUrl ? (
+                      <button
+                        type='button'
+                        className='rounded-md bg-amber-500/20 px-2 py-1 text-xs text-amber-200 hover:bg-amber-500/30'
+                        onClick={() => askConfirm('Remover foto', `Remover a foto de ${car.name}?`, () => {
+                          void submit('Remoção de foto do carro', () => adminJson(`/admin/cars/${car.id}/photo`, { method: 'DELETE' }));
+                        })}
+                      >
+                        Remover foto
+                      </button>
+                    ) : null}
                     <button
                       type='button'
                       className='rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20'

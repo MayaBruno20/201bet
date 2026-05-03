@@ -31,6 +31,7 @@ type EngineState = {
     carId: string;
     carName: string;
     driverName: string;
+    photoUrl: string | null;
     pool: number;
     tickets: number;
     odd: number;
@@ -40,6 +41,7 @@ type EngineState = {
     carId: string;
     carName: string;
     driverName: string;
+    photoUrl: string | null;
     pool: number;
     tickets: number;
     odd: number;
@@ -87,6 +89,7 @@ export type MarketSnapshot = {
       tickets: number;
       pool: number;
       locked: boolean;
+      photoUrl: string | null;
     };
     right: {
       id: string;
@@ -95,6 +98,7 @@ export type MarketSnapshot = {
       tickets: number;
       pool: number;
       locked: boolean;
+      photoUrl: string | null;
     };
   };
   history: Array<{
@@ -148,6 +152,7 @@ const TIME_CATEGORY_LABEL: Record<string, string> = {
   CAT_6S: '6s',
   CAT_5_5S: '5,5s',
   TUDOKIDA: 'TUDOKIDÁ',
+  APRESENTACAO: 'Apresentação',
 };
 
 const LIST_ROUND_LABEL: Record<string, string> = {
@@ -610,6 +615,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           carId: duel.leftCarId,
           carName: duel.leftCar.name,
           driverName: duel.leftCar.driver.name,
+          photoUrl: duel.leftCar.photoUrl ?? null,
           pool: Number(pool.leftPool),
           tickets: pool.leftTickets,
           odd: 1.9,
@@ -619,6 +625,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           carId: duel.rightCarId,
           carName: duel.rightCar.name,
           driverName: duel.rightCar.driver.name,
+          photoUrl: duel.rightCar.photoUrl ?? null,
           pool: Number(pool.rightPool),
           tickets: pool.rightTickets,
           odd: 1.9,
@@ -688,6 +695,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         carId: '',
         carName: '',
         driverName: '',
+        photoUrl: null,
         pool: leftPool,
         tickets: 0,
         odd: 1.9,
@@ -697,6 +705,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         carId: '',
         carName: '',
         driverName: '',
+        photoUrl: null,
         pool: rightPool,
         tickets: 0,
         odd: 1.9,
@@ -802,6 +811,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           locked:
             lock.locked &&
             (lock.lockedSide === 'LEFT' || lock.lockedSide === 'BOTH'),
+          photoUrl: state.left.photoUrl,
         },
         right: {
           id: state.right.carId,
@@ -812,6 +822,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           locked:
             lock.locked &&
             (lock.lockedSide === 'RIGHT' || lock.lockedSide === 'BOTH'),
+          photoUrl: state.right.photoUrl,
         },
       },
       history: state.history.slice(-20),

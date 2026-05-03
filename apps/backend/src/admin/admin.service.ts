@@ -653,6 +653,14 @@ export class AdminService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // photoUrl: undefined = não mexe; null/'' = remove; string preenchida = sobrescreve.
+      const photoUrl =
+        payload.photoUrl === undefined
+          ? undefined
+          : payload.photoUrl && payload.photoUrl.trim()
+            ? payload.photoUrl.trim()
+            : null;
+
       const updated = await tx.car.update({
         where: { id },
         data: {
@@ -661,11 +669,34 @@ export class AdminService {
           category: payload.category?.trim(),
           number: payload.number?.trim(),
           active: payload.active,
+          photoUrl,
         },
         include: { driver: true },
       });
 
       await this.logAction(tx, 'ADMIN_UPDATE_CAR', 'Car', id, payload, audit);
+      return updated;
+    });
+  }
+
+  async setCarPhoto(id: string, photoUrl: string | null, audit: AuditContext = {}) {
+    const existing = await this.prisma.car.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Carro não encontrado');
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.car.update({
+        where: { id },
+        data: { photoUrl },
+        include: { driver: true },
+      });
+      await this.logAction(
+        tx,
+        photoUrl ? 'ADMIN_SET_CAR_PHOTO' : 'ADMIN_REMOVE_CAR_PHOTO',
+        'Car',
+        id,
+        { photoUrl, previousPhotoUrl: existing.photoUrl },
+        audit,
+      );
       return updated;
     });
   }

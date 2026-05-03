@@ -21,6 +21,7 @@ const CATEGORY_MIN_TIME: Record<TimeCategory, number | null> = {
   CAT_6S: 6.0,
   CAT_5_5S: 5.5,
   TUDOKIDA: null,
+  APRESENTACAO: null,
 };
 
 @Injectable()
