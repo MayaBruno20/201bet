@@ -28,4 +28,9 @@ export class UpdateCarDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  // string vazia ou null remove a foto; URL define manualmente. Upload binário usa o endpoint dedicado.
+  @IsOptional()
+  @IsString()
+  photoUrl?: string | null;
 }

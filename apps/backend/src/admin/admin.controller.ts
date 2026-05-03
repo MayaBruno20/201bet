@@ -1,3 +1,5 @@
+import { extname } from 'path';
+import { randomUUID } from 'crypto';
 import {
   BadRequestException,
   Body,
@@ -10,10 +12,15 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
 import type { Request } from 'express';
 import { UserRole } from '@prisma/client';
+import { CARS_UPLOAD_DIR } from '../common/uploads';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -154,6 +161,42 @@ export class AdminController {
   @Delete('cars/:id')
   deleteCar(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
     return this.adminService.deleteCar(id, this.auditFromReq(req));
+  }
+
+  @Post('cars/:id/photo')
+  @UseInterceptors(
+    FileInterceptor('photo', {
+      storage: diskStorage({
+        destination: CARS_UPLOAD_DIR,
+        filename: (_req, file, cb) => {
+          const ext = extname(file.originalname).toLowerCase().slice(0, 8);
+          const safeExt = /^\.(png|jpg|jpeg|webp|gif)$/.test(ext) ? ext : '.jpg';
+          cb(null, `${randomUUID()}${safeExt}`);
+        },
+      }),
+      limits: { fileSize: 20 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        if (!/^image\/(png|jpe?g|webp|gif)$/.test(file.mimetype)) {
+          cb(new BadRequestException('Formato inválido. Use PNG, JPG, WEBP ou GIF.'), false);
+          return;
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  uploadCarPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: ReqUser,
+  ) {
+    if (!file) throw new BadRequestException('Envie um arquivo no campo "photo"');
+    const photoUrl = `/api/uploads/cars/${file.filename}`;
+    return this.adminService.setCarPhoto(id, photoUrl, this.auditFromReq(req));
+  }
+
+  @Delete('cars/:id/photo')
+  removeCarPhoto(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
+    return this.adminService.setCarPhoto(id, null, this.auditFromReq(req));
   }
 
   @Get('duels')

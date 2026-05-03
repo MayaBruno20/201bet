@@ -1,11 +1,14 @@
+import { mkdirSync } from 'fs';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import Redis from 'ioredis';
 import { AppModule } from './app.module';
 import { PrismaService } from './database/prisma.service';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { UPLOADS_ROOT, CARS_UPLOAD_DIR } from './common/uploads';
 
 function logRuntimeEnv() {
   const logger = new Logger('Env');
@@ -109,13 +112,24 @@ async function bootstrap() {
   logRuntimeEnv();
   await probeRedisConnection();
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const prismaService = app.get(PrismaService);
   const corsOrigins = assertCorsForRuntime();
 
   app.setGlobalPrefix('api');
   app.use(cookieParser());
-  app.use(helmet());
+  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+
+  // Serve uploads sob /api/uploads para passar pelo nginx (que só roteia /api/ → backend).
+  // Garantimos que o diretório existe para o multer não estourar no primeiro upload.
+  mkdirSync(CARS_UPLOAD_DIR, { recursive: true });
+  app.useStaticAssets(UPLOADS_ROOT, {
+    prefix: '/api/uploads/',
+    setHeaders: (res) => {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    },
+  });
   app.enableCors({
     origin: corsOrigins,
     credentials: true,

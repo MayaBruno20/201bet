@@ -567,8 +567,8 @@ export default function ApostasPage() {
 
                           {/* Odd cards — empilhados em mobile */}
                           <div className='grid gap-3 sm:gap-4 sm:grid-cols-2'>
-                            <OddCard title={snapshot.duel.left.label} odd={snapshot.duel.left.odd} pool={snapshot.duel.left.pool} tickets={snapshot.duel.left.tickets} active={side === 'LEFT'} onClick={() => setSide('LEFT')} tone='blue' />
-                            <OddCard title={snapshot.duel.right.label} odd={snapshot.duel.right.odd} pool={snapshot.duel.right.pool} tickets={snapshot.duel.right.tickets} active={side === 'RIGHT'} onClick={() => setSide('RIGHT')} tone='orange' />
+                            <OddCard title={snapshot.duel.left.label} odd={snapshot.duel.left.odd} pool={snapshot.duel.left.pool} tickets={snapshot.duel.left.tickets} photoUrl={snapshot.duel.left.photoUrl} active={side === 'LEFT'} onClick={() => setSide('LEFT')} tone='blue' />
+                            <OddCard title={snapshot.duel.right.label} odd={snapshot.duel.right.odd} pool={snapshot.duel.right.pool} tickets={snapshot.duel.right.tickets} photoUrl={snapshot.duel.right.photoUrl} active={side === 'RIGHT'} onClick={() => setSide('RIGHT')} tone='orange' />
                           </div>
 
                           {/* Bet form */}
@@ -716,17 +716,41 @@ export default function ApostasPage() {
   );
 }
 
-function OddCard({ title, odd, pool, tickets, active, onClick, tone }: {
-  title: string; odd?: number; pool?: number; tickets?: number; active: boolean; onClick: () => void; tone: 'blue' | 'orange';
+function OddCard({ title, odd, pool, tickets, photoUrl, active, onClick, tone }: {
+  title: string; odd?: number; pool?: number; tickets?: number; photoUrl?: string | null; active: boolean; onClick: () => void; tone: 'blue' | 'orange';
 }) {
   const isBlue = tone === 'blue';
+  const apiOrigin = (() => {
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL ?? '';
+      return base.replace(/\/api\/?$/, '');
+    } catch {
+      return '';
+    }
+  })();
+  const resolvedPhotoUrl = photoUrl
+    ? (photoUrl.startsWith('http') ? photoUrl : `${apiOrigin}${photoUrl}`)
+    : null;
   return (
     <button
       className={`group relative w-full overflow-hidden text-left transition-all duration-500 outline-none ${active ? 'scale-[1.02] shadow-2xl z-10' : 'hover:scale-[1.01] opacity-90 hover:opacity-100'}`}
       type='button' onClick={onClick}
     >
       <div className={`absolute inset-0 border-2 rounded-2xl sm:rounded-3xl transition-colors duration-300 ${active ? (isBlue ? 'border-blue-500' : 'border-orange-500') : 'border-transparent'}`} />
-      <div className={`rounded-2xl sm:rounded-3xl p-4 sm:p-6 h-full flex flex-col justify-between ${isBlue ? 'bg-gradient-to-br from-[#121c2d] to-[#0a101d]' : 'bg-gradient-to-br from-[#2d1c12] to-[#1d100a]'}`}>
+      <div className={`rounded-2xl sm:rounded-3xl p-4 sm:p-6 h-full flex flex-col justify-between relative overflow-hidden ${isBlue ? 'bg-gradient-to-br from-[#121c2d] to-[#0a101d]' : 'bg-gradient-to-br from-[#2d1c12] to-[#1d100a]'}`}>
+        {resolvedPhotoUrl ? (
+          <>
+            <div
+              className='absolute inset-0 bg-cover bg-center opacity-40 transition-opacity duration-500 group-hover:opacity-50'
+              style={{ backgroundImage: `url(${resolvedPhotoUrl})` }}
+              aria-hidden
+            />
+            <div
+              className={`absolute inset-0 ${isBlue ? 'bg-gradient-to-t from-[#0a101d] via-[#0a101d]/70 to-[#0a101d]/20' : 'bg-gradient-to-t from-[#1d100a] via-[#1d100a]/70 to-[#1d100a]/20'}`}
+              aria-hidden
+            />
+          </>
+        ) : null}
         <div className={`absolute -right-12 -top-12 h-32 w-32 rounded-full blur-3xl transition-opacity duration-500 ${active ? 'opacity-30' : 'opacity-0'} ${isBlue ? 'bg-blue-400' : 'bg-orange-400'}`} />
         <div className='relative z-10'>
           <div className='flex items-center gap-2 mb-2'>

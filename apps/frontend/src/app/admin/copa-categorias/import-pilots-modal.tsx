@@ -12,7 +12,8 @@ type TimeCategoryValue =
   | 'CAT_6_5S'
   | 'CAT_6S'
   | 'CAT_5_5S'
-  | 'TUDOKIDA';
+  | 'TUDOKIDA'
+  | 'APRESENTACAO';
 
 const CATEGORY_LABELS: Record<TimeCategoryValue, string> = {
   ORIGINAL_10S: 'Original 10s',
@@ -25,6 +26,7 @@ const CATEGORY_LABELS: Record<TimeCategoryValue, string> = {
   CAT_6S: '6s',
   CAT_5_5S: '5,5s',
   TUDOKIDA: 'TUDOKIDÁ',
+  APRESENTACAO: 'Apresentação',
 };
 
 export type ImportEntry = {
@@ -70,6 +72,9 @@ function mapCategoryFromText(text: string): TimeCategoryValue | '' {
     .replace(/[̀-ͯ]/g, '')
     .replace(/[^A-Z0-9 ,.-]/g, '');
 
+  if (normalized.includes('APRESENTACAO') || normalized.includes('APRESENTACÃO') || normalized.includes('EXIBICAO')) {
+    return 'APRESENTACAO';
+  }
   if (normalized.includes('TUDOKIDA') || normalized.includes('TUDO KIDA') || normalized.includes('LIVRE')) {
     return 'TUDOKIDA';
   }

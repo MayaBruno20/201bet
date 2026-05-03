@@ -24,6 +24,7 @@ const CATEGORIES = [
   { value: 'CAT_6S', label: '6s', minTime: 6.0 },
   { value: 'CAT_5_5S', label: '5,5s', minTime: 5.5 },
   { value: 'TUDOKIDA', label: 'TUDOKIDÁ', minTime: null },
+  { value: 'APRESENTACAO', label: 'Apresentação', minTime: null },
 ] as const;
 
 type CategoryValue = typeof CATEGORIES[number]['value'];

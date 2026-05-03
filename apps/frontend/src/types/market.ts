@@ -15,8 +15,8 @@ export type MarketSnapshot = {
   marginPercent: number;
   lockThresholdPercent: number;
   duel: {
-    left: { id: string; label: string; odd: number; tickets: number; pool: number; locked: boolean };
-    right: { id: string; label: string; odd: number; tickets: number; pool: number; locked: boolean };
+    left: { id: string; label: string; odd: number; tickets: number; pool: number; locked: boolean; photoUrl?: string | null };
+    right: { id: string; label: string; odd: number; tickets: number; pool: number; locked: boolean; photoUrl?: string | null };
   };
   history: Array<{
     at: string;
