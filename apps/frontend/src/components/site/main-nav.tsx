@@ -149,11 +149,10 @@ export function MainNav() {
         <div className='border-b border-amber-400/30 bg-gradient-to-r from-amber-500/15 via-amber-400/20 to-amber-500/15 backdrop-blur-md'>
           <div className='mx-auto flex max-w-7xl items-center gap-2 px-3 py-1.5 sm:gap-3 sm:px-6 sm:py-2 lg:px-8'>
             <svg className='hidden h-4 w-4 shrink-0 text-amber-300 sm:inline' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2.2}>
-              <path strokeLinecap='round' strokeLinejoin='round' d='M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z' />
+              <path strokeLinecap='round' strokeLinejoin='round' d='M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z' />
             </svg>
             <p className='flex-1 text-center text-[11px] font-semibold leading-tight text-amber-100 sm:text-xs sm:leading-normal'>
-              <span className='hidden sm:inline'>⚠️ </span>
-              As apostas do <strong className='text-amber-200'>2º Festival do Opala</strong> serão abertas <strong className='text-amber-200'>após as classificatórias</strong>, nas <strong className='text-amber-200'>Super Finais</strong> de cada categoria.
+              <strong className='text-amber-200'>Obrigado a todos pela participação</strong>, estamos recebendo positivamente todos os feedbacks!
             </p>
           </div>
         </div>
