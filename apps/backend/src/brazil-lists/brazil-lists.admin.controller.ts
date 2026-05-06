@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { UserRole } from '@prisma/client';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { BrazilListsService } from './brazil-lists.service';
@@ -34,7 +34,7 @@ import {
 type ReqUser = Request & { user?: { userId?: string; role?: UserRole } };
 
 @Controller('admin/brazil-lists')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(AdminJwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class BrazilListsAdminController {
   constructor(private readonly service: BrazilListsService) {}
@@ -106,7 +106,7 @@ export class BrazilListsAdminController {
 }
 
 @Controller('admin/brazil-list-events')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(AdminJwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class BrazilListEventsAdminController {
   constructor(private readonly service: BrazilListsService) {}

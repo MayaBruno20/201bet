@@ -21,7 +21,7 @@ import { diskStorage } from 'multer';
 import type { Request } from 'express';
 import { UserRole } from '@prisma/client';
 import { CARS_UPLOAD_DIR } from '../common/uploads';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { AdminService } from './admin.service';
@@ -42,7 +42,7 @@ import { UpdateEventDto } from './dto/update-event.dto';
 type ReqUser = Request & { user?: { userId?: string; role?: UserRole } };
 
 @Controller('admin')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(AdminJwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN, UserRole.OPERATOR)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}

@@ -13,7 +13,8 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { ValutService, ValutRejectedError } from './valut.service';
 import { CreateDepositDto } from './dto/create-deposit.dto';
-import { CreateWithdrawDto } from './dto/create-withdraw.dto';
+import { CreateWithdrawDto, PixKeyType } from './dto/create-withdraw.dto';
+import { normalizeBrazilPixPhoneKey } from './pix-phone-key';
 
 @Injectable()
 export class PaymentsService {
@@ -258,6 +259,11 @@ export class PaymentsService {
     const amount = new Prisma.Decimal(payload.amount);
     const amountCents = Math.round(payload.amount * 100);
 
+    const pixKeyResolved =
+      payload.pixKeyType === PixKeyType.PHONE
+        ? normalizeBrazilPixPhoneKey(payload.pixKey)
+        : payload.pixKey.trim();
+
     // Auto-hold para valores acima do threshold (review manual pelo admin)
     const autoHoldThreshold = Number(process.env.WITHDRAW_AUTO_HOLD_THRESHOLD ?? '5000');
     const requiresManualReview = payload.amount >= autoHoldThreshold;
@@ -282,7 +288,7 @@ export class PaymentsService {
           // Para valores >= threshold, marcamos para review manual via providerRef temporario
           providerRef: requiresManualReview ? 'PENDING_MANUAL_REVIEW' : null,
           // Persiste destino do PIX para review manual e retry posterior
-          pixKey: payload.pixKey,
+          pixKey: pixKeyResolved,
           pixKeyType: payload.pixKeyType,
         },
       });
@@ -316,7 +322,7 @@ export class PaymentsService {
       const pix = await this.valut.performPixCashout({
         amountCents,
         keyType: payload.pixKeyType,
-        key: payload.pixKey,
+        key: pixKeyResolved,
         externalId: result.id,
         documentValidation: user.cpf,
         idempotencyKey: `wd-${result.id}`,
@@ -427,12 +433,16 @@ export class PaymentsService {
     if (!user?.cpf) throw new BadRequestException('Usuario sem CPF para validacao Valut');
 
     const amountCents = Math.round(Number(payment.amount) * 100);
+    const pixKeyResolved =
+      payment.pixKeyType === 'phone'
+        ? normalizeBrazilPixPhoneKey(payment.pixKey)
+        : payment.pixKey.trim();
     let pixId: string;
     try {
       const pix = await this.valut.performPixCashout({
         amountCents,
         keyType: payment.pixKeyType as 'document' | 'phone' | 'email' | 'evp',
-        key: payment.pixKey,
+        key: pixKeyResolved,
         externalId: payment.id,
         documentValidation: user.cpf,
         idempotencyKey: `wd-manual-${payment.id}`,

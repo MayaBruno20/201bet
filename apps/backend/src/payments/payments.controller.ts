@@ -3,6 +3,7 @@ import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard';
 import { EmailVerifiedGuard } from '../auth/email-verified.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PaymentsService } from './payments.service';
@@ -52,7 +53,7 @@ export class PaymentsController {
 }
 
 @Controller('admin/withdrawals')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(AdminJwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminWithdrawalsController {
   constructor(private readonly paymentsService: PaymentsService) {}

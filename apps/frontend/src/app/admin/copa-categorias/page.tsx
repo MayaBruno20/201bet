@@ -4,8 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
 import { useConfirm } from '@/components/confirm-dialog';
-import { apiFetch } from '@/lib/api-request';
-import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
+import { apiFetch, clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/admin-session-bridge';
 import { getPublicApiUrl } from '@/lib/env-public';
 import { ImportPilotsModal } from './import-pilots-modal';
 import { EventBanner } from '@/components/event-banner';
@@ -113,7 +112,7 @@ export default function AdminCopaCategoriasPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await apiFetch(`${apiUrl}/auth/me`, { cache: 'no-store' });
+        const res = await apiFetch(`${apiUrl}/admin/auth/me`, { cache: 'no-store' });
         if (!res.ok) { clearClientSession(); setSessionUser(null); return; }
         const me = (await res.json()) as SessionUser;
         setSessionUser(me); setStoredUser(me);
@@ -663,6 +662,22 @@ function CompetitorsPanel({ bracket, submit, adminJson, confirm }: { bracket: Br
                   {c.qualifyingTrack !== null && <p>P: {Number(c.qualifyingTrack).toFixed(3)}s</p>}
                   {c.qualifyingTotal !== null && <p className='text-emerald-400 font-bold'>T: {Number(c.qualifyingTotal).toFixed(3)}s</p>}
                 </div>
+                <button
+                  className='rounded-lg bg-white/10 px-2 py-1 text-xs hover:bg-white/20'
+                  title='Editar nome do piloto'
+                  onClick={() => {
+                    const novo = window.prompt(`Novo nome para "${c.driver.name}":`, c.driver.name);
+                    const trimmed = novo?.trim();
+                    if (!trimmed || trimmed === c.driver.name) return;
+                    void submit('Editar nome do piloto', () =>
+                      adminJson(`/admin/drivers/${c.driver.id}`, {
+                        method: 'PATCH', body: JSON.stringify({ name: trimmed }),
+                      }),
+                    );
+                  }}
+                >
+                  ✎
+                </button>
                 <button className='cc-btn-danger' onClick={async () => {
                   const ok = await confirm({
                     title: 'Remover inscrito?',
@@ -909,6 +924,21 @@ function BracketBuilder({ bracket, submit, adminJson, confirm }: { bracket: Brac
                               }),
                             );
                           }}
+                          onCancel={async () => {
+                            if (!matchup) return;
+                            const ok = await confirm({
+                              title: 'Cancelar embate?',
+                              message: matchup.marketOpen
+                                ? 'TODAS as apostas serão automaticamente reembolsadas para os usuários. O embate vai pra aba "Canceladas". Ação irreversível.'
+                                : 'O embate será marcado como cancelado e some das listas ativas.',
+                              highlightText: '❌ Cancelar embate',
+                              confirmLabel: 'Sim, cancelar',
+                            });
+                            if (!ok) return;
+                            void submit('Cancelar embate', () =>
+                              adminJson(`/admin/category-events/matchups/${matchup.id}/cancel`, { method: 'POST' }),
+                            );
+                          }}
                         />
                       );
                     })}
@@ -928,7 +958,7 @@ function getRounds(size: number): number {
 }
 
 function BracketSlot({
-  slot, competitors, matchup, isFirstRound, onDrop, onClear, onSettle, onToggleMarket,
+  slot, competitors, matchup, isFirstRound, onDrop, onClear, onSettle, onToggleMarket, onCancel,
 }: {
   slot: { roundNumber: number; position: number; leftCompetitorId: string | null; rightCompetitorId: string | null };
   competitors: Competitor[];
@@ -938,6 +968,7 @@ function BracketSlot({
   onClear: (round: number, pos: number, side: 'LEFT' | 'RIGHT') => void;
   onSettle: (side: 'LEFT' | 'RIGHT') => void;
   onToggleMarket: () => void;
+  onCancel: () => void;
 }) {
   const left = slot.leftCompetitorId ? competitors.find((c) => c.id === slot.leftCompetitorId) : null;
   const right = slot.rightCompetitorId ? competitors.find((c) => c.id === slot.rightCompetitorId) : null;
@@ -967,13 +998,23 @@ function BracketSlot({
         canAudit={!!matchup && !settled && !!left && !!right}
       />
       {canOpenMarket && (
-        <button
-          type='button'
-          onClick={onToggleMarket}
-          className={`w-full text-[10px] font-bold py-1 ${matchup.marketOpen ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30' : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'}`}
-        >
-          {matchup.marketOpen ? '⏸ Fechar apostas' : '🚀 Abrir apostas'}
-        </button>
+        <div className='grid grid-cols-2 gap-px'>
+          <button
+            type='button'
+            onClick={onToggleMarket}
+            className={`text-[10px] font-bold py-1 ${matchup.marketOpen ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30' : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'}`}
+          >
+            {matchup.marketOpen ? '⏸ Fechar' : '🚀 Abrir'}
+          </button>
+          <button
+            type='button'
+            onClick={onCancel}
+            className='text-[10px] font-bold py-1 bg-red-500/15 text-red-300 hover:bg-red-500/30'
+            title='Cancelar embate (refund automático)'
+          >
+            ❌ Cancelar
+          </button>
+        </div>
       )}
     </div>
   );

@@ -692,6 +692,102 @@ export class AuthService {
     };
   }
 
+  /**
+   * Login exclusivo do painel admin. Requer role ADMIN/OPERATOR/AUDITOR e
+   * emite um JWT com `scope=admin` que só é aceito pela AdminJwtStrategy.
+   *
+   * Se o admin tem 2FA ativado, NÃO emite o token final — retorna `requires2FA`
+   * + `tempToken` (válido por 5 min, scope=admin-2fa) que deve ser apresentado
+   * ao /admin/auth/login/2fa junto com o código TOTP.
+   */
+  async adminLogin(payload: { email: string; password: string }) {
+    const allowedRoles = new Set(['ADMIN', 'OPERATOR', 'AUDITOR']);
+    const user = await this.prisma.user.findUnique({
+      where: { email: payload.email.toLowerCase().trim() },
+      include: { wallet: true },
+    });
+
+    if (!user || user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Credenciais inválidas');
+    }
+
+    const isValidPassword = await bcrypt.compare(payload.password, user.password);
+    if (!isValidPassword) {
+      throw new UnauthorizedException('Credenciais inválidas');
+    }
+
+    if (!allowedRoles.has(user.role)) {
+      throw new UnauthorizedException(
+        'Sua conta não tem permissão para acessar o painel admin.',
+      );
+    }
+
+    if (user.twoFactorEnabled) {
+      // Token efêmero só pra completar o desafio 2FA. Não passa na AdminJwtStrategy.
+      const tempToken = await this.jwtService.signAsync(
+        { sub: user.id, email: user.email, role: user.role, scope: 'admin-2fa' },
+        { expiresIn: '5m' },
+      );
+      return { requires2FA: true as const, tempToken };
+    }
+
+    const accessToken = await this.jwtService.signAsync({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      scope: 'admin',
+    });
+
+    return {
+      requires2FA: false as const,
+      accessToken,
+      user: this.buildAuthUserPayload(user),
+    };
+  }
+
+  /**
+   * Segunda etapa do login admin com 2FA. Recebe o tempToken + código TOTP/backup
+   * e, se válido, emite o cookie admin definitivo.
+   */
+  async adminLoginVerify2FA(
+    tempToken: string,
+    validateChallenge: (userId: string, code: string) => Promise<boolean>,
+    code: string,
+  ) {
+    let payload: { sub?: string; email?: string; role?: string; scope?: string };
+    try {
+      payload = await this.jwtService.verifyAsync(tempToken);
+    } catch {
+      throw new UnauthorizedException('Sessão de 2FA expirou. Refaça o login.');
+    }
+    if (payload.scope !== 'admin-2fa' || !payload.sub) {
+      throw new UnauthorizedException('Token de 2FA inválido.');
+    }
+
+    const ok = await validateChallenge(payload.sub, code);
+    if (!ok) throw new UnauthorizedException('Código de 2FA inválido.');
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: { wallet: true },
+    });
+    if (!user || user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Conta indisponível.');
+    }
+
+    const accessToken = await this.jwtService.signAsync({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      scope: 'admin',
+    });
+
+    return {
+      accessToken,
+      user: this.buildAuthUserPayload(user),
+    };
+  }
+
   private normalizeCpf(cpf: string) {
     const normalized = cpf.replace(/\D/g, '');
     if (!/^\d{11}$/.test(normalized)) {

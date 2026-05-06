@@ -59,11 +59,15 @@ export class EventsService {
 
     const [events, categoryEvents, armageddonEvents] = await Promise.all([
       this.prisma.event.findMany({
+        where: { status: { not: EventStatus.CANCELED } },
         orderBy: { startAt: 'asc' },
         include: {
           markets: {
             orderBy: { createdAt: 'asc' },
-            include: { odds: { orderBy: { createdAt: 'asc' } } },
+            include: {
+              odds: { orderBy: { createdAt: 'asc' } },
+              duel: { include: { poolState: true } },
+            },
           },
           duels: {
             orderBy: { startsAt: 'asc' },
@@ -90,6 +94,7 @@ export class EventsService {
       }),
     ]);
 
+    const defaultRake = Number(process.env.MARKET_MARGIN_PERCENT ?? '20') / 100;
     const fromEvent: PublicEvent[] = events.map((event) => ({
       id: event.id,
       sport: event.sport,
@@ -99,18 +104,40 @@ export class EventsService {
       featured: event.featured,
       startAt: event.startAt,
       status: event.status,
-      markets: event.markets.map((market) => ({
-        id: market.id,
-        name: market.name,
-        status: market.status,
-        odds: market.odds.map((odd) => ({
-          id: odd.id,
-          label: odd.label,
-          value: Number(odd.value),
-          status: odd.status,
-          version: odd.version,
-        })),
-      })),
+      markets: event.markets.map((market) => {
+        // Calcula odds reais a partir do pool persistido (pari-mutuel) em vez do
+        // valor seed (1.90) gravado quando o admin abriu o mercado.
+        const leftPool = Number(market.duel?.poolState?.leftPool ?? 0);
+        const rightPool = Number(market.duel?.poolState?.rightPool ?? 0);
+        const totalPool = leftPool + rightPool;
+        const rake = market.rakePercent ? Number(market.rakePercent) / 100 : defaultRake;
+        const net = totalPool * (1 - rake);
+
+        const computeOddByIndex = (idx: number) => {
+          if (market.status === 'SETTLED' && market.winnerOddId) {
+            const winnerIndex = market.odds.findIndex((o) => o.id === market.winnerOddId);
+            if (idx !== winnerIndex) return 0;
+            const winnerPool = winnerIndex === 0 ? leftPool : rightPool;
+            // Mesmo piso de 1.0 da settlement: vencedor nunca recebe < stake.
+            return winnerPool > 0 ? Math.max(1.0, net / winnerPool) : 0;
+          }
+          const sidePool = idx === 0 ? leftPool : rightPool;
+          return sidePool > 0 ? Math.max(1.01, net / sidePool) : 0;
+        };
+
+        return {
+          id: market.id,
+          name: market.name,
+          status: market.status,
+          odds: market.odds.map((odd, idx) => ({
+            id: odd.id,
+            label: odd.label,
+            value: Number(computeOddByIndex(idx).toFixed(2)),
+            status: odd.status,
+            version: odd.version,
+          })),
+        };
+      }),
       duels: event.duels.map((duel) => ({
         id: duel.id,
         startsAt: duel.startsAt,

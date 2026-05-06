@@ -1244,6 +1244,43 @@ export class CategoryEventsService {
     return result;
   }
 
+  // ── Admin: Cancelar matchup (refund automático + marca CANCELED) ──
+  async adminCancelMatchup(matchupId: string, audit: AuditContext = {}) {
+    const matchup = await this.prisma.categoryMatchup.findUnique({ where: { id: matchupId } });
+    if (!matchup) throw new NotFoundException('Confronto não encontrado');
+    if (matchup.winnerSide && matchup.settledAt) {
+      throw new BadRequestException('Confronto já liquidado — para reverter, contate o suporte');
+    }
+    if (matchup.status === CategoryMatchupStatus.CANCELED) {
+      throw new BadRequestException('Confronto já está cancelado');
+    }
+
+    // 1) Se há mercado aberto, void (refund automático).
+    if (matchup.duelId) {
+      const market = await this.prisma.market.findFirst({
+        where: { duelId: matchup.duelId, status: { in: [MarketStatus.OPEN, MarketStatus.CLOSED, MarketStatus.SUSPENDED] } },
+        select: { id: true },
+      });
+      if (market) {
+        await this.settlementService.voidMarket(market.id, audit);
+      }
+      await this.prisma.duel.update({
+        where: { id: matchup.duelId },
+        data: { status: DuelStatus.CANCELED },
+      }).catch(() => undefined);
+    }
+
+    // 2) Marca o matchup como CANCELED e fecha o mercado para a UI
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.categoryMatchup.update({
+        where: { id: matchupId },
+        data: { status: CategoryMatchupStatus.CANCELED, marketOpen: false },
+      });
+      await this.logAudit(tx, 'CATEGORY_MATCHUP_CANCEL', 'CategoryMatchup', matchupId, { duelId: matchup.duelId }, audit);
+      return updated;
+    }, { timeout: 20000, maxWait: 5000 });
+  }
+
   // ── Helpers ────────────────────────────────────────
 
   private async logAudit(

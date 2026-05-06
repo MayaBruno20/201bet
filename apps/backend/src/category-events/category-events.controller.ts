@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query
 import { Request } from 'express';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { CategoryEventsService } from './category-events.service';
@@ -28,7 +29,7 @@ export class CategoryEventsPublicController {
 }
 
 @Controller('admin/category-events')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(AdminJwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN, UserRole.OPERATOR)
 export class CategoryEventsAdminController {
   constructor(private readonly svc: CategoryEventsService) {}
@@ -124,6 +125,12 @@ export class CategoryEventsAdminController {
   @Post('matchups/:matchupId/settle')
   settle(@Param('matchupId', ParseUUIDPipe) matchupId: string, @Body() dto: SettleCategoryMatchupDto, @Req() req: ReqUser) {
     return this.svc.adminSettleMatchup(matchupId, dto, this.audit(req));
+  }
+
+  // Cancel matchup com refund automático (chama voidMarket + marca CANCELED)
+  @Post('matchups/:matchupId/cancel')
+  cancel(@Param('matchupId', ParseUUIDPipe) matchupId: string, @Req() req: ReqUser) {
+    return this.svc.adminCancelMatchup(matchupId, this.audit(req));
   }
 
   private audit(req: ReqUser) {

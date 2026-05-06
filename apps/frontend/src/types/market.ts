@@ -80,6 +80,8 @@ export type BoardStage = {
   startsAt: string;
   bookingCloseAt: string;
   status: string;
+  isSuperFinal: boolean;
+  matchupStatus: 'PENDING' | 'COMPLETED' | 'INVALIDATED' | 'CANCELED' | null;
 };
 
 export type BettingBoard = {

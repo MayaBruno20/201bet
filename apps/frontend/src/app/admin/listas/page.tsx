@@ -3,8 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
-import { apiFetch } from '@/lib/api-request';
-import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
+import { apiFetch, clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/admin-session-bridge';
 import { getPublicApiUrl } from '@/lib/env-public';
 import { useConfirm } from '@/components/confirm-dialog';
 import { EventBanner } from '@/components/event-banner';
@@ -102,7 +101,7 @@ export default function AdminListasPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await apiFetch(`${apiUrl}/auth/me`, { cache: 'no-store' });
+        const res = await apiFetch(`${apiUrl}/admin/auth/me`, { cache: 'no-store' });
         if (!res.ok) {
           clearClientSession();
           setSessionUser(null);
