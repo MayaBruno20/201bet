@@ -1,7 +1,10 @@
 import type { CookieOptions, Response } from 'express';
 
-/** Nome do cookie httpOnly com o JWT de acesso (não expor ao JS do browser). */
+/** Nome do cookie httpOnly com o JWT de acesso do site público (não expor ao JS do browser). */
 export const AUTH_ACCESS_COOKIE = '201bet_access';
+
+/** Cookie isolado do painel admin — nunca é lido nem aceito por endpoints do site público. */
+export const ADMIN_AUTH_ACCESS_COOKIE = '201bet_admin_access';
 
 /** Usado nos testes e alinhado ao cookie de sessão. */
 export function jwtExpiresInToMilliseconds(expiresIn: string): number {
@@ -49,4 +52,13 @@ export function attachAccessTokenCookie(res: Response, accessToken: string) {
 export function clearAccessTokenCookie(res: Response) {
   const { maxAge: _m, ...opts } = baseCookieOptions();
   res.clearCookie(AUTH_ACCESS_COOKIE, opts);
+}
+
+export function attachAdminAccessTokenCookie(res: Response, accessToken: string) {
+  res.cookie(ADMIN_AUTH_ACCESS_COOKIE, accessToken, baseCookieOptions());
+}
+
+export function clearAdminAccessTokenCookie(res: Response) {
+  const { maxAge: _m, ...opts } = baseCookieOptions();
+  res.clearCookie(ADMIN_AUTH_ACCESS_COOKIE, opts);
 }

@@ -136,6 +136,8 @@ export type BettingBoard = {
       startsAt: string;
       bookingCloseAt: string;
       status: string;
+      isSuperFinal: boolean;
+      matchupStatus: 'PENDING' | 'COMPLETED' | 'INVALIDATED' | 'CANCELED' | null;
     }>;
   }>;
   generatedAt: string;
@@ -209,6 +211,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
 
   async getBettingBoard(): Promise<BettingBoard> {
     const events = await this.prisma.event.findMany({
+      where: { status: { not: 'CANCELED' } },
       orderBy: { startAt: 'asc' },
       include: {
         markets: { orderBy: { createdAt: 'asc' }, select: { name: true } },
@@ -226,8 +229,15 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
 
     const allDuelIds = events.flatMap((e) => e.duels.map((d) => d.id));
 
-    // Enriquecimento: descobre roundNumber/categoria a partir das tabelas de matchup
-    const meta = new Map<string, { roundNumber: number; category: string | null; categoryLabel: string | null }>();
+    // Enriquecimento: descobre roundNumber/categoria/super-final a partir das tabelas de matchup
+    type MatchupStatusLabel = 'PENDING' | 'COMPLETED' | 'INVALIDATED' | 'CANCELED';
+    const meta = new Map<string, {
+      roundNumber: number;
+      category: string | null;
+      categoryLabel: string | null;
+      isSuperFinal: boolean;
+      matchupStatus: MatchupStatusLabel | null;
+    }>();
     if (allDuelIds.length > 0) {
       const [catMatchups, armaMatchups, listMatchups] = await Promise.all([
         this.prisma.categoryMatchup.findMany({
@@ -235,6 +245,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           select: {
             duelId: true,
             roundNumber: true,
+            isSuperFinal: true,
+            status: true,
             bracket: { select: { category: true } },
           },
         }),
@@ -255,6 +267,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           roundNumber: m.roundNumber,
           category: cat,
           categoryLabel: TIME_CATEGORY_LABEL[cat] ?? cat,
+          isSuperFinal: m.isSuperFinal,
+          matchupStatus: m.status as MatchupStatusLabel,
         });
       }
       for (const m of armaMatchups) {
@@ -263,6 +277,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           roundNumber: m.roundNumber,
           category: m.roundType,
           categoryLabel: LIST_ROUND_LABEL[m.roundType] ?? m.roundType,
+          isSuperFinal: false,
+          matchupStatus: null,
         });
       }
       for (const m of listMatchups) {
@@ -271,6 +287,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           roundNumber: m.roundNumber,
           category: m.roundType,
           categoryLabel: LIST_ROUND_LABEL[m.roundType] ?? m.roundType,
+          isSuperFinal: false,
+          matchupStatus: null,
         });
       }
     }
@@ -299,13 +317,15 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
             const roundNumber = m?.roundNumber ?? index + 1;
             return {
               duelId: duel.id,
-              label: `Rodada ${roundNumber}`,
+              label: m?.isSuperFinal ? 'Super Final' : `Rodada ${roundNumber}`,
               roundNumber,
               category: m?.category ?? null,
               categoryLabel: m?.categoryLabel ?? null,
               startsAt: duel.startsAt.toISOString(),
               bookingCloseAt: duel.bookingCloseAt.toISOString(),
               status: duel.status,
+              isSuperFinal: m?.isSuperFinal ?? false,
+              matchupStatus: m?.matchupStatus ?? null,
             };
           }),
         };
@@ -589,7 +609,9 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           const finalPool = Number(pool.leftPool) + Number(pool.rightPool);
           const winnerPool = winnerSide === 'LEFT' ? Number(pool.leftPool) : Number(pool.rightPool);
           const margin = this.getMarginPercent() / 100;
-          const finalOdd = winnerPool > 0 ? (finalPool * (1 - margin)) / winnerPool : 0;
+          // Mesma regra de produto da settlement: vencedor nunca recebe < 1.0x stake.
+          const rawFinalOdd = winnerPool > 0 ? (finalPool * (1 - margin)) / winnerPool : 0;
+          const finalOdd = winnerPool > 0 ? Math.max(1.0, rawFinalOdd) : 0;
           settlement = {
             winnerSide,
             winnerLabel: winnerSide === 'LEFT'

@@ -63,6 +63,13 @@ export default function ApostasPage() {
   const [selectedMarketId, setSelectedMarketId] = useState<string>('');
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('passadas');
+  const [statusFilter, setStatusFilter] = useState<'aberto' | 'auditado' | 'cancelado'>('aberto');
+  // Carrinho (bilhete acumulado): cada item é uma aposta a ser enviada
+  type CartItem = { duelId: string; side: 'LEFT' | 'RIGHT'; stake: number };
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cartSubmitting, setCartSubmitting] = useState(false);
+  // Resultados da última submissão em lote — exibidos em modal
+  const [cartResults, setCartResults] = useState<Array<{ duelId: string; side: 'LEFT' | 'RIGHT'; ok: boolean; message: string; betId?: string; potentialWin?: number }> | null>(null);
   const [stakeRaw, setStakeRaw] = useState('100');
   const stake = Number(stakeRaw) || 0;
   const [side, setSide] = useState<'LEFT' | 'RIGHT'>('LEFT');
@@ -123,11 +130,31 @@ export default function ApostasPage() {
 
   const selectedEvent = useMemo(() => board?.events.find((e) => e.id === selectedEventId) ?? null, [board, selectedEventId]);
 
-  // Agrupa stages por roundNumber → categoria
+  // Helper: classifica cada stage pelo filtro (aberto/auditado/cancelado).
+  // Usamos o snapshot quando disponível; fallback no matchupStatus do board.
+  const classifyStage = (stage: BoardStage): 'aberto' | 'auditado' | 'cancelado' => {
+    if (stage.matchupStatus === 'CANCELED' || stage.status === 'CANCELED') return 'cancelado';
+    const snap = snapshots[stage.duelId];
+    if (snap?.settlement) return 'auditado';
+    if (stage.matchupStatus === 'COMPLETED' || stage.matchupStatus === 'INVALIDATED') return 'auditado';
+    return 'aberto';
+  };
+
+  // Contadores por status (para badges nas tabs)
+  const statusCounts = useMemo(() => {
+    if (!selectedEvent) return { aberto: 0, auditado: 0, cancelado: 0 };
+    const c = { aberto: 0, auditado: 0, cancelado: 0 };
+    for (const s of selectedEvent.stages) c[classifyStage(s)] += 1;
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEvent, snapshots]);
+
+  // Agrupa stages por roundNumber → categoria, já filtrando pelo statusFilter
   const roundsForEvent = useMemo(() => {
     if (!selectedEvent) return [] as Array<{ roundNumber: number; categories: Array<{ category: string | null; categoryLabel: string | null; stages: BoardStage[] }> }>;
+    const filtered = selectedEvent.stages.filter((s) => classifyStage(s) === statusFilter);
     const byRound = new Map<number, Map<string, BoardStage[]>>();
-    for (const s of selectedEvent.stages) {
+    for (const s of filtered) {
       if (!byRound.has(s.roundNumber)) byRound.set(s.roundNumber, new Map());
       const catKey = s.category ?? '__none__';
       const catMap = byRound.get(s.roundNumber)!;
@@ -150,7 +177,8 @@ export default function ApostasPage() {
             stages,
           })),
       }));
-  }, [selectedEvent]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEvent, snapshots, statusFilter]);
 
   const activeRound = useMemo(() => {
     if (!roundsForEvent.length) return null;
@@ -248,6 +276,88 @@ export default function ApostasPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // ── Carrinho de apostas (multi-bet) ──────────────────────────────
+  function cartToggle(duelId: string, nextSide: 'LEFT' | 'RIGHT') {
+    setCart((prev) => {
+      const idx = prev.findIndex((c) => c.duelId === duelId);
+      if (idx === -1) {
+        return [...prev, { duelId, side: nextSide, stake: minBet }];
+      }
+      // Mesmo lado: remove. Lado diferente: troca para o novo lado mantendo stake.
+      if (prev[idx].side === nextSide) {
+        return prev.filter((_, i) => i !== idx);
+      }
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], side: nextSide };
+      return updated;
+    });
+  }
+
+  function cartRemove(duelId: string) {
+    setCart((prev) => prev.filter((c) => c.duelId !== duelId));
+  }
+
+  function cartUpdateStake(duelId: string, raw: string) {
+    const value = Number(raw.replace(',', '.')) || 0;
+    setCart((prev) => prev.map((c) => (c.duelId === duelId ? { ...c, stake: value } : c)));
+  }
+
+  const cartTotalStake = cart.reduce((acc, c) => acc + (Number.isFinite(c.stake) ? c.stake : 0), 0);
+  const cartIndexByDuel = useMemo(() => {
+    const m = new Map<string, CartItem>();
+    cart.forEach((c) => m.set(c.duelId, c));
+    return m;
+  }, [cart]);
+
+  async function submitCart() {
+    if (!cart.length || cartSubmitting) return;
+    if (!me) { setMessage('Faça login para apostar.'); return; }
+    // Validações pré-envio
+    if (cartTotalStake > currentBalance) {
+      setMessage('Saldo insuficiente para o bilhete inteiro.');
+      return;
+    }
+    const invalids = cart.filter((c) => !c.stake || c.stake < minBet);
+    if (invalids.length) {
+      setMessage(`Existem ${invalids.length} aposta(s) abaixo do mínimo de R$ ${minBet}.`);
+      return;
+    }
+
+    setCartSubmitting(true);
+    setMessage('');
+    const results: NonNullable<typeof cartResults> = [];
+    for (const item of cart) {
+      try {
+        const response = await apiFetch(`${apiUrl}/market/bet`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ duelId: item.duelId, side: item.side, amount: item.stake }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => null as unknown);
+          results.push({ duelId: item.duelId, side: item.side, ok: false, message: parseApiError(data) ?? `Erro ${response.status}` });
+          continue;
+        }
+        const data = (await response.json()) as { snapshot: MarketSnapshot; bet: { id: string; potentialWin: number }; wallet: { balance: number } };
+        setSnapshots((prev) => ({ ...prev, [data.snapshot.duelId]: data.snapshot }));
+        setMe((prev) => (prev ? { ...prev, wallet: { balance: data.wallet.balance, currency: prev.wallet?.currency ?? 'BRL' } } : prev));
+        results.push({ duelId: item.duelId, side: item.side, ok: true, message: 'OK', betId: data.bet.id, potentialWin: data.bet.potentialWin });
+      } catch (err) {
+        results.push({ duelId: item.duelId, side: item.side, ok: false, message: err instanceof Error ? err.message : 'Falha de rede' });
+      }
+    }
+
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('wallet:refresh'));
+    void loadMyBets();
+
+    // Remove do carrinho só os que deram certo; mantém os que falharam para o usuário corrigir
+    const failedDuelIds = new Set(results.filter((r) => !r.ok).map((r) => r.duelId));
+    setCart((prev) => prev.filter((c) => failedDuelIds.has(c.duelId)));
+
+    setCartResults(results);
+    setCartSubmitting(false);
   }
 
   async function placeBet() {
@@ -391,23 +501,51 @@ export default function ApostasPage() {
               {/* ── TAB: PASSADAS (Duelos) ── */}
               {activeTab === 'passadas' && (
                 <div className='space-y-4 sm:space-y-6'>
+                  {/* Filtro de status (Em aberto / Auditadas / Canceladas) */}
+                  <div className='flex gap-2 overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0 scrollbar-hide'>
+                    {([
+                      { key: 'aberto', label: 'Em aberto', count: statusCounts.aberto, tone: 'bg-emerald-500 text-white shadow-lg' },
+                      { key: 'auditado', label: 'Auditadas', count: statusCounts.auditado, tone: 'bg-blue-500 text-white shadow-lg' },
+                      { key: 'cancelado', label: 'Canceladas', count: statusCounts.cancelado, tone: 'bg-red-500 text-white shadow-lg' },
+                    ] as const).map((f) => {
+                      const isActive = statusFilter === f.key;
+                      return (
+                        <button
+                          key={f.key}
+                          type='button'
+                          onClick={() => { setStatusFilter(f.key); setSelectedRound(null); }}
+                          className={`shrink-0 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs sm:text-sm font-semibold transition-all ${
+                            isActive ? f.tone : 'bg-white/5 text-white/60 hover:bg-white/10'
+                          }`}
+                        >
+                          {f.label}
+                          <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold ${
+                            isActive ? 'bg-white/20 text-white' : 'bg-white/10 text-white/50'
+                          }`}>{f.count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   {/* Round selector — uma aba por rodada (chave) com todas as categorias dentro */}
                   {roundsForEvent.length > 1 && (
                     <div className='-mx-3 sm:mx-0 overflow-x-auto px-3 sm:px-0 scrollbar-hide'>
                       <div className='flex gap-2 min-w-fit'>
                         {roundsForEvent.map((r) => {
                           const isActive = activeRound?.roundNumber === r.roundNumber;
+                          const isSF = r.roundNumber === 99 || r.categories.some((c) => c.stages.some((s) => s.isSuperFinal));
+                          const label = isSF ? 'Super Final' : `Rodada ${r.roundNumber}`;
                           return (
                             <button
                               key={r.roundNumber}
                               type='button'
                               className={`shrink-0 rounded-full px-4 py-2 text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${isActive
-                                ? 'bg-blue-500 text-white shadow-lg'
+                                ? (isSF ? 'bg-amber-500 text-black shadow-lg' : 'bg-blue-500 text-white shadow-lg')
                                 : 'bg-white/5 text-white/60 hover:bg-white/10'
                               }`}
                               onClick={() => setSelectedRound(r.roundNumber)}
                             >
-                              Rodada {r.roundNumber}
+                              {isSF && <span className='mr-1'>🏆</span>}{label}
                             </button>
                           );
                         })}
@@ -428,7 +566,7 @@ export default function ApostasPage() {
                               <span className='text-[10px] text-white/40'>{cat.stages.length} embate{cat.stages.length !== 1 ? 's' : ''}</span>
                             </div>
                           )}
-                          <ul className='divide-y divide-white/5'>
+                          <ul className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-2 sm:p-3'>
                             {cat.stages.map((stage) => {
                               const snap = snapshots[stage.duelId];
                               const isActive = currentDuelId === stage.duelId;
@@ -436,49 +574,68 @@ export default function ApostasPage() {
                               const rightLabel = snap?.duel.right.label ?? 'Aguardando...';
                               const leftOdd = snap?.duel.left.odd;
                               const rightOdd = snap?.duel.right.odd;
-                              const isClosed = snap && (snap.locked || snap.status === 'BOOKING_CLOSED' || snap.status === 'FINISHED') && !snap.settlement;
-                              const isSettled = !!snap?.settlement;
+                              const isCanceled = stage.matchupStatus === 'CANCELED' || stage.status === 'CANCELED';
+                              const isClosed = !isCanceled && snap && (snap.locked || snap.status === 'BOOKING_CLOSED' || snap.status === 'FINISHED') && !snap.settlement;
+                              const isSettled = !isCanceled && !!snap?.settlement;
+                              const pillLabel = isCanceled ? 'CANCELADO' : isSettled ? 'AUDITADO' : isClosed ? 'FECHADO' : 'ABERTO';
+                              const pillClass = isCanceled ? 'bg-red-500/15 text-red-300'
+                                : isSettled ? 'bg-emerald-500/15 text-emerald-300'
+                                : isClosed ? 'bg-amber-500/15 text-amber-300'
+                                : 'bg-emerald-500/10 text-emerald-400';
+                              const cartEntry = cartIndexByDuel.get(stage.duelId);
+                              const cartLeft = cartEntry?.side === 'LEFT';
+                              const cartRight = cartEntry?.side === 'RIGHT';
+                              const canBetCard = !isCanceled && !isSettled && !isClosed;
                               return (
                                 <li key={stage.duelId}>
-                                  <button
-                                    type='button'
-                                    onClick={() => setSelectedDuelId(stage.duelId)}
-                                    className={`w-full text-left px-3 py-3 sm:px-4 sm:py-3.5 transition-colors ${isActive ? 'bg-blue-500/10 ring-1 ring-blue-500/40' : 'hover:bg-white/5'}`}
-                                  >
-                                    <div className='flex items-center gap-2 sm:gap-3'>
-                                      {/* Lado esquerdo */}
-                                      <div className='min-w-0 flex-1'>
-                                        <p className={`text-xs sm:text-sm font-semibold truncate ${isActive ? 'text-white' : 'text-white/85'}`}>{leftLabel}</p>
-                                        <p className='text-[10px] sm:text-[11px] mt-0.5 text-blue-400 font-bold'>@{leftOdd?.toFixed(2) ?? '--'}</p>
-                                      </div>
-                                      <div className='shrink-0 text-[10px] sm:text-xs font-bold text-white/30 px-1'>vs</div>
-                                      <div className='min-w-0 flex-1 text-right'>
-                                        <p className={`text-xs sm:text-sm font-semibold truncate ${isActive ? 'text-white' : 'text-white/85'}`}>{rightLabel}</p>
-                                        <p className='text-[10px] sm:text-[11px] mt-0.5 text-orange-400 font-bold'>@{rightOdd?.toFixed(2) ?? '--'}</p>
-                                      </div>
-                                      {/* Status pill */}
-                                      <span className={`hidden sm:inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wider ${
-                                        isSettled ? 'bg-emerald-500/15 text-emerald-300' :
-                                        isClosed ? 'bg-red-500/15 text-red-300' :
-                                        'bg-emerald-500/10 text-emerald-400'
-                                      }`}>
-                                        {isSettled ? 'AUDITADO' : isClosed ? 'FECHADO' : 'ABERTO'}
+                                  <div className={`h-full rounded-xl border p-3 transition-all ${
+                                    cartEntry
+                                      ? 'border-emerald-400 bg-emerald-500/[0.04] ring-2 ring-emerald-400/30'
+                                      : isActive
+                                        ? 'border-blue-500 bg-blue-500/10 ring-2 ring-blue-500/40'
+                                        : 'border-white/10 bg-white/[0.02]'
+                                  }`}>
+                                    <div className='flex items-center justify-between mb-2'>
+                                      <button
+                                        type='button'
+                                        onClick={() => setSelectedDuelId(stage.duelId)}
+                                        className='text-[9px] font-bold uppercase tracking-widest text-white/40 hover:text-white/70'
+                                        title='Ver detalhes deste embate'
+                                      >
+                                        {stage.isSuperFinal ? '🏆 Super Final' : `Pote R$ ${snap ? formatMoney(snap.totalPool) : '0,00'}`}
+                                      </button>
+                                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wider ${pillClass}`}>
+                                        {pillLabel}
                                       </span>
                                     </div>
-                                    {/* Mobile status row */}
-                                    <div className='mt-1.5 flex items-center justify-between sm:hidden'>
-                                      <span className='text-[10px] text-white/40'>
-                                        Pote R$ {snap ? formatMoney(snap.totalPool) : '--'}
-                                      </span>
-                                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold tracking-wider ${
-                                        isSettled ? 'bg-emerald-500/15 text-emerald-300' :
-                                        isClosed ? 'bg-red-500/15 text-red-300' :
-                                        'bg-emerald-500/10 text-emerald-400'
-                                      }`}>
-                                        {isSettled ? 'AUDITADO' : isClosed ? 'FECHADO' : 'ABERTO'}
-                                      </span>
+                                    <div className='space-y-1.5'>
+                                      <button
+                                        type='button'
+                                        disabled={!canBetCard}
+                                        onClick={() => canBetCard && cartToggle(stage.duelId, 'LEFT')}
+                                        className={`w-full flex items-center justify-between gap-2 rounded-md px-2 py-1.5 transition-all ${
+                                          cartLeft ? 'bg-blue-500/30 ring-1 ring-blue-400'
+                                            : canBetCard ? 'hover:bg-white/5' : 'opacity-50 cursor-not-allowed'
+                                        }`}
+                                      >
+                                        <p className='text-xs font-semibold truncate text-white/90 flex-1 min-w-0 text-left'>{cartLeft && <span className='mr-1'>✓</span>}{leftLabel}</p>
+                                        <p className='text-sm font-bold text-blue-400 shrink-0'>@{leftOdd?.toFixed(2) ?? '--'}</p>
+                                      </button>
+                                      <div className='border-t border-white/5'></div>
+                                      <button
+                                        type='button'
+                                        disabled={!canBetCard}
+                                        onClick={() => canBetCard && cartToggle(stage.duelId, 'RIGHT')}
+                                        className={`w-full flex items-center justify-between gap-2 rounded-md px-2 py-1.5 transition-all ${
+                                          cartRight ? 'bg-orange-500/30 ring-1 ring-orange-400'
+                                            : canBetCard ? 'hover:bg-white/5' : 'opacity-50 cursor-not-allowed'
+                                        }`}
+                                      >
+                                        <p className='text-xs font-semibold truncate text-white/90 flex-1 min-w-0 text-left'>{cartRight && <span className='mr-1'>✓</span>}{rightLabel}</p>
+                                        <p className='text-sm font-bold text-orange-400 shrink-0'>@{rightOdd?.toFixed(2) ?? '--'}</p>
+                                      </button>
                                     </div>
-                                  </button>
+                                  </div>
                                 </li>
                               );
                             })}
@@ -565,6 +722,16 @@ export default function ApostasPage() {
                             </div>
                           )}
 
+                          {/* Aviso pari-mutuel */}
+                          <div className='flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2.5'>
+                            <svg className='h-4 w-4 text-amber-400 shrink-0 mt-0.5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+                              <path strokeLinecap='round' strokeLinejoin='round' d='M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' />
+                            </svg>
+                            <p className='text-[11px] sm:text-xs text-amber-100/90 leading-relaxed'>
+                              <strong className='font-semibold text-amber-200'>Mercado pari-mutuel:</strong> a cotação é dinâmica e o retorno final depende do rateio do pote no fechamento das apostas. O número exibido é uma estimativa e pode variar até o fim do bilhete. <strong>Quem acerta nunca recebe menos que o valor apostado.</strong>
+                            </p>
+                          </div>
+
                           {/* Odd cards — empilhados em mobile */}
                           <div className='grid gap-3 sm:gap-4 sm:grid-cols-2'>
                             <OddCard title={snapshot.duel.left.label} odd={snapshot.duel.left.odd} pool={snapshot.duel.left.pool} tickets={snapshot.duel.left.tickets} photoUrl={snapshot.duel.left.photoUrl} active={side === 'LEFT'} onClick={() => setSide('LEFT')} tone='blue' />
@@ -587,8 +754,8 @@ export default function ApostasPage() {
                                   <span className={`font-medium ${balanceAfterBet < 0 ? 'text-red-400' : 'text-white'}`}>R$ {formatMoney(balanceAfterBet)}</span>
                                 </div>
                                 <div className='flex justify-between py-2 text-white/60 text-xs sm:text-sm'>
-                                  <span>Retorno bruto</span>
-                                  <span className='font-semibold text-emerald-400'>R$ {formatMoney(expectedReturn)}</span>
+                                  <span>Retorno estimado <span className='text-white/30'>(varia)</span></span>
+                                  <span className='font-semibold text-emerald-400'>~ R$ {formatMoney(expectedReturn)}</span>
                                 </div>
                                 {!me && <p className='mt-3 text-xs text-amber-400'>Faça login para apostar.</p>}
                                 {stake < minBet && <p className='mt-1 text-xs text-amber-400'>Valor mínimo: R$ {minBet.toFixed(2).replace('.', ',')}.</p>}
@@ -693,6 +860,148 @@ export default function ApostasPage() {
         )}
       </div>
 
+      {/* ── Bilhete acumulado (sticky bottom) ── */}
+      {cart.length > 0 && (
+        <div className='fixed bottom-0 left-0 right-0 z-30 border-t border-white/10 bg-[#0a101d]/95 backdrop-blur-md shadow-[0_-8px_30px_rgba(0,0,0,0.6)]'>
+          <div className='mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-4 lg:px-8'>
+            <div className='flex items-center justify-between gap-3 mb-3'>
+              <div className='flex items-center gap-2'>
+                <span className='inline-flex items-center justify-center h-7 min-w-[28px] rounded-full bg-emerald-500 text-black text-xs font-bold px-2'>
+                  {cart.length}
+                </span>
+                <p className='text-sm font-semibold'>Bilhete <span className='text-white/50'>(seleções)</span></p>
+              </div>
+              <div className='flex items-center gap-2'>
+                <button
+                  type='button'
+                  onClick={() => setCart([])}
+                  className='text-xs text-white/50 hover:text-white/80'
+                  disabled={cartSubmitting}
+                >
+                  Limpar
+                </button>
+              </div>
+            </div>
+
+            <div className='max-h-[40vh] overflow-y-auto space-y-1.5 mb-3 pr-1'>
+              {cart.map((item) => {
+                const snap = snapshots[item.duelId];
+                const sideData = item.side === 'LEFT' ? snap?.duel.left : snap?.duel.right;
+                const oppData = item.side === 'LEFT' ? snap?.duel.right : snap?.duel.left;
+                const odd = sideData?.odd ?? 0;
+                const estReturn = item.stake * odd;
+                return (
+                  <div key={item.duelId} className='grid grid-cols-[1fr_auto_auto] sm:grid-cols-[1fr_120px_120px_auto] items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-2 py-2'>
+                    <div className='min-w-0'>
+                      <p className='text-xs font-semibold truncate'>
+                        <span className={item.side === 'LEFT' ? 'text-blue-400' : 'text-orange-400'}>
+                          {sideData?.label ?? '...'}
+                        </span>
+                        <span className='text-white/30 mx-1'>vs</span>
+                        <span className='text-white/50'>{oppData?.label ?? '...'}</span>
+                      </p>
+                      <p className='text-[10px] text-white/40 mt-0.5'>
+                        @{odd.toFixed(2)} · ~retorno R$ {formatMoney(estReturn)}
+                      </p>
+                    </div>
+                    <div className='hidden sm:block text-right text-[10px] text-white/40'>
+                      {item.side === 'LEFT' ? 'Lado azul' : 'Lado laranja'}
+                    </div>
+                    <div className='flex items-center gap-1'>
+                      <span className='text-[10px] text-white/40'>R$</span>
+                      <input
+                        type='number'
+                        inputMode='decimal'
+                        min={minBet}
+                        step={5}
+                        value={item.stake}
+                        onChange={(e) => cartUpdateStake(item.duelId, e.target.value)}
+                        className='w-20 rounded-md border border-white/10 bg-[#090b11] px-2 py-1 text-sm font-semibold text-white outline-none focus:border-white/30'
+                        disabled={cartSubmitting}
+                      />
+                    </div>
+                    <button
+                      type='button'
+                      onClick={() => cartRemove(item.duelId)}
+                      className='rounded-md w-7 h-7 flex items-center justify-center text-white/50 hover:bg-red-500/20 hover:text-red-300'
+                      title='Remover do bilhete'
+                      disabled={cartSubmitting}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-white/5 pt-3'>
+              <div className='flex items-center gap-4 text-xs sm:text-sm'>
+                <div>
+                  <p className='text-[10px] uppercase tracking-widest text-white/40'>Total apostado</p>
+                  <p className='font-bold text-white'>R$ {formatMoney(cartTotalStake)}</p>
+                </div>
+                <div>
+                  <p className='text-[10px] uppercase tracking-widest text-white/40'>Saldo após</p>
+                  <p className={`font-bold ${currentBalance - cartTotalStake < 0 ? 'text-red-400' : 'text-white'}`}>
+                    R$ {formatMoney(currentBalance - cartTotalStake)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type='button'
+                onClick={submitCart}
+                disabled={cartSubmitting || !me || cartTotalStake > currentBalance || cart.some((c) => c.stake < minBet)}
+                className='rounded-xl bg-emerald-400 px-5 py-3 text-sm font-extrabold text-black hover:bg-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed'
+              >
+                {cartSubmitting ? 'Enviando...' : !me ? 'Faça login' : `Apostar ${cart.length} embate${cart.length !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+            <p className='mt-2 text-[10px] text-amber-200/70 leading-relaxed'>
+              Mercado pari-mutuel: as cotações exibidas são estimativas. Acertando, você recebe no mínimo o valor apostado em cada embate.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Spacer para conteúdo não ficar atrás do bilhete sticky */}
+      {cart.length > 0 && <div className='h-48 sm:h-40' />}
+
+      {/* Modal de resultado do bilhete enviado */}
+      {cartResults && (
+        <div className='fixed inset-0 z-[95] flex items-center justify-center bg-black/70 p-4'>
+          <div className='w-full max-w-md rounded-2xl border border-white/10 bg-[#101525] p-5 sm:p-6 shadow-2xl max-h-[80vh] flex flex-col'>
+            <h3 className='text-lg sm:text-xl font-bold mb-1'>
+              Bilhete enviado
+            </h3>
+            <p className='text-sm text-white/60 mb-4'>
+              {cartResults.filter((r) => r.ok).length} de {cartResults.length} aposta(s) confirmadas.
+            </p>
+            <div className='space-y-2 overflow-y-auto flex-1 pr-1'>
+              {cartResults.map((r, idx) => (
+                <div key={`${r.duelId}-${idx}`} className={`rounded-lg border p-2.5 ${r.ok ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+                  <div className='flex items-center justify-between gap-2'>
+                    <p className={`text-sm font-semibold ${r.ok ? 'text-emerald-300' : 'text-red-300'}`}>
+                      {r.ok ? '✓ Confirmada' : '✗ Falhou'}
+                    </p>
+                    {r.ok && r.potentialWin !== undefined && (
+                      <p className='text-xs font-medium text-emerald-200'>~R$ {formatMoney(r.potentialWin)}</p>
+                    )}
+                  </div>
+                  <p className='text-[11px] text-white/60 mt-0.5'>{r.message}</p>
+                </div>
+              ))}
+            </div>
+            <button
+              type='button'
+              onClick={() => setCartResults(null)}
+              className='mt-4 w-full rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-black hover:bg-white/90'
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Confirm modal */}
       {confirmOpen && (
         <div className='fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4'>
@@ -702,7 +1011,12 @@ export default function ApostasPage() {
               Valor: <span className='font-bold text-emerald-400'>R$ {formatMoney(stake)}</span> no{' '}
               <span className='font-bold'>{selectedSide?.label ?? 'lado selecionado'}</span>
             </p>
-            <p className='mt-1 text-sm text-white/70'>Retorno potencial: <span className='font-semibold text-emerald-300'>R$ {formatMoney(expectedReturn)}</span></p>
+            <p className='mt-1 text-sm text-white/70'>Retorno estimado: <span className='font-semibold text-emerald-300'>~ R$ {formatMoney(expectedReturn)}</span></p>
+            <div className='mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2'>
+              <p className='text-xs text-amber-100/90 leading-relaxed'>
+                Mercado <strong className='text-amber-200'>pari-mutuel</strong>: o retorno final é calculado pelo rateio do pote no fechamento e pode ser diferente da estimativa acima. <strong>Acertando, você recebe no mínimo o valor apostado.</strong>
+              </p>
+            </div>
             <div className='mt-5 flex gap-2'>
               <button type='button' className='flex-1 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/20' onClick={() => setConfirmOpen(false)} disabled={placingBet}>Cancelar</button>
               <button type='button' className='flex-1 rounded-lg bg-emerald-400 px-4 py-2 text-sm font-extrabold text-black hover:bg-emerald-300 disabled:opacity-70' onClick={() => { setConfirmOpen(false); void placeBet(); }} disabled={placingBet}>
@@ -761,7 +1075,7 @@ function OddCard({ title, odd, pool, tickets, photoUrl, active, onClick, tone }:
         </div>
         <div className='relative z-10 mt-4 sm:mt-6 flex items-end justify-between gap-2'>
           <div className='min-w-0'>
-            <p className='text-[10px] sm:text-xs font-semibold text-white/40 mb-0.5 sm:mb-1'>Cotação</p>
+            <p className='text-[10px] sm:text-xs font-semibold text-white/40 mb-0.5 sm:mb-1'>Cotação atual <span className='text-white/30'>(varia)</span></p>
             <div className='flex items-baseline gap-1'>
               <span className={`text-lg sm:text-xl font-medium ${isBlue ? 'text-blue-400' : 'text-orange-400'}`}>@</span>
               <p className='text-3xl sm:text-4xl font-bold tracking-tighter text-white'>{odd?.toFixed(2) ?? '--'}</p>

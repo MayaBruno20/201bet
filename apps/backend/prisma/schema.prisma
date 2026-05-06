@@ -162,6 +162,7 @@ enum CategoryMatchupStatus {
   PENDING
   COMPLETED
   INVALIDATED
+  CANCELED
 }
 
 enum ArmageddonStatus {
@@ -194,6 +195,12 @@ model User {
   role          UserRole   @default(USER)
   status        UserStatus @default(ACTIVE)
   googleSub     String?    @unique
+  // 2FA TOTP — usado pelo painel admin (admin.201-bet.com).
+  // O secret só é gerado quando o admin inicia o setup; só vira "enabled" após
+  // confirmar o 1º código TOTP (verify). Backup codes são hashes (bcrypt).
+  twoFactorSecret      String?
+  twoFactorEnabled     Boolean  @default(false)
+  twoFactorBackupCodes String[] @default([])
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 

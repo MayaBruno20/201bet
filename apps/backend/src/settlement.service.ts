@@ -101,7 +101,12 @@ export class SettlementService {
         if (bet.oddId === winnerOddId) winnerPool += bet.stake;
       }
 
-      const parimutuelOdd = winnerPool > 0 ? netPool / winnerPool : 0;
+      // Pari-mutuel puro retorna netPool / winnerPool — em casos de esmagamento
+      // extremo (>~89% num lado com rake 11%), isso fica < 1.0 e o vencedor
+      // receberia menos que apostou. Regra de produto: vencedor nunca perde
+      // dinheiro — piso de 1.0. A casa absorve a diferença em casos extremos.
+      const rawParimutuelOdd = winnerPool > 0 ? netPool / winnerPool : 0;
+      const parimutuelOdd = winnerPool > 0 ? Math.max(1.0, rawParimutuelOdd) : 0;
 
       // 1. Update market status atomically
       await tx.market.update({
@@ -201,6 +206,9 @@ export class SettlementService {
             totalAffiliateCommission,
             winningBets,
             losingBets,
+            parimutuelOddApplied: parimutuelOdd,
+            parimutuelOddRaw: rawParimutuelOdd,
+            flooredAt1: rawParimutuelOdd > 0 && rawParimutuelOdd < 1.0,
           } as unknown as Prisma.InputJsonValue,
           ipAddress: audit.ipAddress,
           userAgent: audit.userAgent,

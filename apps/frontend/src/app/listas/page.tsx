@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
 import { ListLogo } from '@/components/list-logo';
+import { apiFetch } from '@/lib/api-request';
 import { getPublicApiUrl } from '@/lib/env-public';
 
 const apiUrl = getPublicApiUrl();
@@ -33,9 +34,12 @@ export default function ListasPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${apiUrl}/brazil-lists`)
+    apiFetch(`${apiUrl}/brazil-lists`, { cache: 'no-store' })
       .then(async (res) => {
-        if (!res.ok) throw new Error(`Falha ao carregar listas (${res.status})`);
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(`Falha ao carregar listas (${res.status})${text ? `: ${text.slice(0, 120)}` : ''}`);
+        }
         return (await res.json()) as PublicList[];
       })
       .then(setLists)

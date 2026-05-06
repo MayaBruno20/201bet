@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BirthdateInput } from '@/components/forms/birthdate-input';
 import { MainNav } from '@/components/site/main-nav';
-import { apiFetch } from '@/lib/api-request';
+import { apiFetch } from '@/lib/admin-session-bridge';
 const fetchWithCredentials = apiFetch;
-import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/auth';
+import { clearClientSession, getStoredUser, SessionUser, setStoredUser } from '@/lib/admin-session-bridge';
 
 import { getPublicApiUrl } from '@/lib/env-public';
 import { maskCPF, unmaskCPF } from '@/lib/masks';
@@ -73,7 +73,7 @@ type EventPerformanceRow = {
 type MarketConfig = { marginPercent: number; minBetAmount: number };
 type LiveProfit = { totalVolume: number; totalRake: number; markets: Array<{ name: string; type: string; pool: number; rake: number }> };
 
-type AdminSection = 'config' | 'user' | 'driver' | 'car' | 'market' | 'disclaimer' | 'affiliate' | 'profit' | 'setting' | 'analytics' | 'audit';
+type AdminSection = 'config' | 'user' | 'operators' | 'driver' | 'car' | 'market' | 'disclaimer' | 'affiliate' | 'profit' | 'setting' | 'analytics' | 'audit';
 
 type SiteDisclaimer = {
   id: string;
@@ -108,6 +108,7 @@ type ProfitSummary = {
 const ADMIN_SECTIONS: { id: AdminSection; title: string; description: string }[] = [
   { id: 'config', title: 'Config Motor', description: 'Comissao da casa, aposta minima e lucro em tempo real.' },
   { id: 'user', title: 'Cadastro de usuario', description: 'CRUD de contas, roles e ajuste de saldo.' },
+  { id: 'operators', title: 'Equipe administrativa', description: 'Criar e gerenciar admins, operadores e auditores.' },
   { id: 'driver', title: 'Cadastro de piloto', description: 'CRUD completo de pilotos.' },
   { id: 'car', title: 'Cadastro de carro', description: 'CRUD completo de carros.' },
   { id: 'market', title: 'Mercados Multi-Runner', description: 'Criar, liquidar e gerenciar mercados especiais.' },
@@ -160,6 +161,8 @@ export default function AdminPage() {
   const [liveProfit, setLiveProfit] = useState<LiveProfit | null>(null);
 
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', cpf: '', birthDate: '', role: 'USER' });
+  const [newOperator, setNewOperator] = useState({ name: '', email: '', password: '', cpf: '', birthDate: '', role: 'OPERATOR' as 'ADMIN' | 'OPERATOR' | 'AUDITOR' });
+  const [showOperatorPassword, setShowOperatorPassword] = useState(false);
   const [newDriver, setNewDriver] = useState({ name: '', nickname: '' });
   const [newCar, setNewCar] = useState({ driverId: '', name: '', category: '', number: '' });
   const [newSetting, setNewSetting] = useState({ key: '', value: '', description: '' });
@@ -187,7 +190,7 @@ export default function AdminPage() {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await fetchWithCredentials(`${apiUrl}/auth/me`, { cache: 'no-store' });
+        const res = await fetchWithCredentials(`${apiUrl}/admin/auth/me`, { cache: 'no-store' });
         if (!res.ok) {
           clearClientSession();
           setSessionUser(null);
@@ -366,7 +369,7 @@ export default function AdminPage() {
           <section className='mt-8 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-6'>
             <h1 className='text-2xl font-bold'>Acesso administrativo necessário</h1>
             <p className='mt-2 text-white/80'>Faça login como admin/operator para abrir este painel.</p>
-            <a href='/login' className='mt-4 inline-flex rounded-lg bg-amber-400 px-4 py-2 font-bold text-black'>Ir para login</a>
+            <a href='/admin/login' className='mt-4 inline-flex rounded-lg bg-amber-400 px-4 py-2 font-bold text-black'>Ir para login</a>
           </section>
         </div>
       </main>
@@ -666,6 +669,157 @@ export default function AdminPage() {
                   </div>
                 </article>
               ))}
+            </div>
+          </Panel>
+        ) : null}
+
+        {activeSection === 'operators' ? (
+          <Panel title='Equipe administrativa'>
+            <p className='text-xs text-white/50 mb-4'>
+              Crie contas com acesso ao painel admin. <strong className='text-white/70'>ADMIN</strong> tem todas as permissões;
+              <strong className='text-white/70'> OPERATOR</strong> opera dia-a-dia (eventos, mercados, pagamentos);
+              <strong className='text-white/70'> AUDITOR</strong> só audita liquidações.
+            </p>
+            <form
+              className='space-y-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.03] p-4'
+              onSubmit={(e) => {
+                e.preventDefault();
+                const cpfDigits = newOperator.cpf.replace(/\D/g, '');
+                if (cpfDigits.length !== 11) { setStatusMessage('CPF deve ter 11 dígitos'); return; }
+                if (newOperator.password.length < 8) { setStatusMessage('Senha mínima de 8 caracteres'); return; }
+                if (!newOperator.birthDate) { setStatusMessage('Data de nascimento obrigatória'); return; }
+                void submit('Criação de admin', async () => {
+                  const result = await adminJson('/admin/users', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      name: newOperator.name.trim(),
+                      email: newOperator.email.trim().toLowerCase(),
+                      password: newOperator.password,
+                      cpf: cpfDigits,
+                      birthDate: newOperator.birthDate,
+                      role: newOperator.role,
+                    }),
+                  });
+                  setNewOperator({ name: '', email: '', password: '', cpf: '', birthDate: '', role: 'OPERATOR' });
+                  return result;
+                });
+              }}
+            >
+              <div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+                <div>
+                  <label className='block text-[11px] font-semibold text-white/60 mb-1'>Nome completo</label>
+                  <input className='field' placeholder='João da Silva' value={newOperator.name} onChange={(e) => setNewOperator((p) => ({ ...p, name: e.target.value }))} required />
+                </div>
+                <div>
+                  <label className='block text-[11px] font-semibold text-white/60 mb-1'>E-mail</label>
+                  <input className='field' type='email' placeholder='joao@201-bet.com' value={newOperator.email} onChange={(e) => setNewOperator((p) => ({ ...p, email: e.target.value }))} required />
+                </div>
+                <div>
+                  <label className='block text-[11px] font-semibold text-white/60 mb-1'>CPF (11 dígitos)</label>
+                  <input className='field' placeholder='00000000000' maxLength={14} value={newOperator.cpf} onChange={(e) => setNewOperator((p) => ({ ...p, cpf: e.target.value }))} required />
+                </div>
+                <div>
+                  <label className='block text-[11px] font-semibold text-white/60 mb-1'>Data de nascimento</label>
+                  <input className='field' type='date' value={newOperator.birthDate} onChange={(e) => setNewOperator((p) => ({ ...p, birthDate: e.target.value }))} required />
+                </div>
+                <div className='sm:col-span-2'>
+                  <label className='block text-[11px] font-semibold text-white/60 mb-1'>Senha temporária (mín. 8)</label>
+                  <div className='relative'>
+                    <input
+                      className='field pr-20'
+                      type={showOperatorPassword ? 'text' : 'password'}
+                      placeholder='senha forte'
+                      minLength={8}
+                      value={newOperator.password}
+                      onChange={(e) => setNewOperator((p) => ({ ...p, password: e.target.value }))}
+                      required
+                    />
+                    <button
+                      type='button'
+                      className='absolute right-2 top-1/2 -translate-y-1/2 rounded-md bg-white/10 px-2 py-1 text-[10px] font-semibold text-white/70 hover:bg-white/20'
+                      onClick={() => setShowOperatorPassword((s) => !s)}
+                    >
+                      {showOperatorPassword ? 'OCULTAR' : 'MOSTRAR'}
+                    </button>
+                  </div>
+                  <p className='mt-1 text-[10px] text-white/40'>O usuário deve trocar a senha no primeiro login (recomendado).</p>
+                </div>
+                <div className='sm:col-span-2'>
+                  <label className='block text-[11px] font-semibold text-white/60 mb-1'>Permissão</label>
+                  <div className='grid grid-cols-3 gap-2'>
+                    {(['ADMIN', 'OPERATOR', 'AUDITOR'] as const).map((r) => {
+                      const active = newOperator.role === r;
+                      const tone = r === 'ADMIN' ? 'amber' : r === 'OPERATOR' ? 'blue' : 'white';
+                      return (
+                        <button
+                          key={r}
+                          type='button'
+                          onClick={() => setNewOperator((p) => ({ ...p, role: r }))}
+                          className={`rounded-lg px-3 py-2 text-xs font-bold transition-all ${
+                            active
+                              ? tone === 'amber' ? 'bg-amber-500 text-black ring-2 ring-amber-400'
+                              : tone === 'blue' ? 'bg-blue-500 text-white ring-2 ring-blue-400'
+                              : 'bg-white/15 text-white ring-2 ring-white/30'
+                              : 'bg-white/5 text-white/60 hover:bg-white/10'
+                          }`}
+                        >
+                          {r}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className='mt-1 text-[10px] text-white/40'>
+                    {newOperator.role === 'ADMIN' && '⚠️ Acesso total — pode criar/remover outros admins, alterar saldos.'}
+                    {newOperator.role === 'OPERATOR' && 'Operação dia-a-dia: criar eventos, abrir/fechar mercados, aprovar saques.'}
+                    {newOperator.role === 'AUDITOR' && 'Apenas leitura + auditoria de liquidações. Não opera nem altera dados.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className='flex items-center gap-3 pt-2 border-t border-white/5'>
+                <button className='btn-primary' disabled={loading}>
+                  {loading ? 'Criando...' : `Criar ${newOperator.role}`}
+                </button>
+                <p className='text-[11px] text-white/50'>
+                  A nova conta será criada como <strong>ACTIVE</strong>. Anote a senha e envie ao operador por canal seguro.
+                </p>
+              </div>
+            </form>
+
+            <div className='mt-6'>
+              <h4 className='text-xs font-bold uppercase tracking-widest text-white/50 mb-2'>Equipe atual</h4>
+              <div className='space-y-2'>
+                {users
+                  .filter((u) => u.role === 'ADMIN' || u.role === 'OPERATOR' || u.role === 'AUDITOR')
+                  .sort((a, b) => a.email.localeCompare(b.email))
+                  .map((u) => (
+                    <article key={u.id} className='flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5'>
+                      <span className={`inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wider ${
+                        u.role === 'ADMIN' ? 'bg-amber-500/15 text-amber-300'
+                        : u.role === 'OPERATOR' ? 'bg-blue-500/15 text-blue-300'
+                        : 'bg-white/10 text-white/60'
+                      }`}>
+                        {u.role}
+                      </span>
+                      <div className='flex-1 min-w-0'>
+                        <p className='text-sm font-semibold truncate'>{u.name}</p>
+                        <p className='text-[11px] text-white/50 truncate'>{u.email} · {u.status}</p>
+                      </div>
+                      <button
+                        type='button'
+                        className='rounded-md bg-red-500/15 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/30'
+                        onClick={() => askConfirm('Desativar conta admin', `Desativar ${u.email}? A conta perde acesso ao painel imediatamente.`, () => {
+                          void submit('Desativação de admin', () => adminJson(`/admin/users/${u.id}`, { method: 'DELETE' }));
+                        })}
+                      >
+                        Desativar
+                      </button>
+                    </article>
+                  ))}
+                {!users.some((u) => ['ADMIN', 'OPERATOR', 'AUDITOR'].includes(u.role)) && (
+                  <p className='text-xs text-white/40 italic'>Nenhum membro de equipe cadastrado.</p>
+                )}
+              </div>
             </div>
           </Panel>
         ) : null}
