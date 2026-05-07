@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -18,7 +19,15 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { AdminSessionService } from './admin-session.service';
+import { LoginAttemptService } from './login-attempt.service';
+import { SecurityPolicyService } from './security-policy.service';
 import * as bcrypt from 'bcrypt';
+
+export type AdminLoginContext = {
+  ipAddress?: string | null;
+  userAgent?: string | null;
+};
 
 @Injectable()
 export class AuthService {
@@ -31,6 +40,9 @@ export class AuthService {
     private readonly tokens: TokensService,
     private readonly mail: MailService,
     private readonly config: ConfigService<AppEnv, true>,
+    private readonly adminSessions: AdminSessionService,
+    private readonly loginAttempts: LoginAttemptService,
+    private readonly securityPolicy: SecurityPolicyService,
   ) {}
 
   async login(payload: LoginDto) {
@@ -700,30 +712,65 @@ export class AuthService {
    * + `tempToken` (válido por 5 min, scope=admin-2fa) que deve ser apresentado
    * ao /admin/auth/login/2fa junto com o código TOTP.
    */
-  async adminLogin(payload: { email: string; password: string }) {
+  async adminLogin(
+    payload: { email: string; password: string },
+    ctx: AdminLoginContext = {},
+  ) {
     const allowedRoles = new Set(['ADMIN', 'OPERATOR', 'AUDITOR']);
+    const email = payload.email.toLowerCase().trim();
+    const policy = await this.securityPolicy.get();
+
+    // 1) Bloqueio por excesso de tentativas (per-email + per-IP).
+    const recentFails = await this.loginAttempts.recentFailureCount({
+      email,
+      ipAddress: ctx.ipAddress,
+      scope: 'admin',
+      windowMinutes: policy.loginAttemptWindowMin,
+    });
+    if (recentFails >= policy.maxLoginAttempts) {
+      await this.loginAttempts.log({
+        email, ipAddress: ctx.ipAddress, userAgent: ctx.userAgent,
+        scope: 'admin', success: false, reason: 'rate_limited',
+      });
+      throw new ForbiddenException(
+        `Muitas tentativas de login. Aguarde ${policy.loginAttemptWindowMin} min antes de tentar novamente.`,
+      );
+    }
+
     const user = await this.prisma.user.findUnique({
-      where: { email: payload.email.toLowerCase().trim() },
+      where: { email },
       include: { wallet: true },
     });
 
     if (!user || user.status !== 'ACTIVE') {
+      await this.loginAttempts.log({
+        email, ipAddress: ctx.ipAddress, userAgent: ctx.userAgent,
+        scope: 'admin', success: false, reason: 'unknown_user_or_inactive',
+      });
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
     const isValidPassword = await bcrypt.compare(payload.password, user.password);
     if (!isValidPassword) {
+      await this.loginAttempts.log({
+        email, ipAddress: ctx.ipAddress, userAgent: ctx.userAgent,
+        scope: 'admin', success: false, reason: 'invalid_password',
+      });
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
     if (!allowedRoles.has(user.role)) {
+      await this.loginAttempts.log({
+        email, ipAddress: ctx.ipAddress, userAgent: ctx.userAgent,
+        scope: 'admin', success: false, reason: 'forbidden_role',
+      });
       throw new UnauthorizedException(
         'Sua conta não tem permissão para acessar o painel admin.',
       );
     }
 
     if (user.twoFactorEnabled) {
-      // Token efêmero só pra completar o desafio 2FA. Não passa na AdminJwtStrategy.
+      // Senha OK + 2FA pendente: NÃO loga sucesso ainda — só na confirmação 2FA.
       const tempToken = await this.jwtService.signAsync(
         { sub: user.id, email: user.email, role: user.role, scope: 'admin-2fa' },
         { expiresIn: '5m' },
@@ -731,18 +778,18 @@ export class AuthService {
       return { requires2FA: true as const, tempToken };
     }
 
-    const accessToken = await this.jwtService.signAsync({
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-      scope: 'admin',
-    });
+    // Política `mfaRequired`: senha bate, mas 2FA não está ativo. Bloqueia.
+    if (policy.mfaRequired) {
+      await this.loginAttempts.log({
+        email, ipAddress: ctx.ipAddress, userAgent: ctx.userAgent,
+        scope: 'admin', success: false, reason: 'mfa_required',
+      });
+      throw new ForbiddenException(
+        'Política de segurança exige 2FA ativado para administradores. Acesse pelo dispositivo onde você habilitou 2FA, ou peça a um Super Admin para liberar a política.',
+      );
+    }
 
-    return {
-      requires2FA: false as const,
-      accessToken,
-      user: this.buildAuthUserPayload(user),
-    };
+    return this.finalizeAdminLogin(user, ctx, policy);
   }
 
   /**
@@ -753,6 +800,7 @@ export class AuthService {
     tempToken: string,
     validateChallenge: (userId: string, code: string) => Promise<boolean>,
     code: string,
+    ctx: AdminLoginContext = {},
   ) {
     let payload: { sub?: string; email?: string; role?: string; scope?: string };
     try {
@@ -765,7 +813,13 @@ export class AuthService {
     }
 
     const ok = await validateChallenge(payload.sub, code);
-    if (!ok) throw new UnauthorizedException('Código de 2FA inválido.');
+    if (!ok) {
+      await this.loginAttempts.log({
+        email: payload.email, ipAddress: ctx.ipAddress, userAgent: ctx.userAgent,
+        scope: 'admin', success: false, reason: 'invalid_2fa',
+      });
+      throw new UnauthorizedException('Código de 2FA inválido.');
+    }
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
@@ -775,15 +829,59 @@ export class AuthService {
       throw new UnauthorizedException('Conta indisponível.');
     }
 
-    const accessToken = await this.jwtService.signAsync({
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-      scope: 'admin',
+    const policy = await this.securityPolicy.get();
+    return this.finalizeAdminLogin(user, ctx, policy);
+  }
+
+  /**
+   * Cria a AdminSession persistida e assina o JWT com `sid`. A expiração do JWT
+   * vem da política `sessionTimeoutHours` (configurável em runtime).
+   * Também dispara o LoginAttempt de sucesso.
+   */
+  private async finalizeAdminLogin(
+    user: {
+      id: string;
+      email: string;
+      name: string;
+      role: string;
+      status: string;
+      emailVerified: boolean;
+      cpf: string | null;
+      birthDate: Date | null;
+      wallet?: { balance: unknown } | null;
+    },
+    ctx: AdminLoginContext,
+    policy: { sessionTimeoutHours: number },
+  ) {
+    const session = await this.adminSessions.create(user.id, {
+      ipAddress: ctx.ipAddress,
+      userAgent: ctx.userAgent,
     });
 
+    await this.loginAttempts.log({
+      email: user.email,
+      ipAddress: ctx.ipAddress,
+      userAgent: ctx.userAgent,
+      scope: 'admin',
+      success: true,
+      reason: 'success',
+    });
+
+    const accessToken = await this.jwtService.signAsync(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        scope: 'admin',
+        sid: session.id,
+      },
+      { expiresIn: `${policy.sessionTimeoutHours}h` },
+    );
+
     return {
+      requires2FA: false as const,
       accessToken,
+      sessionId: session.id,
       user: this.buildAuthUserPayload(user),
     };
   }

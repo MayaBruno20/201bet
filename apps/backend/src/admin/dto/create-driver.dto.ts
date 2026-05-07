@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateDriverDto {
   @IsString()
@@ -8,4 +8,21 @@ export class CreateDriverDto {
   @IsOptional()
   @IsString()
   nickname?: string;
+
+  @IsOptional()
+  @IsString()
+  team?: string;
+
+  @IsOptional()
+  @IsString()
+  carNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  hometown?: string;
+
+  /** Piloto convidado (one-off / embate rápido). Default: false. */
+  @IsOptional()
+  @IsBoolean()
+  isGuest?: boolean;
 }

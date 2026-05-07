@@ -71,6 +71,11 @@ enum PaymentStatus {
   CANCELED
 }
 
+enum WithdrawHoldReason {
+  HIGH_AMOUNT
+  CPF_MISMATCH
+}
+
 enum BonusStatus {
   PENDING
   ACTIVE
@@ -214,10 +219,46 @@ model User {
   settings           GlobalSetting[]     @relation("settingsUpdatedBy")
   verificationTokens VerificationToken[]
   affiliate          Affiliate?          @relation("affiliateUsers", fields: [affiliateId], references: [id], onDelete: SetNull)
+  adminSessions      AdminSession[]
 
   @@index([status])
   @@index([role])
   @@index([affiliateId])
+}
+
+/// Sessão ativa do painel admin. Cada login bem-sucedido cria um row;
+/// o JWT carrega `sid = AdminSession.id` e a strategy valida que está vivo.
+/// Permite "Forçar logout" (próprio ou global) sem trocar JWT_SECRET.
+model AdminSession {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
+  revokedAt     DateTime?
+  revokedReason String?
+
+  @@index([userId, revokedAt])
+  @@index([revokedAt, lastSeenAt])
+}
+
+/// Tentativas de login (sucesso e falha) — usado para "Tentativas bloqueadas"
+/// na página de Segurança e para enforcement do limite de attempts/15min.
+model LoginAttempt {
+  id        String   @id @default(uuid())
+  email     String?
+  ipAddress String?
+  userAgent String?
+  scope     String   // 'admin' | 'public'
+  success   Boolean  @default(false)
+  reason    String?  // 'invalid_password' | 'invalid_2fa' | 'rate_limited' | 'mfa_required' | 'forbidden_role' | 'success'
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ipAddress, createdAt])
+  @@index([success, scope, createdAt])
 }
 
 model VerificationToken {
@@ -290,6 +331,9 @@ model Driver {
   hometown  String?
   avatarUrl String?
   active    Boolean  @default(true)
+  /// Marca pilotos convidados (one-off / embate rápido). Em listagens públicas
+  /// e rosters, pilotos com isGuest=true aparecem com chip "CONVIDADO".
+  isGuest   Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -441,6 +485,10 @@ model Payment {
   // Para WITHDRAW: persiste o destino do PIX para possibilitar review manual e retry
   pixKey      String?
   pixKeyType  String?
+  // Motivo de retenção em saques (HIGH_AMOUNT, CPF_MISMATCH). null quando aprovação automática.
+  holdReason     WithdrawHoldReason?
+  // CPF/CNPJ do destinatário do PIX retornado pelo gateway (apenas para WITHDRAW, auditoria).
+  receiverDocument String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 

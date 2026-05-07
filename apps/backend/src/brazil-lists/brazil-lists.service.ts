@@ -70,12 +70,18 @@ export class BrazilListsService {
   }
 
   async listLiveEvents() {
+    // Público vê: ao vivo, recém encerrados (últimos 7 dias para histórico curto).
+    // DRAFT/CANCELED ficam invisíveis. Admin precisa mudar de DRAFT → IN_PROGRESS para publicar.
+    const finishedWindow = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const events = await this.prisma.listEvent.findMany({
       where: {
-        status: { in: [ListEventStatus.IN_PROGRESS, ListEventStatus.FINISHED] },
         list: { active: true },
+        OR: [
+          { status: ListEventStatus.IN_PROGRESS },
+          { status: ListEventStatus.FINISHED, scheduledAt: { gte: finishedWindow } },
+        ],
       },
-      orderBy: { scheduledAt: 'asc' },
+      orderBy: [{ status: 'asc' }, { scheduledAt: 'asc' }],
       include: {
         list: true,
         matchups: {
@@ -87,11 +93,14 @@ export class BrazilListsService {
 
     return events.map((event) => ({
       id: event.id,
+      eventId: event.eventId,
       name: event.name,
       scheduledAt: event.scheduledAt,
       endsAt: event.endsAt,
       status: event.status,
       type: event.type,
+      featured: event.featured,
+      bannerUrl: event.bannerUrl,
       list: {
         id: event.list.id,
         areaCode: event.list.areaCode,

@@ -11,6 +11,22 @@ export class UpdateDriverDto {
   nickname?: string;
 
   @IsOptional()
+  @IsString()
+  team?: string;
+
+  @IsOptional()
+  @IsString()
+  carNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  hometown?: string;
+
+  @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isGuest?: boolean;
 }

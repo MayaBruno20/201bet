@@ -65,26 +65,84 @@ export class AdminService {
     private readonly marketService: MarketService,
   ) {}
 
-  async getDashboardSummary() {
+  async getDashboardSummary(days = 30) {
+    const now = new Date();
+    const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
+    const startRange = new Date(now); startRange.setDate(startRange.getDate() - days);
+
     const [
       usersTotal,
       activeUsers,
       eventsTotal,
+      eventsLive,
       duelsTotal,
       openMarkets,
       pendingPayments,
+      pendingPaymentsAgg,
       ledgerVolume,
+      betsTotal,
+      betsToday,
+      betsRangeStakeAgg,
+      betsRangeWonPayoutAgg,
+      revenueByMonth,
+      eventTypeDistribution,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { status: 'ACTIVE' } }),
       this.prisma.event.count(),
+      this.prisma.event.count({ where: { status: 'LIVE' } }),
       this.prisma.duel.count(),
       this.prisma.market.count({ where: { status: 'OPEN' } }),
-      this.prisma.payment.count({ where: { status: 'PENDING' } }),
+      this.prisma.payment.count({ where: { status: 'PENDING', type: 'WITHDRAW' } }),
+      this.prisma.payment.aggregate({
+        where: { status: 'PENDING', type: 'WITHDRAW' },
+        _sum: { amount: true },
+      }),
       this.prisma.walletTransaction.aggregate({ _sum: { amount: true } }),
+      this.prisma.bet.count(),
+      this.prisma.bet.count({ where: { createdAt: { gte: startOfToday } } }),
+      this.prisma.bet.aggregate({
+        where: { createdAt: { gte: startRange } },
+        _sum: { stake: true },
+      }),
+      this.prisma.bet.aggregate({
+        where: { createdAt: { gte: startRange }, status: 'WON' },
+        _sum: { potentialWin: true },
+      }),
+      // Receita por mês (últimos 8 meses) — agrupa stake de bets pelo mês de criação
+      this.prisma.$queryRaw<Array<{ month: string; receita: number; apostas: number; ggr: number }>>`
+        SELECT
+          to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS month,
+          COALESCE(SUM("stake"), 0)::float AS receita,
+          COUNT(*)::int AS apostas,
+          COALESCE(SUM(CASE WHEN status='WON' THEN "potentialWin" ELSE 0 END), 0)::float AS ggr
+        FROM "Bet"
+        WHERE "createdAt" >= NOW() - INTERVAL '8 months'
+        GROUP BY 1
+        ORDER BY 1
+      `,
+      // Distribuição por tipo de evento (Copa Categorias, Listas Brasil, Armageddon, Outros)
+      this.prisma.$queryRaw<Array<{ tipo: string; total: number }>>`
+        SELECT 'CategoryEvent' AS tipo, COUNT(*)::int AS total FROM "CategoryEvent" WHERE status != 'CANCELED'
+        UNION ALL
+        SELECT 'ListEvent', COUNT(*)::int FROM "ListEvent" WHERE status != 'CANCELED'
+        UNION ALL
+        SELECT 'ArmageddonEvent', COUNT(*)::int FROM "ArmageddonEvent" WHERE status != 'CANCELED'
+        UNION ALL
+        SELECT 'Event', COUNT(*)::int FROM "Event" WHERE status != 'CANCELED' AND id NOT IN (
+          SELECT "eventId" FROM "CategoryEvent" WHERE "eventId" IS NOT NULL
+          UNION SELECT "eventId" FROM "ListEvent" WHERE "eventId" IS NOT NULL
+          UNION SELECT "eventId" FROM "ArmageddonEvent" WHERE "eventId" IS NOT NULL
+        )
+      `,
     ]);
 
+    const totalStakeRange = Number(betsRangeStakeAgg._sum.stake ?? 0);
+    const totalWonRange = Number(betsRangeWonPayoutAgg._sum.potentialWin ?? 0);
+    const ggrRange = totalStakeRange - totalWonRange;
+
     return {
+      // Tabela legada
       usersTotal,
       activeUsers,
       eventsTotal,
@@ -92,6 +150,19 @@ export class AdminService {
       openMarkets,
       pendingPayments,
       ledgerVolume: Number(ledgerVolume._sum.amount ?? 0),
+
+      // Campos novos consumidos pelo painel admin externo
+      totalUsers: usersTotal,
+      liveEvents: eventsLive,
+      pendingPaymentsAmount: Number(pendingPaymentsAgg._sum.amount ?? 0),
+      totalRevenue: totalStakeRange,
+      ggr: ggrRange,
+      rangeDays: days,
+      totalBets: betsTotal,
+      betsToday,
+      riskMarkets: 0,
+      revenueByMonth,
+      eventTypeDistribution,
     };
   }
 
@@ -532,6 +603,10 @@ export class AdminService {
         data: {
           name: payload.name.trim(),
           nickname: payload.nickname?.trim(),
+          team: payload.team?.trim(),
+          carNumber: payload.carNumber?.trim(),
+          hometown: payload.hometown?.trim(),
+          isGuest: payload.isGuest ?? false,
         },
       });
 
@@ -540,7 +615,7 @@ export class AdminService {
         'ADMIN_CREATE_DRIVER',
         'Driver',
         created.id,
-        { name: created.name, nickname: created.nickname },
+        { name: created.name, nickname: created.nickname, isGuest: created.isGuest },
         audit,
       );
       return created;
@@ -561,7 +636,11 @@ export class AdminService {
         data: {
           name: payload.name?.trim(),
           nickname: payload.nickname?.trim(),
+          team: payload.team?.trim(),
+          carNumber: payload.carNumber?.trim(),
+          hometown: payload.hometown?.trim(),
           active: payload.active,
+          isGuest: payload.isGuest,
         },
       });
 

@@ -1,8 +1,27 @@
-import { Body, Controller, Get, HttpCode, Post, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
+import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { RolesGuard } from '../common/guards/roles.guard';
 import { AdminJwtAuthGuard } from './admin-jwt-auth.guard';
+import { AdminSessionService } from './admin-session.service';
+import { LoginAttemptService } from './login-attempt.service';
+import { SecurityPolicyService, type SecurityPolicies } from './security-policy.service';
 import {
   attachAdminAccessTokenCookie,
   clearAdminAccessTokenCookie,
@@ -10,6 +29,14 @@ import {
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { TwoFactorService } from './two-factor.service';
+
+function extractCtx(req: Request): { ipAddress: string | null; userAgent: string | null } {
+  const xff = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim();
+  return {
+    ipAddress: xff || req.ip || null,
+    userAgent: (req.headers['user-agent'] as string | undefined) ?? null,
+  };
+}
 
 /**
  * Endpoints exclusivos do painel admin (admin.201-bet.com).
@@ -24,14 +51,20 @@ export class AdminAuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly twoFactor: TwoFactorService,
+    private readonly adminSessions: AdminSessionService,
+    private readonly loginAttempts: LoginAttemptService,
+    private readonly securityPolicy: SecurityPolicyService,
   ) {}
 
   @Post('login')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  async login(@Body() payload: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const result = await this.authService.adminLogin(payload);
+  async login(
+    @Body() payload: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.adminLogin(payload, extractCtx(req));
     if (result.requires2FA) {
-      // Cliente vai chamar POST /login/2fa com o tempToken e o código.
       return { requires2FA: true, tempToken: result.tempToken };
     }
     attachAdminAccessTokenCookie(res, result.accessToken);
@@ -42,19 +75,28 @@ export class AdminAuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async login2fa(
     @Body() body: { tempToken: string; code: string },
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.adminLoginVerify2FA(
       body.tempToken,
       (uid, code) => this.twoFactor.validateLoginChallenge(uid, code),
       body.code,
+      extractCtx(req),
     );
     attachAdminAccessTokenCookie(res, result.accessToken);
     return { user: result.user, accessToken: result.accessToken };
   }
 
   @Post('logout')
-  logout(@Res({ passthrough: true }) res: Response) {
+  @UseGuards(AdminJwtAuthGuard)
+  async logout(
+    @CurrentUser() user: { userId: string; sessionId: string | null },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (user.sessionId) {
+      await this.adminSessions.revoke(user.sessionId, user.userId, false, 'self_logout').catch(() => undefined);
+    }
     clearAdminAccessTokenCookie(res);
     return { ok: true };
   }
@@ -112,5 +154,104 @@ export class AdminAuthController {
       enabled: !!u?.twoFactorEnabled,
       backupCodesRemaining: u?.twoFactorBackupCodes.length ?? 0,
     };
+  }
+
+  // ── Sessões ativas ───────────────────────────────────────────
+  // Qualquer admin/operator/auditor consegue ver e revogar SUAS próprias
+  // sessões. ADMIN também consegue ver TODAS e disparar "force logout global".
+
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
+  @Get('sessions/mine')
+  async listMySessions(@CurrentUser() user: { userId: string; sessionId: string | null }) {
+    const sessions = await this.adminSessions.listForUser(user.userId);
+    return sessions.map((s) => ({
+      id: s.id,
+      ipAddress: s.ipAddress,
+      userAgent: s.userAgent,
+      createdAt: s.createdAt,
+      lastSeenAt: s.lastSeenAt,
+      current: s.id === user.sessionId,
+    }));
+  }
+
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Get('sessions')
+  async listAllSessions() {
+    const sessions = await this.adminSessions.listAllActive();
+    return sessions.map((s) => ({
+      id: s.id,
+      ipAddress: s.ipAddress,
+      userAgent: s.userAgent,
+      createdAt: s.createdAt,
+      lastSeenAt: s.lastSeenAt,
+      user: s.user,
+    }));
+  }
+
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
+  @Delete('sessions/:id')
+  @HttpCode(200)
+  async revokeSession(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string; role: string; sessionId: string | null },
+  ) {
+    const isAdmin = user.role === UserRole.ADMIN;
+    return this.adminSessions.revoke(id, user.userId, isAdmin, isAdmin ? 'admin_revoke' : 'self_revoke');
+  }
+
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Post('sessions/revoke-all')
+  @HttpCode(200)
+  async revokeAllSessions(@CurrentUser() user: { sessionId: string | null }) {
+    return this.adminSessions.revokeAllExcept(user.sessionId, 'global_force_logout');
+  }
+
+  // ── Políticas de segurança ──────────────────────────────────
+
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
+  @Get('policies')
+  async getPolicies() {
+    return this.securityPolicy.get();
+  }
+
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Patch('policies')
+  async updatePolicies(
+    @CurrentUser() user: { userId: string },
+    @Body() body: Partial<SecurityPolicies>,
+  ) {
+    return this.securityPolicy.update(body, user.userId);
+  }
+
+  // ── Tentativas de login (sucessos + falhas) ─────────────────
+
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
+  @Get('login-attempts')
+  async listLoginAttempts(
+    @Query('hours') hours?: string,
+    @Query('onlyFailures') onlyFailures?: string,
+  ) {
+    const h = hours ? Math.min(Math.max(Number.parseInt(hours, 10), 1), 720) : 24;
+    return this.loginAttempts.listRecent({
+      scope: 'admin',
+      hours: h,
+      onlyFailures: onlyFailures === 'true' || onlyFailures === '1',
+      limit: 100,
+    });
+  }
+
+  @UseGuards(AdminJwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
+  @Get('login-attempts/summary')
+  async loginAttemptsSummary(@Query('hours') hours?: string) {
+    const h = hours ? Math.min(Math.max(Number.parseInt(hours, 10), 1), 720) : 24;
+    return this.loginAttempts.summary('admin', h);
   }
 }

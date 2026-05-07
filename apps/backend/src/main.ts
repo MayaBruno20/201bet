@@ -101,9 +101,10 @@ function assertCorsForRuntime(): string[] {
     throw new Error('CORS_ORIGIN é obrigatório em produção (lista de URLs do frontend separadas por vírgula)');
   }
   return env?.split(',').map((origin) => origin.trim()).filter(Boolean) ?? [
-    'http://localhost:3501',
+    'http://localhost:3501', // site público
     'http://localhost:3511',
-    'http://localhost:3503',
+    'http://localhost:3503', // nginx local (docker compose)
+    'http://localhost:3601', // painel admin
   ];
 }
 

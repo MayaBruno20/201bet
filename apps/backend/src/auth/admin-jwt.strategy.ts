@@ -5,6 +5,7 @@ import type { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../database/prisma.service';
 import { ADMIN_AUTH_ACCESS_COOKIE } from './auth-cookie';
+import { AdminSessionService } from './admin-session.service';
 
 /**
  * Strategy isolada do painel admin.
@@ -22,7 +23,10 @@ const ADMIN_ALLOWED_ROLES = new Set<UserRole>([
 
 @Injectable()
 export class AdminJwtStrategy extends PassportStrategy(Strategy, 'admin-jwt') {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly adminSessions: AdminSessionService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         (req: Request) => {
@@ -36,7 +40,7 @@ export class AdminJwtStrategy extends PassportStrategy(Strategy, 'admin-jwt') {
     });
   }
 
-  async validate(payload: { sub?: string; email?: string; role?: string; scope?: string }) {
+  async validate(payload: { sub?: string; email?: string; role?: string; scope?: string; sid?: string }) {
     // Tokens emitidos pelo /api/auth/login do site público NÃO carregam scope=admin —
     // mesmo que alguém cole o token no cookie do admin, é rejeitado aqui.
     if (payload.scope !== 'admin') {
@@ -68,11 +72,24 @@ export class AdminJwtStrategy extends PassportStrategy(Strategy, 'admin-jwt') {
       throw new UnauthorizedException('Permissões alteradas; faça login novamente');
     }
 
+    // Sessão persistida — permite "Forçar logout" sem rotacionar JWT_SECRET.
+    // Tokens antigos sem `sid` (emitidos antes deste deploy) ainda passam,
+    // mas não conseguem aparecer/revogar em "Sessões ativas" — o usuário
+    // recria sessão no próximo login.
+    if (payload.sid) {
+      const valid = await this.adminSessions.isValid(payload.sid, user.id);
+      if (!valid) {
+        throw new UnauthorizedException('Sessão revogada; faça login novamente.');
+      }
+      void this.adminSessions.touch(payload.sid);
+    }
+
     return {
       userId: user.id,
       email: user.email,
       role: user.role,
       emailVerified: user.emailVerified,
+      sessionId: payload.sid ?? null,
     };
   }
 }

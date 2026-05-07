@@ -119,7 +119,12 @@ export default function SaquePage() {
       const data = await res.json();
       setBalance(data.balance);
       setAmount(''); setPixKey('');
-      setSuccess('Saque solicitado com sucesso! O PIX será enviado em instantes.');
+      const onHold = data.status === 'PENDING_MANUAL_REVIEW';
+      setSuccess(
+        onHold
+          ? (data.message || 'Saque entrou em análise manual e será processado em até 1 dia útil.')
+          : 'Saque solicitado com sucesso! O PIX será enviado em instantes.',
+      );
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao solicitar saque');
@@ -216,13 +221,18 @@ export default function SaquePage() {
           <label className='block text-sm text-white/50 mb-2'>Chave PIX</label>
           <input type='text' className='field mb-3' placeholder={pixKeyPlaceholder()} value={pixKey} onChange={(e) => { setPixKey(e.target.value); setError(''); setSuccess(''); }} />
 
-          <div className='flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 mb-5'>
-            <svg className='h-4 w-4 text-red-400 shrink-0 mt-0.5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+          <div className='flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 mb-5'>
+            <svg className='h-4 w-4 text-amber-400 shrink-0 mt-0.5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
               <path strokeLinecap='round' strokeLinejoin='round' d='M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' />
             </svg>
-            <p className='text-xs text-red-300 leading-relaxed'>
-              <strong className='font-semibold text-red-200'>Atenção:</strong> a chave PIX informada precisa estar cadastrada no <strong>mesmo CPF da sua conta na 201Bet</strong>. Saques para chaves vinculadas a outro CPF serão recusados.
-            </p>
+            <div className='text-xs text-amber-100/90 leading-relaxed space-y-1'>
+              <p>
+                <strong className='font-semibold text-amber-200'>Liberação automática:</strong> chave PIX vinculada ao mesmo CPF da sua conta 201Bet e valor até <strong>R$ 2.000,00</strong>.
+              </p>
+              <p>
+                <strong className='font-semibold text-amber-200'>Análise manual (até 1 dia útil):</strong> chave de outro CPF, ou saque acima de R$ 2.000,00.
+              </p>
+            </div>
           </div>
 
           {error && <p className='text-sm text-red-400 mb-4 rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-2'>{error}</p>}

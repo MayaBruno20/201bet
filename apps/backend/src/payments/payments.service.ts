@@ -9,6 +9,7 @@ import {
   PaymentType,
   Prisma,
   WalletTransactionType,
+  WithdrawHoldReason,
 } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { ValutService, ValutRejectedError } from './valut.service';
@@ -67,10 +68,11 @@ export class PaymentsService {
 
     try {
       this.logger.log(`createDeposit calling Valut createPixQrCode paymentId=${payment.id}`);
+      // Sem document_validation: depósito aceita PIX de qualquer titular.
+      // Validação de CPF agora é exclusiva do fluxo de saque.
       const pix = await this.valut.createPixQrCode({
         amountCents,
         externalId: payment.id,
-        documentValidation: user.cpf,
         idempotencyKey,
       });
 
@@ -264,9 +266,27 @@ export class PaymentsService {
         ? normalizeBrazilPixPhoneKey(payload.pixKey)
         : payload.pixKey.trim();
 
-    // Auto-hold para valores acima do threshold (review manual pelo admin)
-    const autoHoldThreshold = Number(process.env.WITHDRAW_AUTO_HOLD_THRESHOLD ?? '5000');
-    const requiresManualReview = payload.amount >= autoHoldThreshold;
+    // Regra de auto-hold:
+    //   1. Valor >= threshold (R$ 2000 por padrão)
+    //   2. Chave PIX tipo CPF/CNPJ ('document') de número diferente do CPF cadastrado
+    // Para chaves não-document (telefone/email/evp), pré-check é impossível: o gateway
+    // valida via document_validation e a rejeição vira CPF_MISMATCH (catch abaixo).
+    const autoHoldThreshold = Number(process.env.WITHDRAW_AUTO_HOLD_THRESHOLD ?? '2000');
+    const overThreshold = payload.amount > autoHoldThreshold;
+
+    const userCpfDigits = user.cpf.replace(/\D/g, '');
+    let cpfMismatch = false;
+    if (payload.pixKeyType === PixKeyType.DOCUMENT) {
+      const destDigits = pixKeyResolved.replace(/\D/g, '');
+      cpfMismatch = destDigits !== userCpfDigits;
+    }
+
+    const holdReason: WithdrawHoldReason | null = cpfMismatch
+      ? WithdrawHoldReason.CPF_MISMATCH
+      : overThreshold
+        ? WithdrawHoldReason.HIGH_AMOUNT
+        : null;
+    const requiresManualReview = holdReason !== null;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const dec = await tx.wallet.updateMany({
@@ -285,11 +305,10 @@ export class PaymentsService {
           amount,
           status: PaymentStatus.PENDING,
           provider: 'VALUT_PIX',
-          // Para valores >= threshold, marcamos para review manual via providerRef temporario
           providerRef: requiresManualReview ? 'PENDING_MANUAL_REVIEW' : null,
-          // Persiste destino do PIX para review manual e retry posterior
           pixKey: pixKeyResolved,
           pixKeyType: payload.pixKeyType,
+          holdReason,
         },
       });
 
@@ -305,16 +324,22 @@ export class PaymentsService {
       return payment;
     });
 
-    // Se requer review manual, NAO chama Valut. Admin precisa aprovar antes.
     if (requiresManualReview) {
-      this.logger.log(`Withdraw ${result.id} held for manual review (amount R$${payload.amount} >= threshold R$${autoHoldThreshold})`);
+      this.logger.log(
+        `Withdraw ${result.id} held for manual review (reason=${holdReason} amount=R$${payload.amount} threshold=R$${autoHoldThreshold})`,
+      );
       const updatedWallet = await this.prisma.wallet.findUnique({ where: { userId } });
+      const message =
+        holdReason === WithdrawHoldReason.CPF_MISMATCH
+          ? 'Sua chave PIX está em nome de outro CPF. O saque entrou em análise manual e será processado em até 1 dia útil. Para liberação automática, use uma chave vinculada ao mesmo CPF cadastrado na 201bet.'
+          : `Saque acima de R$ ${autoHoldThreshold.toFixed(2).replace('.', ',')} entrou em análise manual e será processado em até 1 dia útil.`;
       return {
         paymentId: result.id,
         amount: Number(amount),
         status: 'PENDING_MANUAL_REVIEW',
+        holdReason,
         balance: Number(updatedWallet!.balance),
-        message: `Saque acima de R$ ${autoHoldThreshold.toFixed(2)} requer aprovacao manual. Aguarde contato do suporte.`,
+        message,
       };
     }
 
@@ -328,16 +353,64 @@ export class PaymentsService {
         idempotencyKey: `wd-${result.id}`,
       });
 
+      const receiverDocDigits = (pix.receiver?.document ?? '').replace(/\D/g, '');
+      const receiverMismatch = receiverDocDigits.length > 0 && receiverDocDigits !== userCpfDigits;
+
       await this.prisma.payment.update({
         where: { id: result.id },
-        data: { providerRef: pix.pix_id },
+        data: {
+          providerRef: pix.pix_id,
+          receiverDocument: pix.receiver?.document ?? null,
+        },
       });
+
+      // Defesa em profundidade: se o gateway aceitou mas o documento divergir, flag manual.
+      // O dinheiro pode estar em trânsito; admin avalia e decide reembolsar via rejeição.
+      if (receiverMismatch) {
+        this.logger.warn(
+          `Withdraw ${result.id} accepted by Valut but receiver doc differs (user=${userCpfDigits.slice(-4)} receiver=${receiverDocDigits.slice(-4)}). Flagging manual review.`,
+        );
+        await this.prisma.payment.update({
+          where: { id: result.id },
+          data: {
+            providerRef: 'PENDING_MANUAL_REVIEW',
+            holdReason: WithdrawHoldReason.CPF_MISMATCH,
+          },
+        });
+      }
     } catch (err) {
-      // Diferencia rejeicao definitiva (4xx) de timeout/network (estado UNKNOWN)
       const isDefiniteRejection = err instanceof ValutRejectedError;
 
       if (isDefiniteRejection) {
-        // Pode reverter com seguranca
+        // Heurística: gateway rejeitou por divergência de documento → marca como
+        // CPF_MISMATCH (não reembolsa, admin avalia). Outras rejeições → FAILED + refund.
+        const msg = String(err.message ?? '').toLowerCase();
+        const looksLikeDocMismatch =
+          /document|cpf|cnpj|titular|holder|divergent|mismatch|owner/i.test(msg);
+
+        if (looksLikeDocMismatch) {
+          this.logger.warn(
+            `Valut rejected ${result.id} as document mismatch — flagging manual review (no refund).`,
+          );
+          await this.prisma.payment.update({
+            where: { id: result.id },
+            data: {
+              providerRef: 'PENDING_MANUAL_REVIEW',
+              holdReason: WithdrawHoldReason.CPF_MISMATCH,
+            },
+          });
+          const updatedWallet = await this.prisma.wallet.findUnique({ where: { userId } });
+          return {
+            paymentId: result.id,
+            amount: Number(amount),
+            status: 'PENDING_MANUAL_REVIEW',
+            holdReason: WithdrawHoldReason.CPF_MISMATCH,
+            balance: Number(updatedWallet!.balance),
+            message:
+              'Sua chave PIX está em nome de outro CPF. O saque entrou em análise manual e será processado em até 1 dia útil. Para liberação automática, use uma chave vinculada ao mesmo CPF cadastrado na 201bet.',
+          };
+        }
+
         this.logger.error(`Valut REJECTED payment ${result.id}, refunding wallet`, err);
         await this.prisma.$transaction(async (tx) => {
           await tx.payment.update({
@@ -394,11 +467,135 @@ export class PaymentsService {
       amount: Number(p.amount),
       status: p.status,
       providerRef: p.providerRef,
+      holdReason: p.holdReason,
       createdAt: p.createdAt,
     }));
   }
 
   // ── Admin: review de saques pendentes ───────────────────────
+
+  /**
+   * Listagem paginada usada pela aba Financeiro do admin (depósitos + saques).
+   * Suporta filtro por status, busca textual em email/nome/pixKey/cpf
+   * e paginação simples (offset/limit).
+   */
+  async adminListPayments(params: {
+    type: 'DEPOSIT' | 'WITHDRAW';
+    status?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
+    const offset = Math.max(params.offset ?? 0, 0);
+
+    const validStatuses: PaymentStatus[] = ['PENDING', 'APPROVED', 'FAILED', 'CANCELED'];
+    const statusFilter =
+      params.status && validStatuses.includes(params.status as PaymentStatus)
+        ? { status: params.status as PaymentStatus }
+        : {};
+
+    const search = params.search?.trim();
+    const searchFilter = search
+      ? {
+          OR: [
+            { user: { email: { contains: search, mode: 'insensitive' as const } } },
+            { user: { name: { contains: search, mode: 'insensitive' as const } } },
+            { user: { cpf: { contains: search.replace(/\D/g, '') } } },
+            { pixKey: { contains: search, mode: 'insensitive' as const } },
+            { providerRef: { contains: search } },
+          ],
+        }
+      : {};
+
+    const where: Prisma.PaymentWhereInput = {
+      type: params.type as PaymentType,
+      ...statusFilter,
+      ...searchFilter,
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.payment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+        include: {
+          user: { select: { id: true, email: true, name: true, cpf: true } },
+        },
+      }),
+      this.prisma.payment.count({ where }),
+    ]);
+
+    return {
+      items: items.map((p) => ({
+        id: p.id,
+        type: p.type,
+        amount: Number(p.amount),
+        status: p.status,
+        provider: p.provider,
+        providerRef: p.providerRef,
+        pixKey: p.pixKey,
+        pixKeyType: p.pixKeyType,
+        holdReason: p.holdReason,
+        receiverDocument: p.receiverDocument,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+        user: p.user,
+      })),
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  /** Resumo agregado de pagamentos para os KPIs da aba Financeiro. */
+  async adminPaymentsSummary(hours: number) {
+    const since = new Date(Date.now() - hours * 3_600_000);
+    const [
+      depositsApprovedAgg,
+      depositsPendingCount,
+      withdrawalsApprovedAgg,
+      withdrawalsPendingCount,
+      withdrawalsPendingAgg,
+    ] = await Promise.all([
+      this.prisma.payment.aggregate({
+        where: { type: PaymentType.DEPOSIT, status: PaymentStatus.APPROVED, createdAt: { gte: since } },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.payment.count({
+        where: { type: PaymentType.DEPOSIT, status: PaymentStatus.PENDING },
+      }),
+      this.prisma.payment.aggregate({
+        where: { type: PaymentType.WITHDRAW, status: PaymentStatus.APPROVED, createdAt: { gte: since } },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.payment.count({
+        where: { type: PaymentType.WITHDRAW, status: PaymentStatus.PENDING },
+      }),
+      this.prisma.payment.aggregate({
+        where: { type: PaymentType.WITHDRAW, status: PaymentStatus.PENDING },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    return {
+      hours,
+      deposits: {
+        approvedCount: depositsApprovedAgg._count._all,
+        approvedAmount: Number(depositsApprovedAgg._sum.amount ?? 0),
+        pendingCount: depositsPendingCount,
+      },
+      withdrawals: {
+        approvedCount: withdrawalsApprovedAgg._count._all,
+        approvedAmount: Number(withdrawalsApprovedAgg._sum.amount ?? 0),
+        pendingCount: withdrawalsPendingCount,
+        pendingAmount: Number(withdrawalsPendingAgg._sum.amount ?? 0),
+      },
+    };
+  }
 
   async adminListPendingWithdrawals() {
     const payments = await this.prisma.payment.findMany({
@@ -412,6 +609,11 @@ export class PaymentsService {
       amount: Number(p.amount),
       status: p.status,
       providerRef: p.providerRef,
+      pixKey: p.pixKey,
+      pixKeyType: p.pixKeyType,
+      provider: p.provider,
+      holdReason: p.holdReason,
+      receiverDocument: p.receiverDocument,
       createdAt: p.createdAt,
       requiresManualReview: p.providerRef === 'PENDING_MANUAL_REVIEW',
       user: p.user,
@@ -437,17 +639,22 @@ export class PaymentsService {
       payment.pixKeyType === 'phone'
         ? normalizeBrazilPixPhoneKey(payment.pixKey)
         : payment.pixKey.trim();
+    // Admin aprovando CPF_MISMATCH é override consciente: não passa document_validation
+    // ao gateway, senão Valut rejeita de novo. Para HIGH_AMOUNT, mantém validação.
+    const skipDocValidation = payment.holdReason === WithdrawHoldReason.CPF_MISMATCH;
     let pixId: string;
+    let receiverDoc: string | null = null;
     try {
       const pix = await this.valut.performPixCashout({
         amountCents,
         keyType: payment.pixKeyType as 'document' | 'phone' | 'email' | 'evp',
         key: pixKeyResolved,
         externalId: payment.id,
-        documentValidation: user.cpf,
+        documentValidation: skipDocValidation ? undefined : user.cpf,
         idempotencyKey: `wd-manual-${payment.id}`,
       });
       pixId = pix.pix_id;
+      receiverDoc = pix.receiver?.document ?? null;
     } catch (err) {
       if (err instanceof ValutRejectedError) {
         // Rejeicao definitiva pelo gateway - reembolsa
@@ -475,7 +682,11 @@ export class PaymentsService {
 
     await this.prisma.payment.update({
       where: { id: paymentId },
-      data: { status: PaymentStatus.APPROVED, providerRef: pixId },
+      data: {
+        status: PaymentStatus.APPROVED,
+        providerRef: pixId,
+        ...(receiverDoc ? { receiverDocument: receiverDoc } : {}),
+      },
     });
     await this.prisma.auditLog.create({
       data: {
@@ -483,7 +694,13 @@ export class PaymentsService {
         action: 'WITHDRAW_MANUAL_APPROVE',
         entity: 'Payment',
         entityId: paymentId,
-        payload: { amount: Number(payment.amount), pixId } as Prisma.InputJsonValue,
+        payload: {
+          amount: Number(payment.amount),
+          pixId,
+          holdReason: payment.holdReason,
+          receiverDocument: receiverDoc,
+          docValidationSkipped: skipDocValidation,
+        } as Prisma.InputJsonValue,
       },
     }).catch(() => undefined);
     return { id: paymentId, status: 'APPROVED', pixId };

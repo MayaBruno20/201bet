@@ -293,8 +293,15 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    // Eventos sem nenhum duelo "vivo" (todos CANCELED ou sem duelo nenhum) saem
+    // da listagem pública. Isso esconde, por exemplo, o container "⚡ Embates
+    // Rápidos" quando o admin cancela o único embate criado nele.
+    const visibleEvents = events.filter((e) =>
+      e.duels.some((d) => d.status !== 'CANCELED'),
+    );
+
     return {
-      events: events.map((event) => {
+      events: visibleEvents.map((event) => {
         const stateDuels = event.duels.filter((duel) =>
           this.states.has(duel.id),
         );
