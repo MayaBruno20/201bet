@@ -11,7 +11,7 @@ import {
   WalletTransactionType,
 } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
-import { ValutService } from './valut.service';
+import { ValutRejectedError, ValutService } from './valut.service';
 import { CreateDepositDto } from './dto/create-deposit.dto';
 import { CreateWithdrawDto, PixKeyType } from './dto/create-withdraw.dto';
 import { normalizeBrazilPixPhoneKey } from './pix-phone-key';
@@ -444,7 +444,7 @@ export class PaymentsService {
   async adminApproveWithdraw(paymentId: string, adminUserId: string) {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment || payment.type !== PaymentType.WITHDRAW) throw new NotFoundException('Saque não encontrado');
-    if (![PaymentStatus.PENDING, PaymentStatus.UNKNOWN].includes(payment.status)) {
+    if (payment.status !== PaymentStatus.PENDING && payment.status !== PaymentStatus.UNKNOWN) {
       throw new BadRequestException('Saque não está pendente');
     }
     if (payment.providerRef !== 'PENDING_MANUAL_REVIEW') {

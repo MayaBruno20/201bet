@@ -11,7 +11,7 @@ export enum PixKeyType {
 export class CreateWithdrawDto {
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(20, { message: 'Saque mínimo de R$ 20,00' })
+  @Min(1, { message: 'Saque mínimo de R$ 1,00' })
   amount: number;
 
   @IsEnum(PixKeyType, { message: 'Tipo de chave PIX inválido' })

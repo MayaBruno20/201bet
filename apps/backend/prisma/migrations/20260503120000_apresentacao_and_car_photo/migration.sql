@@ -1,5 +1,11 @@
 -- AlterEnum
-ALTER TYPE "TimeCategory" ADD VALUE 'APRESENTACAO';
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'TimeCategory') THEN
+    ALTER TYPE "TimeCategory" ADD VALUE IF NOT EXISTS 'APRESENTACAO';
+  END IF;
+END
+$$;
 
 -- AlterTable
-ALTER TABLE "Car" ADD COLUMN "photoUrl" TEXT;
+ALTER TABLE IF EXISTS "Car" ADD COLUMN IF NOT EXISTS "photoUrl" TEXT;
