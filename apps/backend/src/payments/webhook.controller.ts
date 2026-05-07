@@ -56,7 +56,7 @@ export class WebhookController {
     }
 
     const payment = await this.paymentsService.findPaymentByProviderRef(pixId);
-    if (!payment || payment.status !== 'PENDING') {
+    if (!payment || (payment.status !== PaymentStatus.PENDING && payment.status !== PaymentStatus.UNKNOWN)) {
       return { received: true };
     }
 
@@ -90,7 +90,12 @@ export class WebhookController {
     ) {
       this.logger.log(`Confirming withdrawal ${payment.id} via webhook`);
       const updated = await this.prisma.payment.updateMany({
-        where: { id: payment.id, status: PaymentStatus.PENDING },
+        // Aceita confirmar tanto saques que estavam PENDING (await admin) quanto
+        // UNKNOWN (já enviados ao gateway e aguardando confirmação).
+        where: {
+          id: payment.id,
+          status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] },
+        },
         data: {
           status: PaymentStatus.APPROVED,
           ...(receiverDocument ? { receiverDocument } : {}),

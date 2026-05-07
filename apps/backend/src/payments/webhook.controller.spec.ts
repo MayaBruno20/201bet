@@ -49,7 +49,7 @@ describe('WebhookController', () => {
     expect(res).toEqual(expect.objectContaining({ received: true }));
     expect(prisma.payment.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'p1', status: PaymentStatus.PENDING },
+        where: { id: 'p1', status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] } },
         data: { status: PaymentStatus.APPROVED },
       }),
     );

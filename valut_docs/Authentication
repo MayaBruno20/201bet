@@ -1,0 +1,97 @@
+Authentication
+The Authentication section of the OpenBanking API allows you to handle user authentication and access control for your application. It provides the necessary features to securely authenticate users and manage their access to sensitive banking data.
+
+By utilizing this endpoint, you can ensure that only authorized users can access the banking data and perform actions on behalf of the user. It offers a seamless and secure way to verify the identity of users and protect their sensitive information.
+
+To make integration even easier, the API documentation provides comprehensive examples and code snippets that demonstrate how to implement the authentication flow in various programming languages. Non-technical roles can also benefit from the clear explanations and step-by-step guides included in the documentation.
+
+Please note that the Authentication endpoint requires proper configuration and adherence to security best practices to ensure the protection of user information. Make sure to follow the recommended guidelines and regularly update your authentication mechanisms to stay ahead of potential security threats.
+
+Overall, the Authentication section of the OpenBanking API simplifies the integration of user authentication and access control, allowing you to securely manage user access to sensitive banking data in your application.
+
+Retrieve access token
+To access our APIs and with the credentials in hands, you need to make a POST request to /auth path.
+
+Basic Auth
+
+To get access token you need perform the basic authorization using the api-key and api-secret as Basic Authentication.
+
+Basic Authentication sends a Base64 encoded string that contains a user name (api-key) and password (api-secret) for the client via HTTP headers.
+
+Example Header:
+
+Authorization: Basic {Base 64 credentials in api-key: api-secret format}
+
+Now you need to send in request body the username and password as JSON body below:
+
+JSON
+
+{
+  "username":"your-username",
+  "password":"your-password"
+}
+
+POST /auth
+curl --location 'https://api.valut.app/openbanking/auth' \
+--header 'Authorization: Basic e3thcGkta2V5fX06e3thcGktc2VjcmV0fX0=' \
+--header 'Content-Type: application/json' \
+--data '{
+  "username": "",
+  "password": ""
+}'
+
+Response
+{
+  "expires_in": "2022-02-02T11:18:25.1362173-03:00",
+  "token_type": "Bearer",
+  "access_token": "token"
+}
+
+Response object
+
+Element - Type - Description
+Token - string -Authentication token
+Type - string - Authentication type
+expires_in - DateTime - Token expire time
+
+JSON
+
+{
+"token":"string token",
+"type":"Bearer",
+"expires_in":yyyy-MM-ddThh:mm:ss
+}
+
+Header Parameters
+Authorization
+string
+Basic Base64 string
+Body Parameters
+username
+string
+REQUIRED
+The username associated with the user account.
+password
+string
+REQUIRED
+The password associated with the user account.
+Response
+200
+Object
+OK. Successful login request.
+Response Attributes
+expires_in
+string
+The amount of time in seconds until the access token expires.
+token_type
+string
+The type of token being returned. This is typically set to "Bearer".
+access_token
+string
+The access token that can be used to authenticate requests to protected resources.
+401
+Object
+Unauthorized. Invalid credentials for login.
+403
+Object
+Forbidden. Invalid request IP. In this case, contact our support team.

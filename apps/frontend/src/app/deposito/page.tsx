@@ -8,7 +8,7 @@ import { clearClientSession } from '@/lib/auth';
 import { getPublicApiUrl } from '@/lib/env-public';
 
 const apiUrl = getPublicApiUrl();
-const QUICK_VALUES = [20, 50, 100, 200, 500, 1000];
+const QUICK_VALUES = [1, 20, 50, 100, 200, 500, 1000];
 
 type Step = 'valor' | 'pix' | 'confirmado';
 
@@ -98,7 +98,7 @@ export default function DepositoPage() {
   }, []);
 
   async function handleGeneratePix() {
-    if (numericAmount < 20) { setError('Depósito mínimo de R$ 20,00'); return; }
+    if (numericAmount < 1) { setError('Depósito mínimo de R$ 1,00'); return; }
     if (numericAmount > 1000) { setError('Depósito máximo de R$ 1.000,00 por operação'); return; }
     if (!sessionOk) return;
 
@@ -257,7 +257,7 @@ export default function DepositoPage() {
               <svg className='h-4 w-4 text-amber-400 shrink-0' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
                 <path strokeLinecap='round' strokeLinejoin='round' d='M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' />
               </svg>
-              <p className='text-xs text-amber-400/80'>Depósito mínimo de R$ 20,00 e máximo de R$ 1.000,00 por operação.</p>
+              <p className='text-xs text-amber-400/80'>Depósito mínimo de R$ 1,00 e máximo de R$ 1.000,00 por operação.</p>
             </div>
 
             <div className='flex items-start gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 mb-5'>
@@ -271,7 +271,7 @@ export default function DepositoPage() {
 
             {error && <p className='text-sm text-red-400 mb-4 rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-2'>{error}</p>}
 
-            <button type='button' onClick={handleGeneratePix} className='w-full rounded-xl bg-[#d4a843] px-6 py-3.5 text-base font-bold text-[#04111d] transition-all hover:bg-[#e0b84d] disabled:opacity-50' disabled={numericAmount < 20 || loading || emailVerified === false}>
+            <button type='button' onClick={handleGeneratePix} className='w-full rounded-xl bg-[#d4a843] px-6 py-3.5 text-base font-bold text-[#04111d] transition-all hover:bg-[#e0b84d] disabled:opacity-50' disabled={numericAmount < 1 || loading || emailVerified === false}>
               {loading ? 'Gerando PIX...' : emailVerified === false ? 'Confirme o e-mail para depositar' : 'Gerar PIX'}
             </button>
           </section>
