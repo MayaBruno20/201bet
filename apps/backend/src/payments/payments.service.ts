@@ -11,7 +11,7 @@ import {
   WalletTransactionType,
 } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
-import { ValutService, ValutRejectedError } from './valut.service';
+import { ValutService } from './valut.service';
 import { CreateDepositDto } from './dto/create-deposit.dto';
 import { CreateWithdrawDto, PixKeyType } from './dto/create-withdraw.dto';
 import { normalizeBrazilPixPhoneKey } from './pix-phone-key';
@@ -19,11 +19,28 @@ import { normalizeBrazilPixPhoneKey } from './pix-phone-key';
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
+  private reconciliationTicker?: NodeJS.Timeout;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly valut: ValutService,
   ) {}
+
+  onModuleInit() {
+    // Reconciliação automática defensiva (evita PENDING/UNKNOWN infinito)
+    // - Depósitos PENDING: se Valut diz paid, credita
+    // - Saques PENDING/UNKNOWN com providerRef: se Valut diz paid/completed, aprova; se falhou, reembolsa
+    const intervalMs = Number(process.env.PAYMENTS_RECONCILIATION_INTERVAL_MS ?? '60000');
+    if (Number.isFinite(intervalMs) && intervalMs >= 10_000) {
+      this.reconciliationTicker = setInterval(() => {
+        void this.safeReconcile();
+      }, intervalMs);
+    }
+  }
+
+  onModuleDestroy() {
+    if (this.reconciliationTicker) clearInterval(this.reconciliationTicker);
+  }
 
   /**
    * Create a deposit: generates a PIX QR code via Valut.
@@ -224,7 +241,8 @@ export class PaymentsService {
    */
   async findPaymentByProviderRef(providerRef: string) {
     return this.prisma.payment.findFirst({
-      where: { providerRef },
+      // providerRef é pix_id da Valut (não deve ser sentinela/erro)
+      where: { provider: 'VALUT_PIX', providerRef },
     });
   }
 
@@ -267,6 +285,20 @@ export class PaymentsService {
     // Auto-hold para valores acima do threshold (review manual pelo admin)
     const autoHoldThreshold = Number(process.env.WITHDRAW_AUTO_HOLD_THRESHOLD ?? '5000');
     const requiresManualReview = payload.amount >= autoHoldThreshold;
+
+    // Bloqueia duplicidade: 1 saque pendente/incerto por vez por usuário
+    const pendingWithdrawals = await this.prisma.payment.count({
+      where: {
+        userId,
+        type: PaymentType.WITHDRAW,
+        status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] },
+      },
+    });
+    if (pendingWithdrawals > 0) {
+      throw new BadRequestException(
+        'Você já possui um saque pendente. Aguarde a confirmação antes de solicitar um novo.',
+      );
+    }
 
     const result = await this.prisma.$transaction(async (tx) => {
       const dec = await tx.wallet.updateMany({
@@ -333,40 +365,31 @@ export class PaymentsService {
         data: { providerRef: pix.pix_id },
       });
     } catch (err) {
-      // Diferencia rejeicao definitiva (4xx) de timeout/network (estado UNKNOWN)
-      const isDefiniteRejection = err instanceof ValutRejectedError;
-
-      if (isDefiniteRejection) {
-        // Pode reverter com seguranca
-        this.logger.error(`Valut REJECTED payment ${result.id}, refunding wallet`, err);
-        await this.prisma.$transaction(async (tx) => {
-          await tx.payment.update({
-            where: { id: result.id },
-            data: { status: PaymentStatus.FAILED },
-          });
-          await tx.wallet.update({
-            where: { id: wallet.id },
-            data: { balance: { increment: amount } },
-          });
-          await tx.walletTransaction.create({
-            data: {
-              walletId: wallet.id,
-              type: WalletTransactionType.ADJUSTMENT,
-              amount,
-              reference: `cashout-refund-${result.id}`,
-            },
-          });
-        });
-        throw new BadRequestException('Saque rejeitado pelo gateway. Saldo devolvido.');
-      }
-
-      // Network/timeout: NAO refunda - estado incerto. Mantem PENDING para reconciliacao.
+      // ROBUSTEZ: NUNCA reembolsa automaticamente em erro do gateway.
+      // Em integrações reais, até 4xx pode acontecer após o gateway ter processado o envio.
+      // Reembolsar aqui abre brecha de "PIX caiu + saldo voltou".
       this.logger.error(
-        `Valut UNKNOWN state for payment ${result.id} (network/timeout) - keeping PENDING for reconciliation`,
+        `Valut error on withdraw ${result.id}. Marking as UNKNOWN and keeping funds held.`,
         err,
       );
+      await this.prisma.payment.update({
+        where: { id: result.id },
+        data: { status: PaymentStatus.UNKNOWN },
+      }).catch(() => undefined);
+      await this.prisma.auditLog.create({
+        data: {
+          actorUserId: userId,
+          action: 'WITHDRAW_GATEWAY_ERROR_HELD',
+          entity: 'Payment',
+          entityId: result.id,
+          payload: {
+            message: err instanceof Error ? err.message : String(err),
+            amount: Number(amount),
+          } as unknown as Prisma.InputJsonValue,
+        },
+      }).catch(() => undefined);
       throw new BadRequestException(
-        'Saque solicitado mas confirmação demorou. Aguarde — se não receber em 1h, contate o suporte. NÃO tente sacar novamente.',
+        'Saque em análise por instabilidade no gateway. Seu saldo foi retido com segurança. Aguarde a confirmação — se não receber em 1h, contate o suporte.',
       );
     }
 
@@ -402,7 +425,7 @@ export class PaymentsService {
 
   async adminListPendingWithdrawals() {
     const payments = await this.prisma.payment.findMany({
-      where: { type: PaymentType.WITHDRAW, status: PaymentStatus.PENDING },
+      where: { type: PaymentType.WITHDRAW, status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] } },
       orderBy: { createdAt: 'asc' },
       include: { user: { select: { id: true, email: true, name: true, cpf: true } } },
       take: 100,
@@ -421,7 +444,9 @@ export class PaymentsService {
   async adminApproveWithdraw(paymentId: string, adminUserId: string) {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment || payment.type !== PaymentType.WITHDRAW) throw new NotFoundException('Saque não encontrado');
-    if (payment.status !== PaymentStatus.PENDING) throw new BadRequestException('Saque não está pendente');
+    if (![PaymentStatus.PENDING, PaymentStatus.UNKNOWN].includes(payment.status)) {
+      throw new BadRequestException('Saque não está pendente');
+    }
     if (payment.providerRef !== 'PENDING_MANUAL_REVIEW') {
       throw new BadRequestException('Saque não requer review manual');
     }
@@ -473,10 +498,9 @@ export class PaymentsService {
       throw new BadRequestException('Falha de rede com gateway. Tente novamente em alguns minutos.');
     }
 
-    await this.prisma.payment.update({
-      where: { id: paymentId },
-      data: { status: PaymentStatus.APPROVED, providerRef: pixId },
-    });
+    // Importante: APPROVED aqui significa "enviado ao gateway".
+    // O estado terminal deve ser confirmado via webhook/reconciliação.
+    await this.prisma.payment.update({ where: { id: paymentId }, data: { status: PaymentStatus.UNKNOWN, providerRef: pixId } });
     await this.prisma.auditLog.create({
       data: {
         actorUserId: adminUserId,
@@ -544,5 +568,107 @@ export class PaymentsService {
       currency: wallet.currency,
       confirmedDeposits: Number(confirmedDeposits._sum.amount ?? 0),
     };
+  }
+
+  // ── Reconciliação ───────────────────────────────────────────────
+
+  private async safeReconcile() {
+    try {
+      await this.reconcileOnce();
+    } catch (e) {
+      this.logger.error(`Payments reconciliation failed`, e instanceof Error ? e.stack : e);
+    }
+  }
+
+  private async reconcileOnce() {
+    // 1) Deposits pending: if paid, confirm (idempotent)
+    const pendingDeposits = await this.prisma.payment.findMany({
+      where: {
+        type: PaymentType.DEPOSIT,
+        status: PaymentStatus.PENDING,
+        provider: 'VALUT_PIX',
+        providerRef: { not: null },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    });
+
+    for (const p of pendingDeposits) {
+      if (!p.providerRef) continue;
+      try {
+        const pix = await this.valut.getPixQrCode(p.providerRef);
+        if (pix.paid) {
+          await this.confirmDeposit(p.id).catch(() => undefined);
+        }
+      } catch {
+        // ignore and retry next tick
+      }
+    }
+
+    // 2) Withdrawals pending/unknown with providerRef: fetch status and close/refund
+    const pendingWithdrawals = await this.prisma.payment.findMany({
+      where: {
+        type: PaymentType.WITHDRAW,
+        status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] },
+        provider: 'VALUT_PIX',
+        providerRef: { not: null },
+        NOT: { providerRef: 'PENDING_MANUAL_REVIEW' },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    });
+
+    for (const p of pendingWithdrawals) {
+      if (!p.providerRef) continue;
+      try {
+        const cashout = await this.valut.getPixCashout(p.providerRef);
+        const st = (cashout.status || '').toLowerCase();
+        if (st === 'paid' || st === 'completed') {
+          await this.prisma.payment.updateMany({
+            where: { id: p.id, status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] } },
+            data: { status: PaymentStatus.APPROVED },
+          });
+          continue;
+        }
+        if (st === 'failed' || st === 'canceled' || st === 'cancelled' || st === 'rejected') {
+          await this.refundFailedWithdraw(p.id, 'reconcile-failed');
+        }
+      } catch {
+        // ignore and retry
+      }
+    }
+  }
+
+  private async refundFailedWithdraw(paymentId: string, reason: string) {
+    await this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findUnique({ where: { id: paymentId } });
+      if (!payment || payment.type !== PaymentType.WITHDRAW) return;
+      // claim
+      const claimed = await tx.payment.updateMany({
+        where: { id: paymentId, status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] } },
+        data: { status: PaymentStatus.FAILED, providerRef: `${payment.providerRef ?? ''}` },
+      });
+      if (claimed.count === 0) return;
+      const wallet = await tx.wallet.findUnique({ where: { userId: payment.userId } });
+      if (!wallet) return;
+      await tx.wallet.update({ where: { id: wallet.id }, data: { balance: { increment: payment.amount } } });
+      await tx.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          type: WalletTransactionType.ADJUSTMENT,
+          amount: payment.amount,
+          reference: `cashout-refund-${paymentId}-${reason}`,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: null,
+          action: 'WITHDRAW_RECONCILE_REFUND',
+          entity: 'Payment',
+          entityId: paymentId,
+          payload: { reason } as unknown as Prisma.InputJsonValue,
+        },
+      }).catch(() => undefined);
+    });
   }
 }
