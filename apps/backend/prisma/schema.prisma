@@ -66,6 +66,7 @@ enum PaymentType {
 
 enum PaymentStatus {
   PENDING
+  UNKNOWN
   APPROVED
   FAILED
   CANCELED
@@ -448,6 +449,7 @@ model Payment {
 
   @@index([userId, createdAt])
   @@index([status, type])
+  @@unique([provider, providerRef])
 }
 
 model Bonus {

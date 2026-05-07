@@ -19,14 +19,16 @@ const PIX_KEY_TYPES = [
 ] as const;
 
 function traduzirStatus(status: string) {
-  const mapa: Record<string, string> = { PENDING: 'Pendente', APPROVED: 'Aprovado', FAILED: 'Falhou', CANCELED: 'Cancelado' };
+  const mapa: Record<string, string> = { PENDING: 'Pendente', UNKNOWN: 'Em análise', APPROVED: 'Aprovado', FAILED: 'Falhou', CANCELED: 'Cancelado' };
   return mapa[status] ?? status;
 }
 
 function statusClass(status: string) {
   switch (status) {
     case 'APPROVED': return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20';
-    case 'PENDING': return 'bg-amber-500/15 text-amber-400 border-amber-500/20';
+    case 'PENDING':
+    case 'UNKNOWN':
+      return 'bg-amber-500/15 text-amber-400 border-amber-500/20';
     case 'CANCELED': case 'FAILED': return 'bg-red-500/15 text-red-400 border-red-500/20';
     default: return 'bg-white/10 text-white/50 border-white/10';
   }

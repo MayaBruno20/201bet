@@ -85,6 +85,7 @@ function traduzirTipoPagamento(tipo: string) {
 function traduzirStatusPagamento(status: string) {
   const mapa: Record<string, string> = {
     PENDING: 'Pendente',
+    UNKNOWN: 'Em análise',
     APPROVED: 'Aprovado',
     FAILED: 'Falhou',
     CANCELED: 'Cancelado',

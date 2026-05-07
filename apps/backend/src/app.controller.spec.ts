@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppController } from './app.controller';
 import { MarketService } from './market.service';
+import { MultiRunnerMarketService } from './multi-runner-market.service';
 
 describe('AppController', () => {
   let appController: AppController;
@@ -9,11 +10,19 @@ describe('AppController', () => {
     getBettingBoard: jest.fn(),
     placeBet: jest.fn(),
   };
+  const multiRunnerServiceMock = {
+    getAllSnapshots: jest.fn().mockReturnValue([]),
+    getSnapshot: jest.fn().mockReturnValue(null),
+    placeBet: jest.fn(),
+  };
 
   beforeEach(async () => {
     const app: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
-      providers: [{ provide: MarketService, useValue: marketServiceMock }],
+      providers: [
+        { provide: MarketService, useValue: marketServiceMock },
+        { provide: MultiRunnerMarketService, useValue: multiRunnerServiceMock },
+      ],
     }).compile();
 
     appController = app.get<AppController>(AppController);
