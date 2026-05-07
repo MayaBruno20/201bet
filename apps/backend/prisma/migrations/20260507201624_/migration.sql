@@ -213,6 +213,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS "ArmageddonMatchup_duelId_key" ON "public"."Ar
 CREATE INDEX IF NOT EXISTS "ArmageddonMatchup_eventId_roundNumber_order_idx" ON "public"."ArmageddonMatchup"("eventId", "roundNumber", "order");
 CREATE INDEX IF NOT EXISTS "ArmageddonMatchup_marketOpen_idx" ON "public"."ArmageddonMatchup"("marketOpen");
 CREATE INDEX IF NOT EXISTS "Event_featured_idx" ON "public"."Event"("featured");
+
+-- Historic data: same (provider, providerRef) was reused (e.g. manual / admin-unlock-aml). Unique index requires one row per pair.
+-- Keep the oldest row per pair; append -dup-{id} to the rest so references stay traceable.
+WITH ranked AS (
+  SELECT id,
+         ROW_NUMBER() OVER (
+           PARTITION BY "provider", "providerRef"
+           ORDER BY "createdAt" ASC, "id" ASC
+         ) AS rn
+  FROM "public"."Payment"
+  WHERE "providerRef" IS NOT NULL
+)
+UPDATE "public"."Payment" p
+SET "providerRef" = p."providerRef" || '-dup-' || p."id"::text
+FROM ranked r
+WHERE p.id = r.id AND r.rn > 1;
+
 CREATE UNIQUE INDEX IF NOT EXISTS "Payment_provider_providerRef_key" ON "public"."Payment"("provider", "providerRef");
 
 -- AddForeignKey
