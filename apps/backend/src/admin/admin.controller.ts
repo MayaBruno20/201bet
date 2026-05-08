@@ -25,6 +25,7 @@ import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { AdminService } from './admin.service';
+import { QuickDuelService, type CreateQuickDuelDto } from './quick-duel.service';
 import { AnalyticsExportQueryDto } from './dto/analytics-query.dto';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { CreateCarDto } from './dto/create-car.dto';
@@ -45,11 +46,16 @@ type ReqUser = Request & { user?: { userId?: string; role?: UserRole } };
 @UseGuards(AdminJwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN, UserRole.OPERATOR)
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly quickDuels: QuickDuelService,
+  ) {}
 
   @Get('dashboard')
-  dashboard() {
-    return this.adminService.getDashboardSummary();
+  dashboard(@Query('days') days?: string) {
+    const parsed = days ? Number.parseInt(days, 10) : 30;
+    const safe = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 365) : 30;
+    return this.adminService.getDashboardSummary(safe);
   }
 
   @Get('users')
@@ -314,6 +320,37 @@ export class AdminController {
     @Req() req: ReqUser,
   ) {
     return this.adminService.settleDuel(id, payload.winningSide, this.auditFromReq(req));
+  }
+
+  // ── Embates rápidos (quick duels) ──
+
+  @Get('quick-duels')
+  listQuickDuels() {
+    return this.quickDuels.list();
+  }
+
+  @Post('quick-duels')
+  createQuickDuel(@Body() dto: CreateQuickDuelDto, @Req() req: ReqUser) {
+    return this.quickDuels.create(dto, this.auditFromReq(req));
+  }
+
+  @Post('quick-duels/:id/close-booking')
+  closeQuickDuelBooking(@Param('id', ParseUUIDPipe) id: string) {
+    return this.quickDuels.closeBooking(id);
+  }
+
+  @Post('quick-duels/:id/settle')
+  settleQuickDuel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: { winningSide: 'LEFT' | 'RIGHT' },
+    @Req() req: ReqUser,
+  ) {
+    return this.quickDuels.settle(id, payload.winningSide, this.auditFromReq(req));
+  }
+
+  @Post('quick-duels/:id/cancel')
+  cancelQuickDuel(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
+    return this.quickDuels.cancel(id, this.auditFromReq(req));
   }
 
   // ── Affiliates ──

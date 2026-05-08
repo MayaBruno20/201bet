@@ -7,6 +7,9 @@ import type { AppEnv } from '../config/env.validation';
 import { PrismaService } from '../database/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { TokensService } from '../tokens/tokens.service';
+import { AdminSessionService } from './admin-session.service';
+import { LoginAttemptService } from './login-attempt.service';
+import { SecurityPolicyService } from './security-policy.service';
 import { AuthService } from './auth.service';
 
 describe('AuthService', () => {
@@ -44,12 +47,40 @@ describe('AuthService', () => {
       sendPasswordChanged: jest.fn().mockResolvedValue(undefined),
     };
     config = { get: jest.fn().mockReturnValue(24) };
+    const adminSessions = {
+      create: jest.fn().mockResolvedValue({ id: 'sess-id' }),
+      isValid: jest.fn().mockResolvedValue(true),
+      touch: jest.fn().mockResolvedValue(undefined),
+      listForUser: jest.fn(),
+      listAllActive: jest.fn(),
+      revoke: jest.fn(),
+      revokeAllExcept: jest.fn(),
+    };
+    const loginAttempts = {
+      log: jest.fn().mockResolvedValue(undefined),
+      recentFailureCount: jest.fn().mockResolvedValue(0),
+      listRecent: jest.fn(),
+      summary: jest.fn(),
+    };
+    const securityPolicy = {
+      get: jest.fn().mockResolvedValue({
+        mfaRequired: false,
+        sessionTimeoutHours: 8,
+        passwordMinLength: 8,
+        maxLoginAttempts: 10,
+        loginAttemptWindowMin: 15,
+      }),
+      update: jest.fn(),
+    };
     service = new AuthService(
       prisma as unknown as PrismaService,
       jwtService as unknown as JwtService,
       tokens as unknown as TokensService,
       mail as unknown as MailService,
       config as unknown as ConfigService<AppEnv, true>,
+      adminSessions as unknown as AdminSessionService,
+      loginAttempts as unknown as LoginAttemptService,
+      securityPolicy as unknown as SecurityPolicyService,
     );
   });
 

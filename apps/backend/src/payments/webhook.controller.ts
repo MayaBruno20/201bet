@@ -78,19 +78,41 @@ export class WebhookController {
     }
 
     // PIX Cashout (withdrawal) — pix_pagar event
+    // Captura receiver.document (CPF/CNPJ do destinatário) para auditoria.
+    const receiver = (body.receiver ?? body.payerReceiver ?? body.PayerReceiver) as
+      | { document?: string }
+      | undefined;
+    const receiverDocument = typeof receiver?.document === 'string' ? receiver.document : null;
+
     if (
       payment.type === PaymentType.WITHDRAW &&
       (status === 'completed' || status === 'paid')
     ) {
       this.logger.log(`Confirming withdrawal ${payment.id} via webhook`);
       const updated = await this.prisma.payment.updateMany({
-        where: { id: payment.id, status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] } },
-        data: { status: PaymentStatus.APPROVED },
+        // Aceita confirmar tanto saques que estavam PENDING (await admin) quanto
+        // UNKNOWN (já enviados ao gateway e aguardando confirmação).
+        where: {
+          id: payment.id,
+          status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] },
+        },
+        data: {
+          status: PaymentStatus.APPROVED,
+          ...(receiverDocument ? { receiverDocument } : {}),
+        },
       });
       if (updated.count === 0) {
         return { received: true, action: 'withdrawal_already_final' };
       }
       return { received: true, action: 'withdrawal_confirmed' };
+    }
+
+    // Persiste receiver.document mesmo em estados intermediários, para auditoria.
+    if (payment.type === PaymentType.WITHDRAW && receiverDocument) {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { receiverDocument },
+      });
     }
 
     return { received: true };

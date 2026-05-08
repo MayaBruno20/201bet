@@ -213,9 +213,20 @@ export class ValutService {
   async createPixQrCode(params: {
     amountCents: number;
     externalId: string;
-    documentValidation: string;
+    /** Opcional: quando ausente, qualquer pagador pode quitar o QR (regra atual de depósito). */
+    documentValidation?: string;
     idempotencyKey: string;
   }) {
+    const body: Record<string, unknown> = {
+      amount: params.amountCents,
+      type: 'dynamic',
+      external_id: params.externalId,
+      expiration_date: new Date(Date.now() + 30 * 60_000).toISOString(),
+      Idempotency: params.idempotencyKey,
+    };
+    if (params.documentValidation) {
+      body.document_validation = params.documentValidation;
+    }
     return this.request<{
       pix_id: string;
       type: string;
@@ -225,19 +236,7 @@ export class ValutService {
       amount: number;
       expiration_date: string;
       created_at: string;
-    }>(
-      'POST',
-      '/pix/qrcode',
-      {
-        amount: params.amountCents,
-        type: 'dynamic',
-        external_id: params.externalId,
-        expiration_date: new Date(Date.now() + 30 * 60_000).toISOString(), // 30 min
-        document_validation: params.documentValidation,
-        Idempotency: params.idempotencyKey,
-      },
-      { withImage: 'true' },
-    );
+    }>('POST', '/pix/qrcode', body, { withImage: 'true' });
   }
 
   /**
@@ -267,7 +266,8 @@ export class ValutService {
     keyType: 'document' | 'phone' | 'email' | 'evp';
     key: string;
     externalId: string;
-    documentValidation: string;
+    /** Opcional: quando ausente, o gateway não valida titular vs CPF (override admin). */
+    documentValidation?: string;
     idempotencyKey: string;
   }) {
     return this.request<{
@@ -294,7 +294,9 @@ export class ValutService {
       key_type: params.keyType,
       key: params.key,
       external_id: params.externalId,
-      document_validation: params.documentValidation,
+      ...(params.documentValidation
+        ? { document_validation: params.documentValidation }
+        : {}),
       Idempotency: params.idempotencyKey,
     });
   }

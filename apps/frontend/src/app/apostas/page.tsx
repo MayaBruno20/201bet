@@ -68,6 +68,9 @@ export default function ApostasPage() {
   type CartItem = { duelId: string; side: 'LEFT' | 'RIGHT'; stake: number };
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartSubmitting, setCartSubmitting] = useState(false);
+  // Carrinho colapsado: mostra só o header com totais e botão de apostar.
+  // Útil no mobile pra deixar mais tela visível quando o usuário tem várias seleções.
+  const [cartCollapsed, setCartCollapsed] = useState(false);
   // Resultados da última submissão em lote — exibidos em modal
   const [cartResults, setCartResults] = useState<Array<{ duelId: string; side: 'LEFT' | 'RIGHT'; ok: boolean; message: string; betId?: string; potentialWin?: number }> | null>(null);
   const [stakeRaw, setStakeRaw] = useState('100');
@@ -305,6 +308,12 @@ export default function ApostasPage() {
   }
 
   const cartTotalStake = cart.reduce((acc, c) => acc + (Number.isFinite(c.stake) ? c.stake : 0), 0);
+  // Retorno estimado total: soma de stake × odd atual de cada item (apenas estimativa).
+  const cartTotalReturn = cart.reduce((acc, c) => {
+    const snap = snapshots[c.duelId];
+    const odd = (c.side === 'LEFT' ? snap?.duel.left.odd : snap?.duel.right.odd) ?? 0;
+    return acc + (Number.isFinite(c.stake) ? c.stake : 0) * odd;
+  }, 0);
   const cartIndexByDuel = useMemo(() => {
     const m = new Map<string, CartItem>();
     cart.forEach((c) => m.set(c.duelId, c));
@@ -501,6 +510,17 @@ export default function ApostasPage() {
               {/* ── TAB: PASSADAS (Duelos) ── */}
               {activeTab === 'passadas' && (
                 <div className='space-y-4 sm:space-y-6'>
+                  {/* Aviso fixo: explica como o mercado funciona (uma vez, no topo) */}
+                  <div className='flex items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.05] px-4 py-3'>
+                    <svg className='h-5 w-5 text-amber-400 shrink-0 mt-0.5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+                      <path strokeLinecap='round' strokeLinejoin='round' d='M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' />
+                    </svg>
+                    <p className='text-xs sm:text-sm text-amber-100/95 leading-relaxed'>
+                      <strong className='font-semibold text-amber-200'>Como o mercado funciona?</strong>{' '}
+                      A cotação é dinâmica e o retorno final depende do rateio do pote no fechamento das apostas. O número exibido é uma estimativa e pode variar até o fim do bilhete. <strong className='text-amber-200'>Quem acerta nunca recebe menos que o valor apostado.</strong>
+                    </p>
+                  </div>
+
                   {/* Filtro de status (Em aberto / Auditadas / Canceladas) */}
                   <div className='flex gap-2 overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0 scrollbar-hide'>
                     {([
@@ -553,20 +573,20 @@ export default function ApostasPage() {
                     </div>
                   )}
 
-                  {/* Lista de embates abertos da rodada — agrupado por categoria */}
+                  {/* Quadrantes por categoria — desktop: 2-col, mobile: 1-col (lista vertical) */}
                   {activeRound && (
-                    <div className='space-y-4'>
+                    <div className='grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4'>
                       {activeRound.categories.map((cat) => (
-                        <section key={cat.category ?? 'none'} className='rounded-2xl border border-white/10 bg-[#0d1320] overflow-hidden'>
+                        <section key={cat.category ?? 'none'} className='rounded-2xl border border-white/10 bg-[#0d1320] overflow-hidden flex flex-col'>
                           {cat.categoryLabel && (
                             <div className='flex items-center justify-between gap-2 border-b border-white/10 bg-white/[0.03] px-3 py-2 sm:px-4 sm:py-2.5'>
-                              <p className='text-[10px] sm:text-xs font-bold uppercase tracking-widest text-white/60'>
-                                Categoria <span className='text-white'>{cat.categoryLabel}</span>
+                              <p className='text-xs sm:text-sm font-bold uppercase tracking-widest text-white'>
+                                Categoria <span className='text-amber-300'>{cat.categoryLabel}</span>
                               </p>
                               <span className='text-[10px] text-white/40'>{cat.stages.length} embate{cat.stages.length !== 1 ? 's' : ''}</span>
                             </div>
                           )}
-                          <ul className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-2 sm:p-3'>
+                          <ul className='flex flex-col divide-y divide-white/5'>
                             {cat.stages.map((stage) => {
                               const snap = snapshots[stage.duelId];
                               const isActive = currentDuelId === stage.duelId;
@@ -586,56 +606,107 @@ export default function ApostasPage() {
                               const cartLeft = cartEntry?.side === 'LEFT';
                               const cartRight = cartEntry?.side === 'RIGHT';
                               const canBetCard = !isCanceled && !isSettled && !isClosed;
+                              // Retorno estimado por lado: usa stake do carrinho se já adicionado, senão minBet.
+                              const stakeForEstimate = cartEntry ? cartEntry.stake : minBet;
+                              const leftEstimate = (leftOdd ?? 0) > 0 ? stakeForEstimate * (leftOdd ?? 0) : 0;
+                              const rightEstimate = (rightOdd ?? 0) > 0 ? stakeForEstimate * (rightOdd ?? 0) : 0;
                               return (
-                                <li key={stage.duelId}>
-                                  <div className={`h-full rounded-xl border p-3 transition-all ${
-                                    cartEntry
-                                      ? 'border-emerald-400 bg-emerald-500/[0.04] ring-2 ring-emerald-400/30'
-                                      : isActive
-                                        ? 'border-blue-500 bg-blue-500/10 ring-2 ring-blue-500/40'
-                                        : 'border-white/10 bg-white/[0.02]'
-                                  }`}>
-                                    <div className='flex items-center justify-between mb-2'>
-                                      <button
-                                        type='button'
-                                        onClick={() => setSelectedDuelId(stage.duelId)}
-                                        className='text-[9px] font-bold uppercase tracking-widest text-white/40 hover:text-white/70'
-                                        title='Ver detalhes deste embate'
-                                      >
-                                        {stage.isSuperFinal ? '🏆 Super Final' : `Pote R$ ${snap ? formatMoney(snap.totalPool) : '0,00'}`}
-                                      </button>
-                                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wider ${pillClass}`}>
-                                        {pillLabel}
-                                      </span>
-                                    </div>
-                                    <div className='space-y-1.5'>
-                                      <button
-                                        type='button'
-                                        disabled={!canBetCard}
-                                        onClick={() => canBetCard && cartToggle(stage.duelId, 'LEFT')}
-                                        className={`w-full flex items-center justify-between gap-2 rounded-md px-2 py-1.5 transition-all ${
-                                          cartLeft ? 'bg-blue-500/30 ring-1 ring-blue-400'
-                                            : canBetCard ? 'hover:bg-white/5' : 'opacity-50 cursor-not-allowed'
-                                        }`}
-                                      >
-                                        <p className='text-xs font-semibold truncate text-white/90 flex-1 min-w-0 text-left'>{cartLeft && <span className='mr-1'>✓</span>}{leftLabel}</p>
-                                        <p className='text-sm font-bold text-blue-400 shrink-0'>@{leftOdd?.toFixed(2) ?? '--'}</p>
-                                      </button>
-                                      <div className='border-t border-white/5'></div>
-                                      <button
-                                        type='button'
-                                        disabled={!canBetCard}
-                                        onClick={() => canBetCard && cartToggle(stage.duelId, 'RIGHT')}
-                                        className={`w-full flex items-center justify-between gap-2 rounded-md px-2 py-1.5 transition-all ${
-                                          cartRight ? 'bg-orange-500/30 ring-1 ring-orange-400'
-                                            : canBetCard ? 'hover:bg-white/5' : 'opacity-50 cursor-not-allowed'
-                                        }`}
-                                      >
-                                        <p className='text-xs font-semibold truncate text-white/90 flex-1 min-w-0 text-left'>{cartRight && <span className='mr-1'>✓</span>}{rightLabel}</p>
-                                        <p className='text-sm font-bold text-orange-400 shrink-0'>@{rightOdd?.toFixed(2) ?? '--'}</p>
-                                      </button>
-                                    </div>
+                                <li key={stage.duelId} className={`p-3 sm:p-4 transition-all ${
+                                  cartEntry
+                                    ? 'bg-emerald-500/[0.04] ring-1 ring-emerald-400/30 ring-inset'
+                                    : 'hover:bg-white/[0.02]'
+                                }`}>
+                                  <div className='flex items-center justify-between mb-2.5'>
+                                    <button
+                                      type='button'
+                                      onClick={() => setSelectedDuelId(stage.duelId)}
+                                      className='text-[10px] font-bold uppercase tracking-widest text-white/50 hover:text-white/80'
+                                      title='Ver detalhes deste embate'
+                                    >
+                                      {stage.isSuperFinal ? '🏆 Super Final' : `Pote R$ ${snap ? formatMoney(snap.totalPool) : '0,00'}`}
+                                    </button>
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wider ${pillClass}`}>
+                                      {pillLabel}
+                                    </span>
                                   </div>
+                                  <div className='grid grid-cols-2 gap-2'>
+                                    {/* PILOTO ESQUERDO (azul) */}
+                                    <button
+                                      type='button'
+                                      disabled={!canBetCard}
+                                      onClick={() => canBetCard && cartToggle(stage.duelId, 'LEFT')}
+                                      className={`group relative rounded-lg border p-2.5 sm:p-3 text-left transition-all ${
+                                        cartLeft ? 'border-blue-400 bg-blue-500/15 ring-2 ring-blue-400/40 shadow-[0_0_15px_rgba(59,130,246,0.25)]'
+                                          : canBetCard ? 'border-white/10 bg-gradient-to-br from-[#121c2d] to-[#0a101d] hover:border-blue-400/40 hover:bg-blue-500/[0.06]'
+                                          : 'border-white/5 bg-white/[0.02] opacity-50 cursor-not-allowed'
+                                      }`}
+                                    >
+                                      <div className='flex items-center gap-1.5 mb-1'>
+                                        {cartLeft && (
+                                          <span className='inline-flex items-center justify-center h-4 w-4 rounded-full bg-emerald-400 text-black text-[9px] font-bold'>✓</span>
+                                        )}
+                                        <p className='text-[10px] uppercase tracking-widest font-bold text-blue-400/70 truncate'>Piloto A</p>
+                                      </div>
+                                      <p className='text-xs sm:text-sm font-semibold text-white leading-tight line-clamp-2 min-h-[2.4em]'>
+                                        {leftLabel}
+                                      </p>
+                                      <div className='mt-2 pt-2 border-t border-white/5 flex items-center justify-between gap-2'>
+                                        <span className='text-[10px] text-white/50'>Cotação</span>
+                                        <span className='text-base sm:text-lg font-bold text-blue-400'>@{leftOdd?.toFixed(2) ?? '--'}</span>
+                                      </div>
+                                      <div className='mt-1 flex items-center justify-between gap-2 text-[10px]'>
+                                        <span className='text-white/40'>Retorno Estimado</span>
+                                        <span className='font-semibold text-emerald-400'>~ R$ {formatMoney(leftEstimate)}</span>
+                                      </div>
+                                    </button>
+
+                                    {/* PILOTO DIREITO (laranja) */}
+                                    <button
+                                      type='button'
+                                      disabled={!canBetCard}
+                                      onClick={() => canBetCard && cartToggle(stage.duelId, 'RIGHT')}
+                                      className={`group relative rounded-lg border p-2.5 sm:p-3 text-left transition-all ${
+                                        cartRight ? 'border-orange-400 bg-orange-500/15 ring-2 ring-orange-400/40 shadow-[0_0_15px_rgba(251,146,60,0.25)]'
+                                          : canBetCard ? 'border-white/10 bg-gradient-to-br from-[#2d1c12] to-[#1d100a] hover:border-orange-400/40 hover:bg-orange-500/[0.06]'
+                                          : 'border-white/5 bg-white/[0.02] opacity-50 cursor-not-allowed'
+                                      }`}
+                                    >
+                                      <div className='flex items-center gap-1.5 mb-1'>
+                                        {cartRight && (
+                                          <span className='inline-flex items-center justify-center h-4 w-4 rounded-full bg-emerald-400 text-black text-[9px] font-bold'>✓</span>
+                                        )}
+                                        <p className='text-[10px] uppercase tracking-widest font-bold text-orange-400/70 truncate'>Piloto B</p>
+                                      </div>
+                                      <p className='text-xs sm:text-sm font-semibold text-white leading-tight line-clamp-2 min-h-[2.4em]'>
+                                        {rightLabel}
+                                      </p>
+                                      <div className='mt-2 pt-2 border-t border-white/5 flex items-center justify-between gap-2'>
+                                        <span className='text-[10px] text-white/50'>Cotação</span>
+                                        <span className='text-base sm:text-lg font-bold text-orange-400'>@{rightOdd?.toFixed(2) ?? '--'}</span>
+                                      </div>
+                                      <div className='mt-1 flex items-center justify-between gap-2 text-[10px]'>
+                                        <span className='text-white/40'>Retorno Estimado</span>
+                                        <span className='font-semibold text-emerald-400'>~ R$ {formatMoney(rightEstimate)}</span>
+                                      </div>
+                                    </button>
+                                  </div>
+
+                                  {/* Marcador "no bilhete" */}
+                                  {cartEntry && (
+                                    <div className='mt-2 flex items-center justify-between gap-2 text-[10px]'>
+                                      <span className='inline-flex items-center gap-1 text-emerald-300'>
+                                        <span className='h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse'></span>
+                                        No bilhete · R$ {formatMoney(cartEntry.stake)}
+                                      </span>
+                                      <button
+                                        type='button'
+                                        onClick={() => cartRemove(stage.duelId)}
+                                        className='text-white/40 hover:text-red-300 underline-offset-2 hover:underline'
+                                      >
+                                        remover
+                                      </button>
+                                    </div>
+                                  )}
                                 </li>
                               );
                             })}
@@ -645,140 +716,14 @@ export default function ApostasPage() {
                     </div>
                   )}
 
-                  {snapshot ? (
-                    <>
-                      {/* Banner de Resultado Final (rodada auditada) */}
-                      {snapshot.settlement && (
-                        <div className='rounded-2xl border-2 border-emerald-500/40 bg-gradient-to-r from-emerald-500/15 to-emerald-500/5 p-4 sm:p-5'>
-                          <div className='flex items-center gap-3 mb-3'>
-                            <div className='shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-emerald-500/20 flex items-center justify-center'>
-                              <svg className='w-6 h-6 sm:w-7 sm:h-7 text-emerald-400' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
-                                <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M5 13l4 4L19 7' />
-                              </svg>
-                            </div>
-                            <div className='flex-1 min-w-0'>
-                              <p className='text-[10px] font-bold uppercase tracking-widest text-emerald-300/70'>Rodada Auditada</p>
-                              <p className='text-base sm:text-xl font-bold text-emerald-200 truncate'>Vencedor: {snapshot.settlement.winnerLabel}</p>
-                            </div>
-                          </div>
-                          <div className='grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 mt-3'>
-                            <div className='rounded-lg bg-black/20 p-2.5 sm:p-3'>
-                              <p className='text-[10px] uppercase tracking-widest text-white/40'>Pote Final</p>
-                              <p className='mt-1 text-sm sm:text-lg font-bold text-white'>R$ {formatMoney(snapshot.settlement.finalPool)}</p>
-                            </div>
-                            <div className='rounded-lg bg-black/20 p-2.5 sm:p-3'>
-                              <p className='text-[10px] uppercase tracking-widest text-white/40'>Odd Final</p>
-                              <p className='mt-1 text-sm sm:text-lg font-bold text-emerald-300'>@{snapshot.settlement.finalOdd.toFixed(2)}</p>
-                            </div>
-                            <div className='col-span-2 sm:col-span-1 rounded-lg bg-black/20 p-2.5 sm:p-3'>
-                              <p className='text-[10px] uppercase tracking-widest text-white/40'>Liquidado em</p>
-                              <p className='mt-1 text-xs font-medium text-white/80'>{new Date(snapshot.settlement.settledAt).toLocaleString('pt-BR')}</p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Banner: apostas encerradas / pausadas (so se nao auditado) */}
-                      {!snapshot.settlement && (snapshot.locked || snapshot.status === 'BOOKING_CLOSED' || snapshot.status === 'FINISHED') && (
-                        <div className='rounded-2xl border-2 border-red-500/40 bg-gradient-to-r from-red-500/15 to-red-500/5 p-4 sm:p-5 flex items-center gap-3 sm:gap-4'>
-                          <div className='shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-red-500/20 flex items-center justify-center'>
-                            <svg className='w-6 h-6 sm:w-7 sm:h-7 text-red-400' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
-                              <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' />
-                            </svg>
-                          </div>
-                          <div className='flex-1 min-w-0'>
-                            <p className='font-bold text-red-300 text-base sm:text-lg'>Apostas encerradas</p>
-                            <p className='text-xs sm:text-sm text-red-200/70 mt-0.5'>
-                              {snapshot.lockMessage ?? (snapshot.status === 'FINISHED' ? 'Esta corrida ja foi finalizada e o resultado liquidado.' : 'O periodo de apostas para esta rodada foi encerrado.')}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Duel header — info do embate (sempre visível) */}
-                      <div className='flex items-end justify-between border-b border-white/5 pb-3 sm:pb-4'>
-                        <div className='min-w-0'>
-                          <p className='text-[10px] font-semibold uppercase tracking-widest text-blue-400/70'>{snapshot.stageLabel}</p>
-                          <h2 className='mt-1 text-lg sm:text-2xl font-semibold tracking-tight truncate'>{snapshot.eventName}</h2>
-                          <p className='mt-1 text-[11px] sm:text-xs text-white/50 flex flex-wrap gap-x-2 gap-y-1'>
-                            <span>Pote: <strong className='text-white/80'>R$ {formatMoney(snapshot.totalPool)}</strong></span>
-                            {!snapshot.settlement && snapshot.closeInSeconds > 0 && (
-                              <span className='text-amber-400'>
-                                Encerra em: <strong>{formatCloseWindow(snapshot.closeInSeconds)}</strong>
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Bloco de seleção/aposta — escondido após auditoria */}
-                      {!snapshot.settlement && (
-                        <>
-                          {/* Pool distribution bar */}
-                          {snapshot.totalPool > 0 && (
-                            <div className='flex h-2 rounded-full overflow-hidden gap-[2px]'>
-                              <div className='bg-blue-500 transition-all duration-500' style={{ width: `${(snapshot.duel.left.pool / snapshot.totalPool * 100)}%` }} />
-                              <div className='bg-orange-500 transition-all duration-500' style={{ width: `${(snapshot.duel.right.pool / snapshot.totalPool * 100)}%` }} />
-                            </div>
-                          )}
-
-                          {/* Aviso pari-mutuel */}
-                          <div className='flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2.5'>
-                            <svg className='h-4 w-4 text-amber-400 shrink-0 mt-0.5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
-                              <path strokeLinecap='round' strokeLinejoin='round' d='M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' />
-                            </svg>
-                            <p className='text-[11px] sm:text-xs text-amber-100/90 leading-relaxed'>
-                              <strong className='font-semibold text-amber-200'>Mercado pari-mutuel:</strong> a cotação é dinâmica e o retorno final depende do rateio do pote no fechamento das apostas. O número exibido é uma estimativa e pode variar até o fim do bilhete. <strong>Quem acerta nunca recebe menos que o valor apostado.</strong>
-                            </p>
-                          </div>
-
-                          {/* Odd cards — empilhados em mobile */}
-                          <div className='grid gap-3 sm:gap-4 sm:grid-cols-2'>
-                            <OddCard title={snapshot.duel.left.label} odd={snapshot.duel.left.odd} pool={snapshot.duel.left.pool} tickets={snapshot.duel.left.tickets} photoUrl={snapshot.duel.left.photoUrl} active={side === 'LEFT'} onClick={() => setSide('LEFT')} tone='blue' />
-                            <OddCard title={snapshot.duel.right.label} odd={snapshot.duel.right.odd} pool={snapshot.duel.right.pool} tickets={snapshot.duel.right.tickets} photoUrl={snapshot.duel.right.photoUrl} active={side === 'RIGHT'} onClick={() => setSide('RIGHT')} tone='orange' />
-                          </div>
-
-                          {/* Bet form */}
-                          <div className='rounded-2xl border border-white/8 bg-white/[0.02] p-4 sm:p-6'>
-                            <div className='grid gap-4 sm:gap-6 lg:grid-cols-2'>
-                              <div className='space-y-1 text-sm'>
-                                <p className='text-white/40 text-xs sm:text-sm'>Sua seleção</p>
-                                <p className='text-base sm:text-lg font-medium'>{selectedSide?.label ?? 'Nenhum'}</p>
-                                <div className='h-2' />
-                                <div className='flex justify-between border-b border-white/5 pb-2 text-white/60 text-xs sm:text-sm'>
-                                  <span>Saldo</span>
-                                  <span className='font-medium text-white'>R$ {formatMoney(currentBalance)}</span>
-                                </div>
-                                <div className='flex justify-between border-b border-white/5 py-2 text-white/60 text-xs sm:text-sm'>
-                                  <span>Saldo após aposta</span>
-                                  <span className={`font-medium ${balanceAfterBet < 0 ? 'text-red-400' : 'text-white'}`}>R$ {formatMoney(balanceAfterBet)}</span>
-                                </div>
-                                <div className='flex justify-between py-2 text-white/60 text-xs sm:text-sm'>
-                                  <span>Retorno estimado <span className='text-white/30'>(varia)</span></span>
-                                  <span className='font-semibold text-emerald-400'>~ R$ {formatMoney(expectedReturn)}</span>
-                                </div>
-                                {!me && <p className='mt-3 text-xs text-amber-400'>Faça login para apostar.</p>}
-                                {stake < minBet && <p className='mt-1 text-xs text-amber-400'>Valor mínimo: R$ {minBet.toFixed(2).replace('.', ',')}.</p>}
-                                {me && currentBalance < stake && <p className='mt-1 text-xs text-red-400'>Saldo insuficiente.</p>}
-                              </div>
-                              <div className='flex flex-col justify-end gap-3'>
-                                <div className='relative'>
-                                  <span className='absolute left-4 top-1/2 -translate-y-1/2 text-white/40 font-medium text-sm sm:text-base'>R$</span>
-                                  <input className='w-full rounded-2xl border border-white/10 bg-[#090b11]/50 py-3 sm:py-4 pl-11 sm:pl-12 pr-4 text-xl sm:text-2xl font-semibold text-white focus:border-white/30 focus:outline-none' type='number' inputMode='decimal' min={minBet} step={5} value={stakeRaw} onChange={(e) => setStakeRaw(e.target.value)} />
-                                </div>
-                                <button type='button' className='w-full rounded-2xl bg-white px-4 py-3 sm:py-4 text-sm font-bold text-black shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all hover:bg-white/90 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none' disabled={!canBet || placingBet} onClick={() => setConfirmOpen(true)}>
-                                  {placingBet ? 'Processando...' : 'Confirmar Bilhete ->'}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </>
-                      )}
-
-                    </>
-                  ) : (
+                  {/* Empty state — quando o filtro atual não tem embates */}
+                  {(!activeRound || activeRound.categories.length === 0) && (
                     <div className='rounded-2xl border border-dashed border-white/10 p-12 text-center'>
-                      <p className='text-white/40'>Nenhum duelo disponível para este evento.</p>
+                      <p className='text-sm text-white/40'>
+                        {statusFilter === 'aberto' && 'Nenhum embate aberto no momento.'}
+                        {statusFilter === 'auditado' && 'Nenhum embate auditado nesta rodada.'}
+                        {statusFilter === 'cancelado' && 'Nenhum embate cancelado.'}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -864,25 +809,46 @@ export default function ApostasPage() {
       {cart.length > 0 && (
         <div className='fixed bottom-0 left-0 right-0 z-30 border-t border-white/10 bg-[#0a101d]/95 backdrop-blur-md shadow-[0_-8px_30px_rgba(0,0,0,0.6)]'>
           <div className='mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-4 lg:px-8'>
-            <div className='flex items-center justify-between gap-3 mb-3'>
+            {/* Header sempre visível — clicar nele alterna minimizado/expandido */}
+            <button
+              type='button'
+              onClick={() => setCartCollapsed((c) => !c)}
+              className='w-full flex items-center justify-between gap-3 mb-2 group'
+              aria-expanded={!cartCollapsed}
+              aria-label={cartCollapsed ? 'Expandir bilhete' : 'Minimizar bilhete'}
+            >
               <div className='flex items-center gap-2'>
                 <span className='inline-flex items-center justify-center h-7 min-w-[28px] rounded-full bg-emerald-500 text-black text-xs font-bold px-2'>
                   {cart.length}
                 </span>
                 <p className='text-sm font-semibold'>Bilhete <span className='text-white/50'>(seleções)</span></p>
+                {cartCollapsed && (
+                  <span className='hidden sm:inline text-xs text-white/40'>· R$ {formatMoney(cartTotalStake)} · ~R$ {formatMoney(cartTotalReturn)}</span>
+                )}
               </div>
-              <div className='flex items-center gap-2'>
-                <button
-                  type='button'
-                  onClick={() => setCart([])}
-                  className='text-xs text-white/50 hover:text-white/80'
-                  disabled={cartSubmitting}
-                >
-                  Limpar
-                </button>
+              <div className='flex items-center gap-3'>
+                {!cartCollapsed && (
+                  <span
+                    role='button'
+                    tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); if (!cartSubmitting) setCart([]); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); if (!cartSubmitting) setCart([]); } }}
+                    className='text-xs text-white/50 hover:text-white/80 cursor-pointer'
+                    aria-disabled={cartSubmitting}
+                  >
+                    Limpar
+                  </span>
+                )}
+                <span className='inline-flex items-center justify-center h-7 w-7 rounded-full bg-white/10 group-hover:bg-white/20 transition-colors'>
+                  <svg className={`h-4 w-4 text-white/80 transition-transform duration-300 ${cartCollapsed ? 'rotate-180' : ''}`} fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2.5}>
+                    <path strokeLinecap='round' strokeLinejoin='round' d='M19 9l-7 7-7-7' />
+                  </svg>
+                </span>
               </div>
-            </div>
+            </button>
 
+            {!cartCollapsed && (
+            <>
             <div className='max-h-[40vh] overflow-y-auto space-y-1.5 mb-3 pr-1'>
               {cart.map((item) => {
                 const snap = snapshots[item.duelId];
@@ -891,21 +857,25 @@ export default function ApostasPage() {
                 const odd = sideData?.odd ?? 0;
                 const estReturn = item.stake * odd;
                 return (
-                  <div key={item.duelId} className='grid grid-cols-[1fr_auto_auto] sm:grid-cols-[1fr_120px_120px_auto] items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-2 py-2'>
+                  <div key={item.duelId} className='grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_140px_120px_auto] items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-2 py-2'>
                     <div className='min-w-0'>
                       <p className='text-xs font-semibold truncate'>
-                        <span className={item.side === 'LEFT' ? 'text-blue-400' : 'text-orange-400'}>
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold mr-1.5 ${
+                          item.side === 'LEFT' ? 'bg-blue-500/20 text-blue-300' : 'bg-orange-500/20 text-orange-300'
+                        }`}>
+                          {item.side === 'LEFT' ? 'A' : 'B'}
+                        </span>
+                        <span className={item.side === 'LEFT' ? 'text-blue-300' : 'text-orange-300'}>
                           {sideData?.label ?? '...'}
                         </span>
-                        <span className='text-white/30 mx-1'>vs</span>
-                        <span className='text-white/50'>{oppData?.label ?? '...'}</span>
                       </p>
-                      <p className='text-[10px] text-white/40 mt-0.5'>
-                        @{odd.toFixed(2)} · ~retorno R$ {formatMoney(estReturn)}
+                      <p className='text-[10px] text-white/40 mt-0.5 truncate'>
+                        vs {oppData?.label ?? '...'}
                       </p>
                     </div>
-                    <div className='hidden sm:block text-right text-[10px] text-white/40'>
-                      {item.side === 'LEFT' ? 'Lado azul' : 'Lado laranja'}
+                    <div className='hidden sm:block text-right'>
+                      <p className='text-[9px] uppercase tracking-widest text-white/40'>Retorno est.</p>
+                      <p className='text-xs font-bold text-emerald-400'>@{odd.toFixed(2)} · ~R$ {formatMoney(estReturn)}</p>
                     </div>
                     <div className='flex items-center gap-1'>
                       <span className='text-[10px] text-white/40'>R$</span>
@@ -934,37 +904,45 @@ export default function ApostasPage() {
               })}
             </div>
 
-            <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-white/5 pt-3'>
-              <div className='flex items-center gap-4 text-xs sm:text-sm'>
-                <div>
-                  <p className='text-[10px] uppercase tracking-widest text-white/40'>Total apostado</p>
-                  <p className='font-bold text-white'>R$ {formatMoney(cartTotalStake)}</p>
-                </div>
-                <div>
-                  <p className='text-[10px] uppercase tracking-widest text-white/40'>Saldo após</p>
-                  <p className={`font-bold ${currentBalance - cartTotalStake < 0 ? 'text-red-400' : 'text-white'}`}>
-                    R$ {formatMoney(currentBalance - cartTotalStake)}
-                  </p>
-                </div>
+            {/* Totais — agora também mostra retorno estimado total */}
+            <div className='grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-3 border-t border-white/5 pt-3'>
+              <div className='rounded-lg bg-white/[0.03] px-3 py-2'>
+                <p className='text-[9px] uppercase tracking-widest text-white/40'>Seleções</p>
+                <p className='text-sm sm:text-base font-bold text-white'>{cart.length}</p>
               </div>
-              <button
-                type='button'
-                onClick={submitCart}
-                disabled={cartSubmitting || !me || cartTotalStake > currentBalance || cart.some((c) => c.stake < minBet)}
-                className='rounded-xl bg-emerald-400 px-5 py-3 text-sm font-extrabold text-black hover:bg-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed'
-              >
-                {cartSubmitting ? 'Enviando...' : !me ? 'Faça login' : `Apostar ${cart.length} embate${cart.length !== 1 ? 's' : ''}`}
-              </button>
+              <div className='rounded-lg bg-white/[0.03] px-3 py-2'>
+                <p className='text-[9px] uppercase tracking-widest text-white/40'>Total apostado</p>
+                <p className='text-sm sm:text-base font-bold text-white'>R$ {formatMoney(cartTotalStake)}</p>
+              </div>
+              <div className='rounded-lg bg-emerald-500/[0.05] px-3 py-2 ring-1 ring-emerald-500/20'>
+                <p className='text-[9px] uppercase tracking-widest text-emerald-300/70'>Retorno estimado <span className='text-emerald-300/50'>(varia)</span></p>
+                <p className='text-sm sm:text-base font-bold text-emerald-300'>~ R$ {formatMoney(cartTotalReturn)}</p>
+              </div>
+              <div className='rounded-lg bg-white/[0.03] px-3 py-2'>
+                <p className='text-[9px] uppercase tracking-widest text-white/40'>Saldo após</p>
+                <p className={`text-sm sm:text-base font-bold ${currentBalance - cartTotalStake < 0 ? 'text-red-400' : 'text-white'}`}>
+                  R$ {formatMoney(currentBalance - cartTotalStake)}
+                </p>
+              </div>
             </div>
-            <p className='mt-2 text-[10px] text-amber-200/70 leading-relaxed'>
-              Mercado pari-mutuel: as cotações exibidas são estimativas. Acertando, você recebe no mínimo o valor apostado em cada embate.
-            </p>
+            </>
+            )}
+
+            <button
+              type='button'
+              onClick={submitCart}
+              disabled={cartSubmitting || !me || cartTotalStake > currentBalance || cart.some((c) => c.stake < minBet)}
+              className='w-full rounded-xl bg-emerald-400 px-5 py-3.5 text-sm font-extrabold text-black hover:bg-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed'
+            >
+              {cartSubmitting ? 'Enviando...' : !me ? 'Faça login' : `Apostar ${cart.length} embate${cart.length !== 1 ? 's' : ''} · R$ ${formatMoney(cartTotalStake)}`}
+            </button>
           </div>
         </div>
       )}
 
-      {/* Spacer para conteúdo não ficar atrás do bilhete sticky */}
-      {cart.length > 0 && <div className='h-48 sm:h-40' />}
+      {/* Spacer para conteúdo não ficar atrás do bilhete sticky.
+           Reduzido drasticamente quando o bilhete está minimizado. */}
+      {cart.length > 0 && <div className={cartCollapsed ? 'h-24 sm:h-20' : 'h-48 sm:h-40'} />}
 
       {/* Modal de resultado do bilhete enviado */}
       {cartResults && (
@@ -1002,30 +980,6 @@ export default function ApostasPage() {
         </div>
       )}
 
-      {/* Confirm modal */}
-      {confirmOpen && (
-        <div className='fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4'>
-          <div className='w-full max-w-md rounded-2xl border border-white/10 bg-[#101525] p-6 shadow-2xl'>
-            <h3 className='text-xl font-bold'>Confirmar aposta?</h3>
-            <p className='mt-3 text-sm text-white/85'>
-              Valor: <span className='font-bold text-emerald-400'>R$ {formatMoney(stake)}</span> no{' '}
-              <span className='font-bold'>{selectedSide?.label ?? 'lado selecionado'}</span>
-            </p>
-            <p className='mt-1 text-sm text-white/70'>Retorno estimado: <span className='font-semibold text-emerald-300'>~ R$ {formatMoney(expectedReturn)}</span></p>
-            <div className='mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2'>
-              <p className='text-xs text-amber-100/90 leading-relaxed'>
-                Mercado <strong className='text-amber-200'>pari-mutuel</strong>: o retorno final é calculado pelo rateio do pote no fechamento e pode ser diferente da estimativa acima. <strong>Acertando, você recebe no mínimo o valor apostado.</strong>
-              </p>
-            </div>
-            <div className='mt-5 flex gap-2'>
-              <button type='button' className='flex-1 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/20' onClick={() => setConfirmOpen(false)} disabled={placingBet}>Cancelar</button>
-              <button type='button' className='flex-1 rounded-lg bg-emerald-400 px-4 py-2 text-sm font-extrabold text-black hover:bg-emerald-300 disabled:opacity-70' onClick={() => { setConfirmOpen(false); void placeBet(); }} disabled={placingBet}>
-                {placingBet ? 'Enviando...' : 'Confirmar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 }

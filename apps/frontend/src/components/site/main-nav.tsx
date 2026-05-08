@@ -126,11 +126,8 @@ export function MainNav() {
   }, [mobileMenuOpen]);
 
   const links = useMemo(() => {
-    const visible = baseLinks.filter((link) => !link.requiresAuth || !!user);
-    if (user && user.role !== 'USER') {
-      visible.push({ href: '/admin', label: 'Admin', requiresAuth: true });
-    }
-    return visible;
+    return baseLinks.filter((link) => !link.requiresAuth || !!user);
+    // Admin foi externalizado para admin.201-bet.com — não aparece mais aqui.
   }, [user]);
 
   async function logout() {

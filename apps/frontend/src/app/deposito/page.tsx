@@ -260,12 +260,12 @@ export default function DepositoPage() {
               <p className='text-xs text-amber-400/80'>Depósito mínimo de R$ 1,00 e máximo de R$ 1.000,00 por operação.</p>
             </div>
 
-            <div className='flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 mb-5'>
-              <svg className='h-4 w-4 text-red-400 shrink-0 mt-0.5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
-                <path strokeLinecap='round' strokeLinejoin='round' d='M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' />
+            <div className='flex items-start gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 mb-5'>
+              <svg className='h-4 w-4 text-emerald-400 shrink-0 mt-0.5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+                <path strokeLinecap='round' strokeLinejoin='round' d='M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z' />
               </svg>
-              <p className='text-xs text-red-300 leading-relaxed'>
-                <strong className='font-semibold text-red-200'>Atenção:</strong> a conta bancária utilizada precisa ter chave PIX cadastrada com o <strong>mesmo CPF da sua conta na 201Bet</strong>. Pagamentos originados de contas com CPF diferente serão recusados.
+              <p className='text-xs text-emerald-100/90 leading-relaxed'>
+                Depósito por PIX a partir de <strong>qualquer titular</strong>: pode pagar com a chave de outro CPF. Atenção: <strong>saques só vão pro CPF cadastrado</strong> na conta 201Bet.
               </p>
             </div>
 

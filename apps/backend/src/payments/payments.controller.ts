@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -75,5 +75,54 @@ export class AdminWithdrawalsController {
     @Body() body: { reason?: string },
   ) {
     return this.paymentsService.adminRejectWithdraw(paymentId, user.userId, body?.reason);
+  }
+}
+
+/**
+ * Listagens centralizadas de pagamentos (depósitos + saques) para a aba
+ * Financeiro do admin. Suporta filtros, busca e paginação.
+ */
+@Controller('admin/payments')
+@UseGuards(AdminJwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
+export class AdminPaymentsController {
+  constructor(private readonly paymentsService: PaymentsService) {}
+
+  @Get('deposits')
+  listDeposits(
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.paymentsService.adminListPayments({
+      type: 'DEPOSIT',
+      status,
+      search,
+      limit: limit ? Number.parseInt(limit, 10) : undefined,
+      offset: offset ? Number.parseInt(offset, 10) : undefined,
+    });
+  }
+
+  @Get('withdrawals')
+  listWithdrawals(
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.paymentsService.adminListPayments({
+      type: 'WITHDRAW',
+      status,
+      search,
+      limit: limit ? Number.parseInt(limit, 10) : undefined,
+      offset: offset ? Number.parseInt(offset, 10) : undefined,
+    });
+  }
+
+  @Get('summary')
+  summary(@Query('hours') hours?: string) {
+    const h = hours ? Number.parseInt(hours, 10) : 24;
+    return this.paymentsService.adminPaymentsSummary(Number.isFinite(h) ? Math.min(Math.max(h, 1), 720) : 24);
   }
 }
