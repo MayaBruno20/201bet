@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 
+@source '../admin/**/*.{ts,tsx}';
+@source './internal-admin/**/*.{ts,tsx}';
+
 :root {
   --bg: #090b11;
   --ink: #f8fafc;

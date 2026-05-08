@@ -1,17 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import {
+  getSiteKindForHost,
+  internalAdminPathFromUrlPath,
+  isPublicMarketingHost,
+  PUBLIC_DOMAIN,
+  INTERNAL_ADMIN_PREFIX,
+} from '@/lib/domain-config';
 
-/**
- * O painel admin agora é um projeto Vercel separado em admin.201-bet.com
- * (gerenciado fora deste repositório).
- *
- * A única responsabilidade deste middleware aqui é:
- *   - Se alguém acessar `/admin/...` no host público (201-bet.com), redirecionar
- *     para o novo painel — defesa contra links antigos. Status 301 (permanente).
- *
- * Em dev (localhost), nenhum redirect — `/admin/*` simplesmente cai em 404 do
- * Next porque as rotas foram removidas.
- */
-const PUBLIC_DOMAIN = '201-bet.com';
 const ADMIN_DOMAIN = `admin.${PUBLIC_DOMAIN}`;
 
 function isAsset(pathname: string) {
@@ -31,10 +26,18 @@ export function middleware(req: NextRequest) {
   if (isAsset(pathname)) return NextResponse.next();
 
   const host = (req.headers.get('host') ?? '').split(':')[0].toLowerCase();
-  const isPublicHost = host === PUBLIC_DOMAIN || host === `www.${PUBLIC_DOMAIN}`;
 
-  // Único caso especial: redireciona /admin/* do site público pro novo painel.
-  if (isPublicHost && pathname.startsWith('/admin')) {
+  if (isPublicMarketingHost(host) && pathname.startsWith(INTERNAL_ADMIN_PREFIX)) {
+    return new NextResponse(null, { status: 404 });
+  }
+
+  if (getSiteKindForHost(host) === 'admin') {
+    const url = req.nextUrl.clone();
+    url.pathname = internalAdminPathFromUrlPath(pathname);
+    return NextResponse.rewrite(url);
+  }
+
+  if (isPublicMarketingHost(host) && pathname.startsWith('/admin')) {
     const target = new URL(`https://${ADMIN_DOMAIN}${pathname}${req.nextUrl.search}`);
     return NextResponse.redirect(target, 301);
   }
