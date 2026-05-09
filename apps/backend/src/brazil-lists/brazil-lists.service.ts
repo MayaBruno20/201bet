@@ -421,10 +421,57 @@ export class BrazilListsService {
     const event = await this.prisma.listEvent.findUnique({ where: { id: eventId } });
     if (!event) throw new NotFoundException('Evento de lista não encontrado');
 
+    // Anula mercados abertos ANTES da transação (refund de apostas usa
+    // settlementService que abre transação própria — não dá pra aninhar).
+    if (event.eventId) {
+      const openMarkets = await this.prisma.market.findMany({
+        where: {
+          eventId: event.eventId,
+          status: { in: [MarketStatus.OPEN, MarketStatus.SUSPENDED] },
+        },
+        select: { id: true },
+      });
+      for (const m of openMarkets) {
+        try { await this.settlementService.voidMarket(m.id, audit); }
+        catch (e) {
+          this.logger.warn(`Falha ao anular mercado ${m.id} ao cancelar evento de lista ${eventId}: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
-      await tx.listEvent.delete({ where: { id: eventId } });
-      await this.logAudit(tx, 'BRAZIL_EVENT_DELETE', 'ListEvent', eventId, null, audit);
-      return { success: true };
+      // Marca ListEvent como CANCELED em vez de deletar — preserva histórico para auditoria.
+      await tx.listEvent.update({
+        where: { id: eventId },
+        data: { status: ListEventStatus.CANCELED },
+      });
+
+      // Cancela duelos pendentes vinculados ao Event linkado.
+      if (event.eventId) {
+        await tx.duel.updateMany({
+          where: {
+            eventId: event.eventId,
+            status: { in: [DuelStatus.SCHEDULED, DuelStatus.BOOKING_OPEN, DuelStatus.BOOKING_CLOSED] },
+          },
+          data: { status: DuelStatus.CANCELED },
+        });
+
+        // Fecha mercados que ainda não foram anulados (caso voidMarket tenha falhado acima).
+        await tx.market.updateMany({
+          where: { eventId: event.eventId, status: { not: MarketStatus.SETTLED } },
+          data: { status: MarketStatus.CLOSED },
+        });
+
+        // CRITICO: marca o Event linkado como CANCELED — senão o GET /events público
+        // continua exibindo o evento mesmo após cancelado.
+        await tx.event.update({
+          where: { id: event.eventId },
+          data: { status: EventStatus.CANCELED },
+        });
+      }
+
+      await this.logAudit(tx, 'BRAZIL_EVENT_CANCEL', 'ListEvent', eventId, { eventId: event.eventId }, audit);
+      return { success: true, status: 'CANCELED' };
     });
   }
 
@@ -515,8 +562,107 @@ export class BrazilListsService {
         count: created.length,
       }, audit);
 
-      return { roundNumber, roundType: dto.roundType, count: created.length };
+      return { roundNumber, roundType: dto.roundType, count: created.length, firstMatchupId: created[0]?.id };
+    }).then(async ({ firstMatchupId, ...rest }) => {
+      // Auto-abrir o PRIMEIRO mercado da rodada para iniciar a cadeia.
+      // Os mercados subsequentes abrem automaticamente conforme o admin audita
+      // (lógica em adminSettleMatchup). Falha aqui não é fatal — admin pode
+      // abrir manualmente ou usar "Abrir todos os mercados".
+      if (firstMatchupId) {
+        try { await this.adminToggleMatchupMarket(firstMatchupId, true, audit); }
+        catch (e) {
+          this.logger.warn(
+            `Falha ao auto-abrir primeiro mercado da rodada ${rest.roundNumber}/${rest.roundType}: ${e instanceof Error ? e.message : e}`,
+          );
+        }
+      }
+      return rest;
     });
+  }
+
+  /**
+   * Abre todos os mercados de uma rodada de uma vez. Útil quando o admin
+   * quer rodar os embates em paralelo em vez do fluxo sequencial (auto-chain).
+   *
+   * - Se `roundNumber` e `roundType` forem informados, abre só essa rodada.
+   * - Se nenhum filtro vier, abre a próxima rodada não auditada (ordenando por
+   *   roundNumber, depois ODD antes de EVEN).
+   * Embates já settled são pulados; embates já abertos não geram novo work.
+   */
+  async adminOpenAllMatchupsForRound(
+    eventId: string,
+    filter: { roundNumber?: number; roundType?: ListRoundType } | undefined,
+    audit: AuditContext,
+  ) {
+    const event = await this.prisma.listEvent.findUnique({ where: { id: eventId } });
+    if (!event) throw new NotFoundException('Evento de lista não encontrado');
+
+    let targetRoundNumber = filter?.roundNumber;
+    let targetRoundType = filter?.roundType;
+
+    if (!targetRoundNumber || !targetRoundType) {
+      // Pega o primeiro grupo (roundNumber, roundType) que ainda tem embates não settled
+      const candidate = await this.prisma.listMatchup.findFirst({
+        where: { listEventId: eventId, winnerSide: null },
+        orderBy: [{ roundNumber: 'asc' }, { roundType: 'asc' }, { order: 'asc' }],
+        select: { roundNumber: true, roundType: true },
+      });
+      if (!candidate) {
+        throw new BadRequestException('Não há rodada com embates pendentes neste evento.');
+      }
+      targetRoundNumber = candidate.roundNumber;
+      targetRoundType = candidate.roundType;
+    }
+
+    const matchups = await this.prisma.listMatchup.findMany({
+      where: {
+        listEventId: eventId,
+        roundNumber: targetRoundNumber,
+        roundType: targetRoundType,
+        winnerSide: null,
+        marketOpen: false,
+      },
+      orderBy: { order: 'asc' },
+    });
+
+    if (matchups.length === 0) {
+      return { opened: 0, roundNumber: targetRoundNumber, roundType: targetRoundType, message: 'Nenhum embate pendente para abrir nesta rodada.' };
+    }
+
+    let opened = 0;
+    const failures: Array<{ id: string; error: string }> = [];
+    for (const m of matchups) {
+      try {
+        await this.adminToggleMatchupMarket(m.id, true, audit);
+        opened += 1;
+      } catch (e) {
+        failures.push({ id: m.id, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: audit.actorUserId,
+        action: 'BRAZIL_OPEN_ALL_MATCHUPS',
+        entity: 'ListEvent',
+        entityId: eventId,
+        payload: {
+          roundNumber: targetRoundNumber,
+          roundType: targetRoundType,
+          opened,
+          total: matchups.length,
+          failures,
+        } as Prisma.InputJsonValue,
+      },
+    }).catch(() => undefined);
+
+    return {
+      opened,
+      total: matchups.length,
+      roundNumber: targetRoundNumber,
+      roundType: targetRoundType,
+      failures,
+    };
   }
 
   async adminUpsertMatchup(eventId: string, dto: UpsertMatchupDto, audit: AuditContext) {
@@ -919,10 +1065,14 @@ export class BrazilListsService {
   ): Promise<string> {
     const existing = driver.cars[0];
     if (existing) return existing.id;
+    // Car.name fica vazio por padrão — o admin preenche via /carros (nome do
+    // veículo, ex.: "Gol 4x4 Minion"). NÃO concatenamos `driver.name` aqui
+    // porque a UI já mostra o nome do piloto separadamente — antes ficava
+    // duplicado no card do embate.
     const created = await tx.car.create({
       data: {
         driverId: driver.id,
-        name: driver.team ? `${driver.name} — ${driver.team}` : driver.name,
+        name: '',
         category: 'LISTAS_BRASIL',
         number: driver.carNumber ?? undefined,
       },
@@ -1126,6 +1276,29 @@ export class BrazilListsService {
 // ── PAR/ÍMPAR bracket generator (Listas Brasil) ──────────
 // ODD (ÍMPAR):  n-1 × n-2, n-3 × n-4, ... 3 × 2   (king=1 and last=n sit out)
 // EVEN (PAR):   n × n-1, n-2 × n-3, ... 2 × 1     (king also races)
+/**
+ * Constrói os pareamentos da rodada conforme o regulamento das Listas Brasil:
+ *
+ * - **ÍMPAR**: posições ímpares atacam pares acima delas (na verdade, abaixo
+ *   no rank — número maior = pior). 3 ataca 2, 5 ataca 4, 7 ataca 6, etc.
+ *   O Rei (posição 1) senta nesta rodada.
+ * - **PAR**: posições pares atacam ímpares. 2 ataca 1 (= rei), 4 ataca 3,
+ *   6 ataca 5, etc. Todos disputam.
+ *
+ * A ORDEM de disputa começa pelos números mais baixos (mais embaixo da lista
+ * tem prioridade no embate inicial). Isso é importante porque o painel de
+ * embates auto-abre o próximo mercado quando o admin audita o anterior —
+ * o fluxo natural é começar pelo "challenger" mais baixo.
+ *
+ * Exemplos:
+ * - TOP_20 ÍMPAR: 9 embates → ordem 1=3×2, 2=5×4, 3=7×6, …, 9=19×18
+ * - TOP_20 PAR:  10 embates → ordem 1=2×1, 2=4×3, 3=6×5, …, 10=20×19
+ * - TOP_10 ÍMPAR: 4 embates → ordem 1=3×2, 2=5×4, 3=7×6, 4=9×8
+ * - TOP_10 PAR:   5 embates → ordem 1=2×1, 2=4×3, 3=6×5, 4=8×7, 5=10×9
+ *
+ * O `leftPosition` é sempre o desafiante (rank pior, número maior). Se o
+ * desafiante vence, o swap de posições é aplicado em adminSettleMatchup.
+ */
 export function buildBracketPairs(
   format: ListFormat,
   roundType: ListRoundType,
@@ -1135,14 +1308,16 @@ export function buildBracketPairs(
 
   if (roundType === ListRoundType.ODD) {
     let order = 1;
-    for (let left = max - 1; left >= 3; left -= 2) {
-      pairs.push({ order, leftPosition: left, rightPosition: left - 1 });
+    // Ímpares atacam pares abaixo: 3×2, 5×4, 7×6 … (max-1)×(max-2). Rei (1) senta.
+    for (let challenger = 3; challenger <= max - 1; challenger += 2) {
+      pairs.push({ order, leftPosition: challenger, rightPosition: challenger - 1 });
       order += 1;
     }
   } else if (roundType === ListRoundType.EVEN) {
     let order = 1;
-    for (let left = max; left >= 2; left -= 2) {
-      pairs.push({ order, leftPosition: left, rightPosition: left - 1 });
+    // Pares atacam ímpares abaixo: 2×1, 4×3, 6×5 … max×(max-1). Rei é desafiado.
+    for (let challenger = 2; challenger <= max; challenger += 2) {
+      pairs.push({ order, leftPosition: challenger, rightPosition: challenger - 1 });
       order += 1;
     }
   }

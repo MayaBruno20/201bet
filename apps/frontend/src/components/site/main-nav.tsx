@@ -21,6 +21,68 @@ const baseLinks: NavLink[] = [
   { href: '/carteira', label: 'Carteira', requiresAuth: true },
 ];
 
+type Disclaimer = {
+  id: string;
+  message: string;
+  variant: string; // amber | rose | sky | emerald | violet | neutral (+ aliases red/blue)
+  scrolling: boolean;
+  priority: number;
+};
+
+/**
+ * Cores por variante. Backend ainda aceita aliases legados (red→rose, blue→sky)
+ * mas a resposta pública vem normalizada — a função tolera ambos por defesa.
+ */
+const VARIANT_STYLES: Record<string, { border: string; bg: string; text: string; strong: string; icon: string }> = {
+  amber: {
+    border: 'border-amber-400/30',
+    bg: 'bg-gradient-to-r from-amber-500/15 via-amber-400/20 to-amber-500/15',
+    text: 'text-amber-100',
+    strong: 'text-amber-200',
+    icon: 'text-amber-300',
+  },
+  rose: {
+    border: 'border-rose-400/30',
+    bg: 'bg-gradient-to-r from-rose-500/15 via-rose-400/20 to-rose-500/15',
+    text: 'text-rose-100',
+    strong: 'text-rose-200',
+    icon: 'text-rose-300',
+  },
+  sky: {
+    border: 'border-sky-400/30',
+    bg: 'bg-gradient-to-r from-sky-500/15 via-sky-400/20 to-sky-500/15',
+    text: 'text-sky-100',
+    strong: 'text-sky-200',
+    icon: 'text-sky-300',
+  },
+  emerald: {
+    border: 'border-emerald-400/30',
+    bg: 'bg-gradient-to-r from-emerald-500/15 via-emerald-400/20 to-emerald-500/15',
+    text: 'text-emerald-100',
+    strong: 'text-emerald-200',
+    icon: 'text-emerald-300',
+  },
+  violet: {
+    border: 'border-violet-400/30',
+    bg: 'bg-gradient-to-r from-violet-500/15 via-violet-400/20 to-violet-500/15',
+    text: 'text-violet-100',
+    strong: 'text-violet-200',
+    icon: 'text-violet-300',
+  },
+  neutral: {
+    border: 'border-white/15',
+    bg: 'bg-gradient-to-r from-white/[0.06] via-white/[0.08] to-white/[0.06]',
+    text: 'text-white/85',
+    strong: 'text-white',
+    icon: 'text-white/70',
+  },
+};
+function getVariantStyles(variant: string) {
+  // aliases legados — caso ainda exista dado gravado com red/blue
+  const normalized = variant === 'red' ? 'rose' : variant === 'blue' ? 'sky' : variant;
+  return VARIANT_STYLES[normalized] ?? VARIANT_STYLES.amber;
+}
+
 type NavUser = SessionUser & {
   wallet?: { balance: number | string; currency: string };
   walletBalance?: number | string;
@@ -46,6 +108,19 @@ export function MainNav() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const fixedShellRef = useRef<HTMLDivElement | null>(null);
   const [shellHeight, setShellHeight] = useState(64);
+  const [disclaimers, setDisclaimers] = useState<Disclaimer[]>([]);
+
+  // Carrega os disclaimers públicos (já vêm filtrados por active=true e
+  // ordenados por priority desc no backend). Sem polling — a barra é estática
+  // por sessão; mudanças do admin chegam no próximo reload.
+  useEffect(() => {
+    let alive = true;
+    fetch(`${apiUrl}/site-disclaimers`, { cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: Disclaimer[]) => { if (alive) setDisclaimers(Array.isArray(data) ? data : []); })
+      .catch(() => { /* silencioso — banner some se a API estiver fora */ });
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     setUser(getStoredUser());
@@ -142,17 +217,30 @@ export function MainNav() {
     <>
       {/* Disclaimer + Header fixos */}
       <div ref={fixedShellRef} className='fixed left-0 right-0 top-0 z-40 w-full'>
-        {/* Disclaimer estático */}
-        <div className='border-b border-amber-400/30 bg-gradient-to-r from-amber-500/15 via-amber-400/20 to-amber-500/15 backdrop-blur-md'>
-          <div className='mx-auto flex max-w-7xl items-center gap-2 px-3 py-1.5 sm:gap-3 sm:px-6 sm:py-2 lg:px-8'>
-            <svg className='hidden h-4 w-4 shrink-0 text-amber-300 sm:inline' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2.2}>
-              <path strokeLinecap='round' strokeLinejoin='round' d='M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z' />
-            </svg>
-            <p className='flex-1 text-center text-[11px] font-semibold leading-tight text-amber-100 sm:text-xs sm:leading-normal'>
-              <strong className='text-amber-200'>Obrigado a todos pela participação</strong>, estamos recebendo positivamente todos os feedbacks!
-            </p>
-          </div>
-        </div>
+        {/* Disclaimers dinâmicos (controlados via /admin/disclaimers) */}
+        {disclaimers.map((d) => {
+          const v = getVariantStyles(d.variant);
+          return (
+            <div key={d.id} className={`border-b ${v.border} ${v.bg} backdrop-blur-md`}>
+              <div className='mx-auto flex max-w-7xl items-center gap-2 px-3 py-1.5 sm:gap-3 sm:px-6 sm:py-2 lg:px-8'>
+                <svg className={`hidden h-4 w-4 shrink-0 ${v.icon} sm:inline`} fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2.2}>
+                  <path strokeLinecap='round' strokeLinejoin='round' d='M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z' />
+                </svg>
+                {d.scrolling ? (
+                  <div className='flex-1 overflow-hidden'>
+                    <p className={`site-disclaimer-marquee text-[11px] font-semibold leading-tight ${v.text} sm:text-xs sm:leading-normal`}>
+                      {d.message}
+                    </p>
+                  </div>
+                ) : (
+                  <p className={`flex-1 text-center text-[11px] font-semibold leading-tight ${v.text} sm:text-xs sm:leading-normal`}>
+                    {d.message}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
 
         <header className='glass w-full transition-all duration-300'>
         <div className='mx-auto max-w-7xl px-3 flex h-16 sm:h-20 items-center justify-between sm:px-6 lg:px-8'>

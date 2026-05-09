@@ -200,10 +200,48 @@ export class ArmageddonService {
     const existing = await this.prisma.armageddonEvent.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Evento Armageddon não encontrado');
 
+    // Anula mercados abertos do Event linkado antes da transação.
+    if (existing.eventId) {
+      const openMarkets = await this.prisma.market.findMany({
+        where: { eventId: existing.eventId, status: { in: [MarketStatus.OPEN, MarketStatus.SUSPENDED] } },
+        select: { id: true },
+      });
+      for (const m of openMarkets) {
+        try { await this.settlementService.voidMarket(m.id, audit); }
+        catch (e) {
+          this.logger.warn(`Falha ao anular mercado ${m.id} ao cancelar ArmageddonEvent ${id}: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
-      await tx.armageddonEvent.delete({ where: { id } });
-      await this.logAudit(tx, 'ARMAGEDDON_EVENT_DELETE', 'ArmageddonEvent', id, null, audit);
-      return { success: true };
+      // Marca como CANCELED em vez de deletar — preserva histórico.
+      await tx.armageddonEvent.update({
+        where: { id },
+        data: { status: ArmageddonStatus.CANCELED },
+      });
+
+      // Propaga cancel pro Event linkado.
+      if (existing.eventId) {
+        await tx.duel.updateMany({
+          where: {
+            eventId: existing.eventId,
+            status: { in: [DuelStatus.SCHEDULED, DuelStatus.BOOKING_OPEN, DuelStatus.BOOKING_CLOSED] },
+          },
+          data: { status: DuelStatus.CANCELED },
+        });
+        await tx.market.updateMany({
+          where: { eventId: existing.eventId, status: { not: MarketStatus.SETTLED } },
+          data: { status: MarketStatus.CLOSED },
+        });
+        await tx.event.update({
+          where: { id: existing.eventId },
+          data: { status: EventStatus.CANCELED },
+        });
+      }
+
+      await this.logAudit(tx, 'ARMAGEDDON_EVENT_CANCEL', 'ArmageddonEvent', id, { eventId: existing.eventId }, audit);
+      return { success: true, status: 'CANCELED' };
     });
   }
 
@@ -791,7 +829,10 @@ export class ArmageddonService {
     const created = await tx.car.create({
       data: {
         driverId: driver.id,
-        name: driver.team ? `${driver.name} — ${driver.team}` : driver.name,
+        // Car.name fica vazio — admin preenche o veículo via /carros se quiser
+        // exibir no card de embate. Antes concatenava piloto+equipe aqui, o que
+        // duplicava o nome do piloto na UI pública.
+        name: '',
         category: 'ARMAGEDDON',
         number: driver.carNumber ?? undefined,
       },

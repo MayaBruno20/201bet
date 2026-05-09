@@ -1235,18 +1235,22 @@ export class AdminService {
     };
   }
 
-  async listAuditLogs(limit = 100) {
+  async listAuditLogs(opts: { limit?: number; since?: Date; entity?: string } = {}) {
+    const take = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+    const where: Prisma.AuditLogWhereInput = {};
+    if (opts.since && !Number.isNaN(opts.since.getTime())) {
+      where.createdAt = { gte: opts.since };
+    }
+    if (opts.entity) {
+      where.entity = opts.entity;
+    }
     return this.prisma.auditLog.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
-      take: Math.min(Math.max(limit, 1), 500),
+      take,
       include: {
         actorUser: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            role: true,
-          },
+          select: { id: true, email: true, name: true, role: true },
         },
       },
     });

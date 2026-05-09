@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
 import { ApiEvent } from '@/types/events';
@@ -13,6 +14,7 @@ export default function EventosPage() {
   const [events, setEvents] = useState<ApiEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     fetch(`${apiUrl}/events`)
@@ -20,10 +22,15 @@ export default function EventosPage() {
         if (!r.ok) throw new Error(`Falha ao carregar eventos (${r.status})`);
         return (await r.json()) as ApiEvent[];
       })
-      .then((eventsData) => setEvents(eventsData))
+      // Filtro defensivo: backend já filtra CANCELED, mas se algum evento órfão
+      // (linkado a um ListEvent/CategoryEvent cancelado mas sem propagar pro Event)
+      // restar no banco, escondemos do público aqui também.
+      .then((eventsData) => setEvents(eventsData.filter((e) => e.status !== 'CANCELED')))
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  const toggleExpanded = (id: string) => setExpanded((s) => ({ ...s, [id]: !s[id] }));
 
   const statusMap: Record<string, { label: string; color: string }> = {
     SCHEDULED: { label: 'Agendado', color: 'bg-blue-500/15 text-blue-400 border-blue-500/20' },
@@ -132,10 +139,51 @@ export default function EventosPage() {
                   </div>
                 </div>
 
-                {/* Duels Section */}
-                {event.duels.length > 0 && (
+                {/* Action bar: Apostar agora + toggle Embates */}
+                {event.duels.length > 0 && (() => {
+                  const isOpen = !!expanded[event.id];
+                  const liveDuels = event.duels.filter((d) => d.status === 'BOOKING_OPEN' || d.status === 'BOOKING_CLOSED').length;
+                  return (
+                    <div className='border-t border-white/5 px-4 py-3 sm:px-6 flex flex-wrap items-center gap-2'>
+                      <Link
+                        href={`/apostas?eventId=${encodeURIComponent(event.id)}`}
+                        className='inline-flex items-center gap-2 rounded-xl bg-[#d4a843] px-4 py-2.5 text-sm font-bold text-[#04111d] transition-all hover:bg-[#e0b84d]'
+                      >
+                        <svg className='h-4 w-4' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2.5}>
+                          <path strokeLinecap='round' strokeLinejoin='round' d='M13 10V3L4 14h7v7l9-11h-7z' />
+                        </svg>
+                        Apostar agora
+                      </Link>
+                      <button
+                        type='button'
+                        onClick={() => toggleExpanded(event.id)}
+                        aria-expanded={isOpen}
+                        className='inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white/80 transition-colors hover:border-white/20 hover:bg-white/10'
+                      >
+                        Embates
+                        <span className='rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-bold text-white/70'>
+                          {event.duels.length}
+                        </span>
+                        {liveDuels > 0 && (
+                          <span className='inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300'>
+                            <span className='h-1 w-1 rounded-full bg-emerald-400 animate-pulse' />
+                            {liveDuels} ao vivo
+                          </span>
+                        )}
+                        <svg
+                          className={`h-4 w-4 text-white/50 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                          fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}
+                        >
+                          <path strokeLinecap='round' strokeLinejoin='round' d='M19 9l-7 7-7-7' />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })()}
+
+                {/* Duels Section (colapsável) */}
+                {event.duels.length > 0 && expanded[event.id] && (
                   <div className='border-t border-white/5 p-4 sm:p-6'>
-                    <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-4'>Embates</p>
                     <div className='space-y-3'>
                       {event.duels.map((duel) => {
                         const duelStatus = getStatus(duel.status);
@@ -145,9 +193,13 @@ export default function EventosPage() {
                             <div className='flex items-center gap-3'>
                               {/* Left Side */}
                               <div className='flex-1 text-right'>
-                                <p className='font-medium text-white/90 truncate'>{duel.left.carName}</p>
-                                <p className='text-xs text-white/40 truncate'>{duel.left.driverName}</p>
-                                <p className='text-[10px] text-white/25 mt-0.5'>{duel.left.category}</p>
+                                <p className='font-medium text-white/90 truncate'>{duel.left.driverName}</p>
+                                {duel.left.carName?.trim() && (
+                                  <p className='text-xs text-white/40 truncate'>{duel.left.carName}</p>
+                                )}
+                                {duel.left.category && duel.left.category !== 'LISTAS_BRASIL' && duel.left.category !== 'QUICK' && (
+                                  <p className='text-[10px] text-white/25 mt-0.5'>{duel.left.category}</p>
+                                )}
                               </div>
 
                               {/* VS Badge */}
@@ -159,9 +211,13 @@ export default function EventosPage() {
 
                               {/* Right Side */}
                               <div className='flex-1'>
-                                <p className='font-medium text-white/90 truncate'>{duel.right.carName}</p>
-                                <p className='text-xs text-white/40 truncate'>{duel.right.driverName}</p>
-                                <p className='text-[10px] text-white/25 mt-0.5'>{duel.right.category}</p>
+                                <p className='font-medium text-white/90 truncate'>{duel.right.driverName}</p>
+                                {duel.right.carName?.trim() && (
+                                  <p className='text-xs text-white/40 truncate'>{duel.right.carName}</p>
+                                )}
+                                {duel.right.category && duel.right.category !== 'LISTAS_BRASIL' && duel.right.category !== 'QUICK' && (
+                                  <p className='text-[10px] text-white/25 mt-0.5'>{duel.right.category}</p>
+                                )}
                               </div>
                             </div>
 
@@ -183,44 +239,6 @@ export default function EventosPage() {
                     </div>
                   </div>
                 )}
-
-                {/* Markets Section */}
-                {event.markets.length > 0 && (
-                  <div className='border-t border-white/5 p-4 sm:p-6'>
-                    <p className='text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-4'>Mercados ativos</p>
-                    <div className='space-y-3'>
-                      {event.markets.map((market) => {
-                        const mktStatus = getStatus(market.status);
-                        return (
-                          <div key={market.id} className='rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.03] to-transparent p-4 transition-colors hover:border-white/15'>
-                            <div className='flex items-center justify-between gap-3 mb-3'>
-                              <p className='font-medium text-white/90'>{market.name}</p>
-                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wider ${mktStatus.color}`}>
-                                {mktStatus.label}
-                              </span>
-                            </div>
-                            
-                            {/* Odds as styled pills */}
-                            <div className='grid grid-cols-2 gap-2'>
-                              {market.odds.map((odd, idx) => {
-                                const isBlue = idx === 0;
-                                return (
-                                  <div key={odd.id} className={`rounded-xl p-3 ${isBlue ? 'bg-gradient-to-br from-[#121c2d] to-[#0d1320]' : 'bg-gradient-to-br from-[#2d1c12] to-[#1d100a]'}`}>
-                                    <p className='text-xs text-white/50 truncate'>{odd.label}</p>
-                                    <div className='flex items-baseline gap-1 mt-1'>
-                                      <span className={`text-sm ${isBlue ? 'text-blue-400' : 'text-orange-400'}`}>@</span>
-                                      <span className='text-xl font-bold tracking-tighter'>{odd.value.toFixed(2)}</span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </article>
             );
           })}
@@ -230,8 +248,8 @@ export default function EventosPage() {
               <svg className='mx-auto h-10 w-10 text-white/15' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
                 <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={1} d='M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' />
               </svg>
-              <p className='mt-3 text-sm text-white/40'>Nenhum evento encontrado</p>
-              <p className='mt-1 text-xs text-white/25'>Execute o seed do banco para popular dados iniciais.</p>
+              <p className='mt-3 text-sm text-white/40'>Nenhum evento agendado no momento</p>
+              <p className='mt-1 text-xs text-white/25'>Volte em instantes — novos embates aparecem aqui assim que os mercados abrem.</p>
             </div>
           )}
         </div>

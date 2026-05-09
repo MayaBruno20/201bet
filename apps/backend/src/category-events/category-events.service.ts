@@ -197,9 +197,45 @@ export class CategoryEventsService {
   async adminDeleteEvent(id: string, audit: AuditContext = {}) {
     const event = await this.prisma.categoryEvent.findUnique({ where: { id } });
     if (!event) throw new NotFoundException('Evento não encontrado');
+
+    // Anula mercados abertos do Event linkado antes da transação (settlement
+    // service usa transação própria — não dá pra aninhar).
+    if (event.eventId) {
+      const openMarkets = await this.prisma.market.findMany({
+        where: { eventId: event.eventId, status: { in: [MarketStatus.OPEN, MarketStatus.SUSPENDED] } },
+        select: { id: true },
+      });
+      for (const m of openMarkets) {
+        try { await this.settlementService.voidMarket(m.id, audit); }
+        catch (e) {
+          this.logger.warn(`Falha ao anular mercado ${m.id} ao cancelar CategoryEvent ${id}: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       await tx.categoryEvent.update({ where: { id }, data: { status: CategoryEventStatus.CANCELED } });
-      await this.logAudit(tx, 'CATEGORY_EVENT_CANCEL', 'CategoryEvent', id, {}, audit);
+
+      // Propaga cancel pro Event linkado (senão GET /events público continua exibindo).
+      if (event.eventId) {
+        await tx.duel.updateMany({
+          where: {
+            eventId: event.eventId,
+            status: { in: [DuelStatus.SCHEDULED, DuelStatus.BOOKING_OPEN, DuelStatus.BOOKING_CLOSED] },
+          },
+          data: { status: DuelStatus.CANCELED },
+        });
+        await tx.market.updateMany({
+          where: { eventId: event.eventId, status: { not: MarketStatus.SETTLED } },
+          data: { status: MarketStatus.CLOSED },
+        });
+        await tx.event.update({
+          where: { id: event.eventId },
+          data: { status: EventStatus.CANCELED },
+        });
+      }
+
+      await this.logAudit(tx, 'CATEGORY_EVENT_CANCEL', 'CategoryEvent', id, { eventId: event.eventId }, audit);
       return { id, status: CategoryEventStatus.CANCELED };
     });
   }

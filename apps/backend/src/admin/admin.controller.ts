@@ -421,8 +421,16 @@ export class AdminController {
 
   @Get('audit-logs')
   @Roles(UserRole.ADMIN, UserRole.AUDITOR)
-  auditLogs(@Query('limit') limit?: string) {
-    return this.adminService.listAuditLogs(limit ? Number(limit) : 100);
+  auditLogs(
+    @Query('limit') limit?: string,
+    @Query('since') since?: string,
+    @Query('entity') entity?: string,
+  ) {
+    return this.adminService.listAuditLogs({
+      limit: limit ? Number(limit) : 200,
+      since: since ? new Date(since) : undefined,
+      entity: entity || undefined,
+    });
   }
 
   private auditFromReq(req: ReqUser) {

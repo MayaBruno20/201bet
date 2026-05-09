@@ -2,9 +2,16 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 
-export type DisclaimerVariant = 'amber' | 'red' | 'blue' | 'emerald' | 'violet' | 'neutral';
+export type DisclaimerVariant = 'amber' | 'rose' | 'sky' | 'emerald' | 'violet' | 'neutral';
 
-const VALID_VARIANTS: DisclaimerVariant[] = ['amber', 'red', 'blue', 'emerald', 'violet', 'neutral'];
+const VALID_VARIANTS: DisclaimerVariant[] = ['amber', 'rose', 'sky', 'emerald', 'violet', 'neutral'];
+
+// Aliases legados (dados gravados antes do alinhamento com o design system do admin).
+// Mantém compatibilidade — usuário pode editar disclaimers antigos sem 400.
+const VARIANT_ALIASES: Record<string, DisclaimerVariant> = {
+  red: 'rose',
+  blue: 'sky',
+};
 
 export type UpsertDisclaimerInput = {
   message?: string;
@@ -75,9 +82,10 @@ export class SiteDisclaimersService {
   private normalizeVariant(raw?: string): string {
     if (!raw) return 'amber';
     const lower = raw.toLowerCase();
-    if (!VALID_VARIANTS.includes(lower as DisclaimerVariant)) {
+    const mapped = VARIANT_ALIASES[lower] ?? lower;
+    if (!VALID_VARIANTS.includes(mapped as DisclaimerVariant)) {
       throw new BadRequestException(`Variante inválida. Use: ${VALID_VARIANTS.join(', ')}`);
     }
-    return lower;
+    return mapped;
   }
 }
