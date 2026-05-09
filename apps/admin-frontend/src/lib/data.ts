@@ -213,11 +213,13 @@ type BackendListItem = {
 type BackendAuditLog = {
   id: string;
   actorUserId?: string | null;
-  actor?: { email?: string; role?: string } | null;
+  /** Backend serializa via include `actorUser` (não `actor`). */
+  actorUser?: { id?: string; email?: string; name?: string; role?: string } | null;
   action: string;
   entity: string;
   entityId?: string | null;
   ipAddress?: string | null;
+  userAgent?: string | null;
   payload?: unknown;
   createdAt: string;
 };
@@ -456,7 +458,7 @@ export async function fetchLists(): Promise<ListItem[]> {
 export async function fetchActivity(): Promise<Activity[]> {
   const logs = await api.get<BackendAuditLog[]>(ENDPOINTS.AUDIT.list);
   return logs.slice(0, 10).map((l) => ({
-    who: l.actor?.email ?? l.actorUserId ?? 'sistema',
+    who: l.actorUser?.email ?? l.actorUserId ?? 'sistema',
     what: humanizeAction(l.action),
     target: `${l.entity}${l.entityId ? ` ${l.entityId.slice(0, 8)}` : ''}`,
     when: ago(l.createdAt),
@@ -464,22 +466,31 @@ export async function fetchActivity(): Promise<Activity[]> {
   }));
 }
 
-/** Audit log full. */
-export async function fetchAuditLog(): Promise<AuditEntry[]> {
-  try {
-    const logs = await api.get<BackendAuditLog[]>(ENDPOINTS.AUDIT.list);
-    return logs.slice(0, 200).map((l, i) => ({
-      id: i + 1,
-      actor: l.actor?.email ?? l.actorUserId ?? 'sistema',
-      actorRole: l.actor?.role ?? 'Sistema',
-      action: humanizeAction(l.action),
-      target: `${l.entity}${l.entityId ? ` · ${l.entityId.slice(0, 8)}` : ''}`,
-      targetType: l.entity,
-      ip: l.ipAddress ?? '—',
-      when: new Date(l.createdAt).toLocaleString('pt-BR'),
-      severity: l.action.includes('FAIL') || l.action.includes('CRITICAL') ? 'error' : l.action.includes('CANCEL') || l.action.includes('VOID') ? 'warn' : 'info',
-    }));
-  } catch { return AUDIT; }
+/** Audit log com filtros opcionais. Lança erro se a chamada falhar — sem fallback mock. */
+export async function fetchAuditLog(opts: { hours?: number; entity?: string; limit?: number } = {}): Promise<AuditEntry[]> {
+  const params = new URLSearchParams();
+  if (opts.hours) {
+    params.set('since', new Date(Date.now() - opts.hours * 3600_000).toISOString());
+  }
+  if (opts.entity) params.set('entity', opts.entity);
+  if (opts.limit) params.set('limit', String(opts.limit));
+  const qs = params.toString();
+  const url = `${ENDPOINTS.AUDIT.list}${qs ? `?${qs}` : ''}`;
+  const logs = await api.get<BackendAuditLog[]>(url);
+  return logs.map((l, i) => ({
+    id: i + 1,
+    actor: l.actorUser?.email ?? l.actorUserId ?? 'sistema',
+    actorRole: l.actorUser?.role ?? 'Sistema',
+    action: humanizeAction(l.action),
+    target: `${l.entity}${l.entityId ? ` · ${l.entityId.slice(0, 8)}` : ''}`,
+    targetType: l.entity,
+    ip: l.ipAddress ?? '—',
+    when: new Date(l.createdAt).toLocaleString('pt-BR'),
+    severity:
+      l.action.includes('FAIL') || l.action.includes('CRITICAL') || l.action.includes('REJECT') ? 'error'
+      : l.action.includes('CANCEL') || l.action.includes('VOID') || l.action.includes('DEACTIVATE') || l.action.includes('LOGOUT') ? 'warn'
+      : 'info',
+  }));
 }
 
 function humanizeAction(action: string): string {

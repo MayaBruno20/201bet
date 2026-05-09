@@ -104,7 +104,10 @@ export class QuickDuelService {
     const created = await tx.car.create({
       data: {
         driverId: driver.id,
-        name: driver.team ? `${driver.name} — ${driver.team}` : driver.name,
+        // Car.name vai vazio — admin preenche depois via /carros se quiser exibir
+        // o veículo no card. Antes concatenava driver.name+team aqui, mas isso
+        // duplicava o nome do piloto no card de embate (já mostrado em separado).
+        name: '',
         category: 'QUICK',
         number: driver.carNumber ?? undefined,
       },

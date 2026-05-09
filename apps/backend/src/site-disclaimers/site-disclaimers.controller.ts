@@ -27,28 +27,28 @@ export class SiteDisclaimersController {
   }
 
   // ── Admin ──
-  @Get('admin/site-disclaimers')
+  @Get('admin/disclaimers')
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.OPERATOR)
   listAll() {
     return this.svc.listAll();
   }
 
-  @Post('admin/site-disclaimers')
+  @Post('admin/disclaimers')
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.OPERATOR)
   create(@Body() body: UpsertDisclaimerInput) {
     return this.svc.create(body);
   }
 
-  @Patch('admin/site-disclaimers/:id')
+  @Patch('admin/disclaimers/:id')
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.OPERATOR)
   update(@Param('id', ParseUUIDPipe) id: string, @Body() body: UpsertDisclaimerInput) {
     return this.svc.update(id, body);
   }
 
-  @Delete('admin/site-disclaimers/:id')
+  @Delete('admin/disclaimers/:id')
   @UseGuards(AdminJwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.OPERATOR)
   remove(@Param('id', ParseUUIDPipe) id: string) {

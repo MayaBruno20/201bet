@@ -34,7 +34,7 @@ export default function UsuariosPage() {
     name: '', email: '', password: '', cpf: '', birthDate: '', role: 'OPERATOR' as Exclude<Role, 'USER'>,
   });
 
-  const [adjust, setAdjust] = React.useState({ amount: '', operation: 'CREDIT' as 'CREDIT' | 'DEBIT', reason: '' });
+  const [adjust, setAdjust] = React.useState({ amount: '', operation: 'ADD' as 'ADD' | 'REMOVE', reason: '' });
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -107,9 +107,9 @@ export default function UsuariosPage() {
         operation: adjust.operation,
         reason: adjust.reason.trim(),
       });
-      push({ title: 'Saldo ajustado', body: `${adjust.operation === 'CREDIT' ? '+' : '-'} R$ ${value.toFixed(2)}`, tone: adjust.operation === 'CREDIT' ? 'emerald' : 'amber' });
+      push({ title: 'Saldo ajustado', body: `${adjust.operation === 'ADD' ? '+' : '-'} R$ ${value.toFixed(2)}`, tone: adjust.operation === 'ADD' ? 'emerald' : 'amber' });
       setAdjustUser(null);
-      setAdjust({ amount: '', operation: 'CREDIT', reason: '' });
+      setAdjust({ amount: '', operation: 'ADD', reason: '' });
       await load();
     } catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
     finally { setBusy(false); }
@@ -196,7 +196,7 @@ export default function UsuariosPage() {
                     <td><StatusChip status={u.status}/></td>
                     <td className="text-right" style={{ paddingRight: 20 }}>
                       <div className="flex justify-end gap-1">
-                        <button className="btn-icon focusable" title="Ajustar saldo" onClick={() => setAdjustUser(u)} disabled={role !== 'USER'}>
+                        <button className="btn-icon focusable" title="Ajustar saldo" onClick={() => setAdjustUser(u)}>
                           <I.Wallet size={15}/>
                         </button>
                         {u.status === 'Ativo' && (
@@ -314,13 +314,13 @@ export default function UsuariosPage() {
 
             <div className="grid grid-cols-2 gap-2 mb-3">
               <button className="btn"
-                onClick={() => setAdjust((a) => ({ ...a, operation: 'CREDIT' }))}
-                style={{ background: adjust.operation === 'CREDIT' ? 'var(--emerald-soft)' : 'var(--surface-2)', color: adjust.operation === 'CREDIT' ? 'var(--emerald)' : 'var(--text-2)' }}>
+                onClick={() => setAdjust((a) => ({ ...a, operation: 'ADD' }))}
+                style={{ background: adjust.operation === 'ADD' ? 'var(--emerald-soft)' : 'var(--surface-2)', color: adjust.operation === 'ADD' ? 'var(--emerald)' : 'var(--text-2)' }}>
                 <I.Plus size={13}/> Creditar
               </button>
               <button className="btn"
-                onClick={() => setAdjust((a) => ({ ...a, operation: 'DEBIT' }))}
-                style={{ background: adjust.operation === 'DEBIT' ? 'var(--rose-soft)' : 'var(--surface-2)', color: adjust.operation === 'DEBIT' ? 'var(--rose)' : 'var(--text-2)' }}>
+                onClick={() => setAdjust((a) => ({ ...a, operation: 'REMOVE' }))}
+                style={{ background: adjust.operation === 'REMOVE' ? 'var(--rose-soft)' : 'var(--surface-2)', color: adjust.operation === 'REMOVE' ? 'var(--rose)' : 'var(--text-2)' }}>
                 <I.X size={13}/> Debitar
               </button>
             </div>
@@ -337,6 +337,13 @@ export default function UsuariosPage() {
                 onChange={(e) => setAdjust((a) => ({ ...a, reason: e.target.value }))}
                 placeholder="Ex.: estorno transação 12345"/>
             </div>
+
+            {adjustUser.cat !== 'USER' && (
+              <div className="rounded-[10px] px-3 py-2 text-[11.5px] mb-3"
+                style={{ background: 'var(--rose-soft)', color: 'var(--rose)', border: '1px solid var(--rose)' }}>
+                🔒 Você está ajustando saldo de uma <strong>conta administrativa ({adjustUser.cat})</strong>. Use só pra teste/correção pontual — não é fluxo padrão.
+              </div>
+            )}
 
             <div className="rounded-[10px] px-3 py-2 text-[11.5px] mb-4"
               style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>

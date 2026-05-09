@@ -139,6 +139,22 @@ export class BrazilListEventsAdminController {
     return this.service.adminGenerateMatchups(id, dto, this.auditFromReq(req));
   }
 
+  @Post(':id/open-all-markets')
+  openAllMarkets(
+    @Param('id') id: string,
+    @Body() body: { roundNumber?: number; roundType?: 'ODD' | 'EVEN' | 'SHARK_TANK' } | undefined,
+    @Req() req: ReqUser,
+  ) {
+    const filter = body?.roundNumber || body?.roundType
+      ? {
+          roundNumber: body?.roundNumber,
+          roundType: body?.roundType as 'ODD' | 'EVEN' | 'SHARK_TANK' | undefined,
+        }
+      : undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return this.service.adminOpenAllMatchupsForRound(id, filter as any, this.auditFromReq(req));
+  }
+
   @Post(':id/matchups')
   createMatchup(
     @Param('id') id: string,

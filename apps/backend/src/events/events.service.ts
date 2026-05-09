@@ -95,7 +95,19 @@ export class EventsService {
     ]);
 
     const defaultRake = Number(process.env.MARKET_MARGIN_PERCENT ?? '20') / 100;
-    const fromEvent: PublicEvent[] = events.map((event) => ({
+
+    // Filtro pós-load: esconde eventos sem nenhum duelo ativo (apostável).
+    // Considera "ativo" qualquer duelo cujo status != CANCELED. Isso cobre 2 casos:
+    //   1. Container de Embates Rápidos com o único duelo cancelado (não há mais
+    //      o que apostar — não deve aparecer).
+    //   2. Event órfão criado antes mas sem duelos (rascunho que ninguém pode usar).
+    // Eventos com pelo menos 1 duelo BOOKING_OPEN/CLOSED/SCHEDULED/FINISHED passam,
+    // permitindo o público acompanhar resultados.
+    const eventsWithActiveDuels = events.filter((event) =>
+      event.duels.some((d) => d.status !== 'CANCELED'),
+    );
+
+    const fromEvent: PublicEvent[] = eventsWithActiveDuels.map((event) => ({
       id: event.id,
       sport: event.sport,
       name: event.name,
