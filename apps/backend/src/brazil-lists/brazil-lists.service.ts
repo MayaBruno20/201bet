@@ -35,6 +35,7 @@ import {
   UpdateSharkTankEntryDto,
 } from './dto/shark-tank.dto';
 import { SettlementService } from '../settlement.service';
+import { ParsedRosterEntry, RosterParserService } from './roster-parser.service';
 
 type AuditContext = {
   actorUserId?: string;
@@ -50,6 +51,7 @@ export class BrazilListsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly settlementService: SettlementService,
+    private readonly rosterParser: RosterParserService,
   ) {}
 
   // ── Public ─────────────────────────────────────────────
@@ -134,6 +136,8 @@ export class BrazilListsService {
           orderBy: { position: 'asc' },
         },
         events: {
+          // Público NÃO vê eventos CANCELED — eles existem só pra trilha de auditoria.
+          where: { status: { not: ListEventStatus.CANCELED } },
           orderBy: { scheduledAt: 'desc' },
           take: 5,
           include: {
@@ -331,6 +335,194 @@ export class BrazilListsService {
       await this.logAudit(tx, 'BRAZIL_ROSTER_DELETE', 'ListRoster', rosterId, null, audit);
       return { success: true };
     });
+  }
+
+  // ── Admin: roster import (PDF/DOCX) ──────────────────────
+
+  /** Parse "best-effort" — devolve entries pro admin revisar antes de aplicar. */
+  async adminParseRosterFile(listId: string, buffer: Buffer, mimeType: string) {
+    await this.ensureListExists(listId);
+    const entries = await this.rosterParser.parseFile(buffer, mimeType);
+    return { entries };
+  }
+
+  /**
+   * Substitui o roster da lista pelos entries informados. Atômico — se algo der
+   * ruim no meio, a transação reverte e o roster original fica intacto.
+   *
+   * Match de Driver:
+   *  1. Procura no roster atual da lista por nome (case-insensitive, trimmed) → reusa + atualiza fields
+   *  2. Procura no banco global de Drivers por nome → reusa + atualiza fields
+   *  3. Senão, cria novo Driver
+   *
+   * Pilotos que estão no roster atual mas NÃO aparecem nos entries → saem do roster
+   * (Driver permanece no banco, pode estar em outras listas).
+   *
+   * Posição 1 = isKing. Demais = não.
+   */
+  async adminBulkReplaceRoster(
+    listId: string,
+    entries: ParsedRosterEntry[],
+    audit: AuditContext,
+  ) {
+    const list = await this.ensureListExists(listId);
+    const maxPosition = list.format === ListFormat.TOP_20 ? 20 : 10;
+
+    // Valida entries
+    if (!Array.isArray(entries) || entries.length === 0) {
+      throw new BadRequestException('Envie ao menos uma entrada no roster.');
+    }
+    const seenPositions = new Set<number>();
+    const seenNames = new Set<string>();
+    const normalized: ParsedRosterEntry[] = [];
+    for (const e of entries) {
+      const name = (e.driverName ?? '').trim();
+      if (!name) throw new BadRequestException('Toda entrada precisa de nome do piloto.');
+      const pos = Number(e.position);
+      if (!Number.isInteger(pos) || pos < 1 || pos > maxPosition) {
+        throw new BadRequestException(
+          `Posição inválida (${e.position}) para ${name}. Esta lista é ${list.format}, posições 1–${maxPosition}.`,
+        );
+      }
+      if (seenPositions.has(pos)) {
+        throw new BadRequestException(`Posição ${pos} aparece mais de uma vez.`);
+      }
+      if (seenNames.has(name.toLowerCase())) {
+        throw new BadRequestException(`Piloto "${name}" aparece mais de uma vez.`);
+      }
+      seenPositions.add(pos);
+      seenNames.add(name.toLowerCase());
+      normalized.push({
+        position: pos,
+        driverName: name,
+        nickname: e.nickname?.trim() || null,
+        carName: e.carName?.trim() || null,
+        carNumber: e.carNumber?.trim() || null,
+      });
+    }
+    normalized.sort((a, b) => a.position - b.position);
+
+    return this.prisma.$transaction(async (tx) => {
+      // Roster atual com drivers pra match por nome
+      const currentRoster = await tx.listRoster.findMany({
+        where: { listId },
+        include: { driver: true },
+      });
+      const currentByNameLower = new Map(
+        currentRoster.map((r) => [r.driver.name.trim().toLowerCase(), r] as const),
+      );
+      const currentIdsToKeep = new Set<string>();
+
+      // Drop temporário das positions atuais pra evitar conflito de unique(listId, position)
+      // durante o re-arranjo.
+      await tx.listRoster.updateMany({
+        where: { listId },
+        data: { position: -1 },
+      });
+
+      const summary = {
+        created: 0,
+        reused: 0,
+        updated: 0,
+        removed: 0,
+        total: normalized.length,
+      };
+
+      for (const entry of normalized) {
+        const nameLower = entry.driverName.toLowerCase();
+        let driverId: string;
+
+        const existingRoster = currentByNameLower.get(nameLower);
+        if (existingRoster) {
+          // (1) match no roster da lista — reusa e atualiza
+          driverId = existingRoster.driverId;
+          const patch = this.buildDriverPatch(existingRoster.driver, entry);
+          if (Object.keys(patch).length > 0) {
+            await tx.driver.update({ where: { id: driverId }, data: patch });
+            summary.updated += 1;
+          }
+          await tx.listRoster.update({
+            where: { id: existingRoster.id },
+            data: {
+              position: entry.position,
+              isKing: entry.position === 1,
+              driverId,
+            },
+          });
+          currentIdsToKeep.add(existingRoster.id);
+          summary.reused += 1;
+        } else {
+          // (2) match global por nome
+          const globalDriver = await tx.driver.findFirst({
+            where: { name: { equals: entry.driverName, mode: 'insensitive' } },
+          });
+          if (globalDriver) {
+            driverId = globalDriver.id;
+            const patch = this.buildDriverPatch(globalDriver, entry);
+            if (Object.keys(patch).length > 0) {
+              await tx.driver.update({ where: { id: driverId }, data: patch });
+              summary.updated += 1;
+            }
+          } else {
+            // (3) cria novo Driver
+            const created = await tx.driver.create({
+              data: {
+                name: entry.driverName,
+                nickname: entry.nickname,
+                carNumber: entry.carNumber,
+              },
+            });
+            driverId = created.id;
+          }
+
+          const newRoster = await tx.listRoster.create({
+            data: {
+              listId,
+              driverId,
+              position: entry.position,
+              isKing: entry.position === 1,
+            },
+          });
+          currentIdsToKeep.add(newRoster.id);
+          summary.created += 1;
+        }
+      }
+
+      // Remove do roster os que não vieram no novo doc (Driver permanece no banco)
+      const removed = await tx.listRoster.deleteMany({
+        where: {
+          listId,
+          id: { notIn: [...currentIdsToKeep] },
+        },
+      });
+      summary.removed = removed.count;
+
+      // Lista com roster ≥ 2 pilotos é elegível pra ficar pública. Se ainda
+      // estava `active: false` (típico recém-criado), ativa automaticamente —
+      // o admin importou o roster, então a intenção é deixá-la viva.
+      if (!list.active && normalized.length >= 2) {
+        await tx.brazilList.update({
+          where: { id: listId },
+          data: { active: true },
+        });
+      }
+
+      await this.logAudit(tx, 'BRAZIL_ROSTER_BULK_REPLACE', 'BrazilList', listId, summary, audit);
+
+      return summary;
+    }, { timeout: 30_000, maxWait: 5_000 });
+  }
+
+  /** Patch só com campos que realmente mudaram (evita update no-op + audit ruído). */
+  private buildDriverPatch(
+    current: { name: string; nickname: string | null; carNumber: string | null },
+    next: ParsedRosterEntry,
+  ): Prisma.DriverUpdateInput {
+    const patch: Prisma.DriverUpdateInput = {};
+    if (next.driverName && next.driverName !== current.name) patch.name = next.driverName;
+    if ((next.nickname ?? null) !== (current.nickname ?? null)) patch.nickname = next.nickname;
+    if ((next.carNumber ?? null) !== (current.carNumber ?? null)) patch.carNumber = next.carNumber;
+    return patch;
   }
 
   // ── Admin: events ──────────────────────────────────────

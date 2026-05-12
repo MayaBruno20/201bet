@@ -26,22 +26,31 @@ export function BrazilListsSection({ className }: { className?: string }) {
 
   useEffect(() => {
     let alive = true;
-    fetch(`${apiUrl}/brazil-lists`, { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: ApiList[]) => {
-        if (!alive || !Array.isArray(data)) return;
-        const mapped: BrazilList[] = data.map((l) => ({
-          areaCode: l.areaCode,
-          kingName: l.kingName,
-          format: l.format,
-          rosterCount: l.rosterCount,
-          active: l.active,
-        }));
-        setLists(mapped);
-      })
-      .catch(() => undefined);
+
+    const fetchLists = () => {
+      fetch(`${apiUrl}/brazil-lists`, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((data: ApiList[]) => {
+          if (!alive || !Array.isArray(data)) return;
+          const mapped: BrazilList[] = data.map((l) => ({
+            areaCode: l.areaCode,
+            kingName: l.kingName,
+            format: l.format,
+            rosterCount: l.rosterCount,
+            active: l.active,
+          }));
+          setLists(mapped);
+        })
+        .catch(() => undefined);
+    };
+
+    fetchLists();
+    // Refetch a cada 60s — quando o admin importa um roster novo no painel,
+    // a lista aparece no mapa público sem precisar de F5.
+    const id = window.setInterval(fetchLists, 60_000);
     return () => {
       alive = false;
+      window.clearInterval(id);
     };
   }, []);
 

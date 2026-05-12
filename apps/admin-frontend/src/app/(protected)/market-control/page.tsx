@@ -44,10 +44,14 @@ export default function MarketControlPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  const events = ['all', ...Array.from(new Set(markets.map((m) => m.eventName)))];
-  const filtered = eventFilter === 'all' ? markets : markets.filter((m) => m.eventName === eventFilter);
+  // Página é "Mercados ao vivo": lista APENAS mercados OPEN.
+  // Stats cards no topo continuam mostrando contadores totais (admin precisa ver
+  // se tem CLOSED/SUSPENDED pendentes de auditoria em outra aba).
+  const openMarkets = React.useMemo(() => markets.filter((m) => m.status === 'OPEN'), [markets]);
+  const events = ['all', ...Array.from(new Set(openMarkets.map((m) => m.eventName)))];
+  const filtered = eventFilter === 'all' ? openMarkets : openMarkets.filter((m) => m.eventName === eventFilter);
 
-  // Agrupa por evento e calcula pote total do evento (soma de todos os mercados dele)
+  // Agrupa por evento e calcula pote total do evento (só dos mercados OPEN)
   const groupedByEvent = React.useMemo(() => {
     const map = new Map<string, { eventId: string; eventName: string; eventPool: number; rows: MarketRow[] }>();
     for (const m of filtered) {
@@ -129,7 +133,8 @@ export default function MarketControlPage() {
   const suspended = markets.filter((m) => m.status === 'SUSPENDED').length;
   const closed = markets.filter((m) => m.status === 'CLOSED').length;
   const settled = markets.filter((m) => m.status === 'SETTLED').length;
-  const totalVolume = markets.reduce((s, m) => s + m.totalPool, 0);
+  // Volume total reflete só os mercados AO VIVO (OPEN) — fechados/auditados não contam.
+  const totalVolume = openMarkets.reduce((s, m) => s + m.totalPool, 0);
 
   return (
     <Page eyebrow="Operação" title="Mercados ao vivo"
@@ -158,7 +163,7 @@ export default function MarketControlPage() {
             <button key={e} onClick={() => setEventFilter(e)}
               className="px-3 py-1.5 text-[12px] font-semibold rounded-[10px]"
               style={{ background: eventFilter === e ? 'var(--accent-soft)' : 'var(--surface-2)', color: eventFilter === e ? 'var(--accent)' : 'var(--text-2)' }}>
-              {e === 'all' ? `Todos (${markets.length})` : e}
+              {e === 'all' ? `Todos (${openMarkets.length})` : e}
             </button>
           ))}
         </div>

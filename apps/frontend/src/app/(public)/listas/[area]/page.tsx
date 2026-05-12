@@ -160,15 +160,20 @@ export default function ListaAreaPage() {
 
             <section className='mt-6 rounded-2xl border border-white/10 bg-[#101525] p-5 sm:p-6'>
               <h2 className='text-base font-semibold tracking-tight sm:text-lg'>Próximos eventos</h2>
-              {list.events.length === 0 ? (
-                <p className='mt-2 text-sm text-white/40'>Nenhum evento agendado. Consulte a administração.</p>
-              ) : (
-                <div className='mt-4 space-y-4'>
-                  {list.events.map((ev) => (
-                    <EventBlock key={ev.id} event={ev} />
-                  ))}
-                </div>
-              )}
+              {(() => {
+                // Defesa em profundidade: mesmo que a API retorne CANCELED, escondemos aqui.
+                const visible = list.events.filter((ev) => ev.status !== 'CANCELED');
+                if (visible.length === 0) {
+                  return <p className='mt-2 text-sm text-white/40'>Nenhum evento agendado. Consulte a administração.</p>;
+                }
+                return (
+                  <div className='mt-4 space-y-4'>
+                    {visible.map((ev) => (
+                      <EventBlock key={ev.id} event={ev} />
+                    ))}
+                  </div>
+                );
+              })()}
             </section>
           </>
         )}

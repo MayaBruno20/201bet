@@ -78,30 +78,39 @@ export function BetSlipDrawer({
       <div className='h-px w-full bg-[linear-gradient(90deg,transparent,rgba(255,176,40,0.6),transparent)]' />
 
       <div className='relative bg-[#0b0f1c]/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-30px_80px_-20px_rgba(0,0,0,0.85)]'>
-        <button
-          type='button'
-          onClick={() => setExpanded((e) => !e)}
-          className='w-full flex items-center gap-3 sm:gap-4 px-4 sm:px-6 h-14 text-left focus:outline-none'
-          aria-expanded={expanded}
-        >
-          <span className='relative inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[rgba(255,176,40,0.12)] text-[#ffb028]'>
-            <Receipt className='h-4 w-4' />
-            <span className='absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#ffb028] text-[#1a1305] font-mono text-[10px] font-bold flex items-center justify-center tabular-nums'>
-              {count}
+        {/* Header bar: toggle (left) e SubmitButton (right) são botões IRMÃOS,
+            nunca aninhados — HTML proíbe <button> dentro de <button>. */}
+        <div className='w-full flex items-center gap-3 sm:gap-4 px-4 sm:px-6 h-14'>
+          <button
+            type='button'
+            onClick={() => setExpanded((e) => !e)}
+            className='flex-1 flex items-center gap-3 sm:gap-4 text-left focus:outline-none min-w-0'
+            aria-expanded={expanded}
+            aria-label={expanded ? 'Minimizar bilhete' : 'Expandir bilhete'}
+          >
+            <span className='relative inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[rgba(255,176,40,0.12)] text-[#ffb028] shrink-0'>
+              <Receipt className='h-4 w-4' />
+              <span className='absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#ffb028] text-[#1a1305] font-mono text-[10px] font-bold flex items-center justify-center tabular-nums'>
+                {count}
+              </span>
             </span>
-          </span>
 
-          <div className='flex-1 min-w-0'>
-            <div className='text-[11px] uppercase tracking-[0.14em] text-[#767b8a] font-semibold'>
-              Bilhete
+            <div className='flex-1 min-w-0'>
+              <div className='text-[11px] uppercase tracking-[0.14em] text-[#767b8a] font-semibold'>
+                Bilhete
+              </div>
+              <div className='font-display text-[13px] sm:text-[14px] text-[#f1f3f8] truncate'>
+                {count} {count === 1 ? 'embate' : 'embates'} ·{' '}
+                <span className='font-mono tabular-nums'>{formatBRL(totalStake)}</span>{' '}
+                <span className='text-[#767b8a]'>→</span>{' '}
+                <span className='font-mono text-[#21d97a] tabular-nums'>{formatBRL(totalReturn)}</span>
+              </div>
             </div>
-            <div className='font-display text-[13px] sm:text-[14px] text-[#f1f3f8] truncate'>
-              {count} {count === 1 ? 'embate' : 'embates'} ·{' '}
-              <span className='font-mono tabular-nums'>{formatBRL(totalStake)}</span>{' '}
-              <span className='text-[#767b8a]'>→</span>{' '}
-              <span className='font-mono text-[#21d97a] tabular-nums'>{formatBRL(totalReturn)}</span>
-            </div>
-          </div>
+
+            <span className='inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.04] border border-white/10 text-[#b8bcc9] shrink-0'>
+              {expanded ? <ChevronDown className='h-4 w-4' /> : <ChevronUp className='h-4 w-4' />}
+            </span>
+          </button>
 
           {!expanded && (
             <SubmitButton
@@ -111,17 +120,10 @@ export function BetSlipDrawer({
               submitting={submitting}
               disabled={!canSubmit}
               compact
-              onClick={(e) => {
-                e.stopPropagation();
-                onSubmit?.();
-              }}
+              onClick={() => onSubmit?.()}
             />
           )}
-
-          <span className='ml-2 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.04] border border-white/10 text-[#b8bcc9]'>
-            {expanded ? <ChevronDown className='h-4 w-4' /> : <ChevronUp className='h-4 w-4' />}
-          </span>
-        </button>
+        </div>
 
         <AnimatePresence initial={false}>
           {expanded && (

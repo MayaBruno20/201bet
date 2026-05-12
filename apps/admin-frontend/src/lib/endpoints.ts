@@ -121,6 +121,8 @@ export const ENDPOINTS = {
     rosters: {
       upsert: (listId: string) => `/admin/brazil-lists/${listId}/roster`,
       delete: (listId: string, rosterId: string) => `/admin/brazil-lists/${listId}/roster/${rosterId}`,
+      parseFile: (listId: string) => `/admin/brazil-lists/${listId}/roster/parse-file`,
+      bulkReplace: (listId: string) => `/admin/brazil-lists/${listId}/roster/bulk-replace`,
     },
     sharkTank: {
       // SharkTank é per-EVENT no schema (listEventId), endpoints sob /brazil-list-events
