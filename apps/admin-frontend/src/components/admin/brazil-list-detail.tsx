@@ -51,7 +51,7 @@ type ListEvent = {
   name: string;
   scheduledAt: string;
   endsAt?: string | null;
-  status: 'DRAFT' | 'IN_PROGRESS' | 'FINISHED' | 'CANCELED';
+  status: 'DRAFT' | 'SCHEDULED' | 'IN_PROGRESS' | 'FINISHED' | 'CANCELED';
   type: 'REGULAR' | 'ARMAGEDDON' | 'SHARK_TANK';
   notes?: string | null;
   matchups: ListMatchup[];
@@ -71,6 +71,7 @@ type ListDetail = {
 
 const EVENT_STATUS_LABEL: Record<ListEvent['status'], string> = {
   DRAFT: 'Rascunho',
+  SCHEDULED: 'Agendado',
   IN_PROGRESS: 'Ao vivo',
   FINISHED: 'Encerrado',
   CANCELED: 'Cancelado',
@@ -437,10 +438,12 @@ function EventModal({ listId, event, onClose, onSaved }: {
         name: name.trim(),
         scheduledAt,
         endsAt: endsAt || undefined,
-        type,
         notes: notes.trim() || undefined,
       };
       if (!isEdit) {
+        // O `type` só faz sentido na criação — depois disso, matchups e
+        // configuração específica (Shark Tank) já estão vinculados.
+        payload.type = type;
         payload.featured = featured;
         if (bannerUrl.trim()) payload.bannerUrl = bannerUrl.trim();
         await api.post(ENDPOINTS.BRAZIL_LISTS.events.create(listId), payload);
@@ -493,11 +496,18 @@ function EventModal({ listId, event, onClose, onSaved }: {
           </div>
           <div className={isEdit ? 'grid grid-cols-2 gap-3' : ''}>
             <div>
-              <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Tipo</label>
-              <select className="input mt-1" value={type} onChange={(e) => setType(e.target.value as ListEvent['type'])}>
-                <option value="REGULAR">Regular</option>
-                <option value="ARMAGEDDON">Armageddon</option>
-                <option value="SHARK_TANK">Shark Tank</option>
+              <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">
+                Tipo {isEdit && <span className='text-[10px] normal-case font-normal text-[color:var(--text-3)]'>(não editável)</span>}
+              </label>
+              <select
+                className='input mt-1'
+                value={type}
+                disabled={isEdit}
+                onChange={(e) => setType(e.target.value as ListEvent['type'])}
+              >
+                <option value='REGULAR'>Regular</option>
+                <option value='ARMAGEDDON'>Armageddon</option>
+                <option value='SHARK_TANK'>Shark Tank</option>
               </select>
             </div>
             {isEdit && (
@@ -505,6 +515,7 @@ function EventModal({ listId, event, onClose, onSaved }: {
                 <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Status</label>
                 <select className="input mt-1" value={status} onChange={(e) => setStatus(e.target.value as ListEvent['status'])}>
                   <option value="DRAFT">Rascunho</option>
+                  <option value="SCHEDULED">Agendado</option>
                   <option value="IN_PROGRESS">Ao vivo</option>
                   <option value="FINISHED">Encerrado</option>
                   <option value="CANCELED">Cancelado</option>

@@ -61,40 +61,41 @@ export default function RegulamentoPage() {
             <div className='grid grid-cols-1 gap-3 md:grid-cols-2'>
               <RoundCard
                 title='Rodada ÍMPAR (ODD)'
-                description='Os pilotos das posições ímpares desafiam as posições pares imediatamente abaixo. A posição #1 (Rei) e a última posição não entram nesta rodada.'
+                description='Os pilotos das posições ímpares desafiam os pares imediatamente abaixo. A disputa começa pelo 3º atacando o 2º, e segue subindo até o último par. A posição #1 (Rei) não corre nesta rodada.'
                 rows={[
-                  '19 × 18',
-                  '17 × 16',
-                  '15 × 14',
-                  '13 × 12',
-                  '11 × 10',
-                  '9 × 8',
-                  '7 × 6',
-                  '5 × 4',
                   '3 × 2',
+                  '5 × 4',
+                  '7 × 6',
+                  '9 × 8',
+                  '11 × 10',
+                  '13 × 12',
+                  '15 × 14',
+                  '17 × 16',
+                  '19 × 18',
                 ]}
               />
               <RoundCard
                 title='Rodada PAR (EVEN)'
-                description='Todas as posições competem: o 20º enfrenta o 19º, o 18º enfrenta o 17º e assim por diante até o embate 2 × 1, onde o Rei defende o título.'
+                description='Pares atacam ímpares. Começa pelo 2º desafiando o Rei (1º) e sobe pela lista até o último embate. Todas as posições competem.'
                 rows={[
-                  '20 × 19',
-                  '18 × 17',
-                  '16 × 15',
-                  '14 × 13',
-                  '12 × 11',
-                  '10 × 9',
-                  '8 × 7',
-                  '6 × 5',
-                  '4 × 3',
                   '2 × 1',
+                  '4 × 3',
+                  '6 × 5',
+                  '8 × 7',
+                  '10 × 9',
+                  '12 × 11',
+                  '14 × 13',
+                  '16 × 15',
+                  '18 × 17',
+                  '20 × 19',
                 ]}
               />
             </div>
 
             <p className='text-xs text-white/50'>
-              Para listas TOP 10, o mesmo princípio se aplica, reduzindo proporcionalmente (ÍMPAR: 9×8, 7×6, 5×4,
-              3×2; PAR: 10×9, 8×7, 6×5, 4×3, 2×1).
+              Para listas TOP 10, o mesmo princípio se aplica, reduzindo proporcionalmente (ÍMPAR: 3×2, 5×4, 7×6,
+              9×8; PAR: 2×1, 4×3, 6×5, 8×7, 10×9). A ordem de disputa é sempre crescente, começando pelas posições
+              mais baixas.
             </p>
           </Section>
 
@@ -108,6 +109,21 @@ export default function RegulamentoPage() {
               Toda substituição manual é auditada e o embate fica marcado como <em>ajuste administrativo</em> para
               transparência da casa e dos apostadores.
             </p>
+            <div className='rounded-xl border border-amber-400/30 bg-amber-500/10 p-4'>
+              <p className='text-sm font-semibold text-amber-200'>
+                Ausência ou quebra durante o evento (Listas Brasil e Armageddon)
+              </p>
+              <p className='mt-2 text-sm text-white/80'>
+                Se um piloto <strong>não comparecer</strong> ao embate ou seu <strong>carro quebrar</strong> antes
+                ou durante a passada, ele é <strong>automaticamente desqualificado</strong> daquele confronto. O
+                piloto que compareceu (ou aquele cujo veículo permaneceu apto) é declarado vencedor pelo
+                administrador e os mercados de apostas vinculados são liquidados normalmente em favor dele.
+              </p>
+              <p className='mt-2 text-xs text-white/60'>
+                Aplica-se a embates de Listas Brasil (ÍMPAR/PAR e Shark Tank) e a confrontos de Armageddon
+                (eliminatória nacional). O registro fica auditado como <em>vitória por W.O. / quebra</em>.
+              </p>
+            </div>
           </Section>
 
           <Section title='5. Resultados e homologação'>
@@ -132,6 +148,26 @@ export default function RegulamentoPage() {
               Odds, limites e regras específicas seguem as condições padrão da 201bet para corridas de arrancada:
               consulte o FAQ de apostas para detalhes.
             </p>
+
+            <div className='rounded-xl border border-white/10 bg-white/[0.03] p-4'>
+              <p className='text-sm font-semibold text-white/90'>Como a cotação é calculada — pari-mutuel</p>
+              <p className='mt-2 text-sm text-white/70'>
+                A 201bet opera no modelo <strong>pari-mutuel</strong>: o pote total de um embate é a soma das
+                apostas dos dois lados, descontada a margem da casa. A cotação de cada lado é dinâmica —
+                quanto mais gente apostar num piloto, menor a sua cotação; quanto menos, maior. O retorno final
+                de um bilhete vencedor depende da composição do pote no fechamento do mercado.
+              </p>
+              <p className='mt-2 text-sm text-white/70'>
+                Enquanto o pote ainda está vazio (ninguém apostou em nenhum dos lados), a plataforma exibe uma
+                <strong> cotação inicial estimada de 1,90</strong> nas duas pontas, para servir de referência.
+                Essa cotação é <em>apenas indicativa</em> — ela se ajusta automaticamente assim que a primeira
+                aposta é registrada e o pote começa a se formar.
+              </p>
+              <p className='mt-2 text-xs text-white/50'>
+                A cotação efetiva do seu bilhete é a do momento do fechamento do mercado, não a do momento da
+                aposta — característica do pari-mutuel.
+              </p>
+            </div>
           </Section>
 
           <Section title='7. O título de Rei'>

@@ -9,6 +9,7 @@ import {
 import { MarketStatus, MarketType, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from './database/prisma.service';
+import { HOUSE_MARGIN_PERCENT } from './market.service';
 
 type RunnerState = {
   oddId: string;
@@ -270,9 +271,9 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
         };
       });
 
-      const rakePercent = market.rakePercent
-        ? Number(market.rakePercent)
-        : this.getDefaultRakePercent();
+      // Margem da casa é FIXA (HOUSE_MARGIN_PERCENT). A coluna market.rakePercent
+      // existe por motivos históricos mas é ignorada — regra uniforme em todos mercados.
+      const rakePercent = HOUSE_MARGIN_PERCENT;
 
       const state: MultiRunnerEngineState = {
         marketId: market.id,
@@ -377,11 +378,6 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
         state.history = state.history.slice(-120);
       }
     }
-  }
-
-  private getDefaultRakePercent(): number {
-    const env = Number(process.env.MARKET_MARGIN_PERCENT ?? '20');
-    return Number.isFinite(env) ? Math.min(50, Math.max(0, env)) : 20;
   }
 
   private getMinBet(): number {

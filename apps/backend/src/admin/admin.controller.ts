@@ -282,6 +282,18 @@ export class AdminController {
     return this.adminService.listMultiRunnerMarkets(eventId);
   }
 
+  /** Lista TODOS os mercados ao vivo (qualquer tipo, status não-SETTLED). */
+  @Get('markets/live')
+  listLiveMarkets(@Query('eventId') eventId?: string) {
+    return this.adminService.listLiveMarkets(eventId);
+  }
+
+  /** Reinicia o evento: refund de apostas em aberto + reset dos pools + reabertura dos mercados. */
+  @Post('events/:id/restart')
+  restartEvent(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
+    return this.adminService.restartEvent(id, this.auditFromReq(req));
+  }
+
   @Post('markets')
   createMarket(
     @Body() payload: { eventId: string; name: string; type: string; runners: string[]; rakePercent?: number; bookingCloseAt?: string; duelId?: string },
@@ -390,12 +402,10 @@ export class AdminController {
   // ── Config ──
 
   @Post('config/margin')
-  async updateMargin(@Body() payload: { value: number }, @Req() req: ReqUser) {
-    const val = Number(payload.value);
-    if (!Number.isFinite(val) || val < 0 || val > 50) throw new BadRequestException('Valor inválido (0-50)');
-    process.env.MARKET_MARGIN_PERCENT = String(val);
-    await this.adminService.upsertSetting({ key: 'MARKET_MARGIN_PERCENT', value: String(val), description: 'Comissão da casa %' }, this.auditFromReq(req));
-    return { marginPercent: val };
+  updateMargin() {
+    // A margem da casa é FIXA por regulamento (HOUSE_MARGIN_PERCENT = 20%).
+    // Toda a math de odds/settlement depende disso ser estável; admins não podem alterar.
+    throw new BadRequestException('A margem da casa é fixa em 20% por regulamento e não pode ser alterada.');
   }
 
   @Post('config/min-bet')

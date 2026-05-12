@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -58,6 +59,8 @@ const PRIVILEGED_ROLES: UserRole[] = [
 
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly settlementService: SettlementService,
@@ -1344,6 +1347,123 @@ export class AdminService {
         odds: { orderBy: { createdAt: 'asc' } },
       },
     });
+  }
+
+  /**
+   * Listagem para o painel "Mercados ao vivo": TODOS os mercados não-finalizados
+   * (OPEN/CLOSED/SUSPENDED), inclusive os de duelo (Passadas). Inclui o
+   * DuelPoolState pra cálculo do pote no frontend.
+   *
+   * `listMultiRunnerMarkets` (acima) é mantido só pra criação de mercados
+   * multi-runner no admin de eventos.
+   */
+  async listLiveMarkets(eventId?: string) {
+    return this.prisma.market.findMany({
+      where: {
+        status: { in: [MarketStatus.OPEN, MarketStatus.CLOSED, MarketStatus.SUSPENDED] },
+        ...(eventId ? { eventId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        event: { select: { id: true, name: true, startAt: true, status: true } },
+        odds: { orderBy: { createdAt: 'asc' } },
+        duel: { select: { poolState: true } },
+      },
+    });
+  }
+
+  /**
+   * "Reiniciar evento": refund de todas as apostas em aberto + reset dos pools
+   * dos duelos vinculados + reabertura dos mercados. O evento volta ao estado
+   * inicial (como se tivesse acabado de abrir), preservando a estrutura
+   * (matchups, mercados e odds).
+   *
+   * NÃO afeta mercados já SETTLED (auditados) — esses ficam imutáveis.
+   */
+  async restartEvent(eventId: string, audit: AuditContext = {}) {
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      include: {
+        markets: { include: { odds: true } },
+        duels: { select: { id: true } },
+      },
+    });
+    if (!event) throw new NotFoundException('Evento não encontrado');
+
+    // 1. Anular cada mercado não-SETTLED (refund das apostas em aberto).
+    // voidMarket cuida do refund integral via SettlementService — não recriar a roda aqui.
+    const marketIds = event.markets
+      .filter((m) => m.status !== MarketStatus.SETTLED)
+      .map((m) => m.id);
+
+    for (const marketId of marketIds) {
+      try {
+        await this.settlementService.voidMarket(marketId, audit);
+      } catch (e) {
+        this.logger.warn(
+          `restartEvent: falha ao anular mercado ${marketId}: ${e instanceof Error ? e.message : e}`,
+        );
+      }
+    }
+
+    // 2. Resetar pools e reabrir tudo numa transação só.
+    await this.prisma.$transaction(async (tx) => {
+      // Pools dos duelos: zerar leftPool/rightPool/leftTickets/rightTickets
+      const duelIds = event.duels.map((d) => d.id);
+      if (duelIds.length > 0) {
+        await tx.duelPoolState.updateMany({
+          where: { duelId: { in: duelIds } },
+          data: { leftPool: 0, rightPool: 0, leftTickets: 0, rightTickets: 0 },
+        });
+        // Duels voltam a BOOKING_OPEN se estavam fechados/finalizados (não tocar nos CANCELED)
+        await tx.duel.updateMany({
+          where: {
+            id: { in: duelIds },
+            status: { in: [DuelStatus.BOOKING_CLOSED, DuelStatus.FINISHED] },
+          },
+          data: { status: DuelStatus.BOOKING_OPEN, bookingCloseAt: new Date(Date.now() + 6 * 60 * 60 * 1000) },
+        });
+      }
+
+      // Mercados voltam a OPEN (voidMarket fechou — agora reabre)
+      if (marketIds.length > 0) {
+        await tx.market.updateMany({
+          where: { id: { in: marketIds } },
+          data: {
+            status: MarketStatus.OPEN,
+            winnerOddId: null,
+            settledAt: null,
+            bookingCloseAt: new Date(Date.now() + 6 * 60 * 60 * 1000),
+          },
+        });
+        await tx.odd.updateMany({
+          where: { marketId: { in: marketIds } },
+          data: { status: OddStatus.ACTIVE },
+        });
+      }
+
+      // Audit log
+      await tx.auditLog.create({
+        data: {
+          actorUserId: audit.actorUserId,
+          action: 'EVENT_RESTART',
+          entity: 'Event',
+          entityId: eventId,
+          payload: {
+            refundedMarkets: marketIds.length,
+            resetDuels: duelIds.length,
+          } as Prisma.InputJsonValue,
+          ipAddress: audit.ipAddress,
+          userAgent: audit.userAgent,
+        },
+      });
+    });
+
+    return {
+      eventId,
+      refundedMarkets: marketIds.length,
+      resetDuels: event.duels.length,
+    };
   }
 
   async createMultiRunnerMarket(

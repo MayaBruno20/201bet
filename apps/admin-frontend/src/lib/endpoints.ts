@@ -67,9 +67,11 @@ export const ENDPOINTS = {
 
   MARKETS: {
     list: '/admin/markets',
+    live: '/admin/markets/live',
     create: '/admin/markets',
     settle: (id: string) => `/admin/markets/${id}/settle`,
     void: (id: string) => `/admin/markets/${id}/void`,
+    restartEvent: (eventId: string) => `/admin/events/${eventId}/restart`,
   },
 
   CATEGORY_EVENTS: {
@@ -199,7 +201,7 @@ export const ENDPOINTS = {
   },
 
   CONFIG: {
-    margin: '/admin/config/margin',
+    // margin: fixa em 20% por regulamento, sem endpoint de alteração.
     minBet: '/admin/config/min-bet',
     settings: '/admin/settings',
     settingDelete: (id: string) => `/admin/settings/${id}`,

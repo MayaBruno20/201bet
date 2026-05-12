@@ -123,6 +123,7 @@ enum MatchupSide {
 
 enum ListEventStatus {
   DRAFT
+  SCHEDULED
   IN_PROGRESS
   FINISHED
   CANCELED

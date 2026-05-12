@@ -327,10 +327,10 @@ type BackendMarket = {
   odds: Array<{ id: string; label: string; value: string | number; status: string }>;
 };
 
-/** Lista todos os mercados (admin). */
+/** Lista todos os mercados ao vivo (admin) — TODOS os tipos, status não-SETTLED. */
 export async function fetchMarkets(): Promise<MarketRow[]> {
   try {
-    const list = await api.get<BackendMarket[]>(ENDPOINTS.MARKETS.list);
+    const list = await api.get<BackendMarket[]>(ENDPOINTS.MARKETS.live);
     return list.map((m) => {
       const left = Number(m.duel?.poolState?.leftPool ?? 0);
       const right = Number(m.duel?.poolState?.rightPool ?? 0);

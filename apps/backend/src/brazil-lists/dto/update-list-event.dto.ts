@@ -18,7 +18,7 @@ export class UpdateListEventDto {
 
   @IsOptional()
   @IsEnum(ListEventStatus)
-  status?: ListEventStatus;
+  status?: ListEventStatus; // DRAFT | SCHEDULED | IN_PROGRESS | FINISHED | CANCELED
 
   @IsOptional()
   @IsUrl({ require_protocol: true })

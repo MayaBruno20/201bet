@@ -173,8 +173,8 @@ export class QuickDuelService {
 
       await tx.odd.createMany({
         data: [
-          { marketId: market.id, label: left.name, value: new Prisma.Decimal('1.90'), status: OddStatus.ACTIVE },
-          { marketId: market.id, label: right.name, value: new Prisma.Decimal('1.90'), status: OddStatus.ACTIVE },
+          { marketId: market.id, label: left.name, value: new Prisma.Decimal('1.00'), status: OddStatus.ACTIVE },
+          { marketId: market.id, label: right.name, value: new Prisma.Decimal('1.00'), status: OddStatus.ACTIVE },
         ],
       });
 

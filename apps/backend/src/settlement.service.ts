@@ -2,6 +2,7 @@ import { BadRequestException, forwardRef, Inject, Injectable, Logger, NotFoundEx
 import { BetStatus, MarketStatus, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
 import { PrismaService } from './database/prisma.service';
 import { MarketGateway } from './market.gateway';
+import { HOUSE_MARGIN_PERCENT } from './market.service';
 
 type AuditContext = {
   actorUserId?: string;
@@ -34,13 +35,14 @@ export class SettlementService {
   ) {}
 
   async settleMarket(marketId: string, winnerOddId: string, audit: AuditContext = {}): Promise<SettlementResult> {
-    // Execute everything inside a single transaction with row lock to prevent double-settlement
-    const rakePercent = this.getDefaultRakePercent();
+    // Margem da casa é FIXA (HOUSE_MARGIN_PERCENT). A coluna market.rakePercent
+    // existe por motivos históricos mas é ignorada — a regra é uniforme.
+    const effectiveRake = HOUSE_MARGIN_PERCENT;
 
     const result = await this.prisma.$transaction(async (tx) => {
       // Lock the market row to prevent concurrent settlement
-      const lockedMarket = await tx.$queryRaw<Array<{ id: string; status: string; rakePercent: unknown }>>`
-        SELECT id, status, "rakePercent" FROM "Market" WHERE id = ${marketId} FOR UPDATE
+      const lockedMarket = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+        SELECT id, status FROM "Market" WHERE id = ${marketId} FOR UPDATE
       `.then((rows) => rows[0] ?? null);
 
       if (!lockedMarket) {
@@ -54,8 +56,6 @@ export class SettlementService {
       if (!['OPEN', 'CLOSED', 'SUSPENDED'].includes(lockedMarket.status)) {
         throw new BadRequestException('Mercado não está em um status que permite liquidação');
       }
-
-      const effectiveRake = lockedMarket.rakePercent ? Number(lockedMarket.rakePercent) : rakePercent;
 
       // Load full market data inside the transaction
       const market = await tx.market.findUnique({
@@ -101,10 +101,16 @@ export class SettlementService {
         if (bet.oddId === winnerOddId) winnerPool += bet.stake;
       }
 
-      // Pari-mutuel puro retorna netPool / winnerPool — em casos de esmagamento
-      // extremo (>~89% num lado com rake 11%), isso fica < 1.0 e o vencedor
-      // receberia menos que apostou. Regra de produto: vencedor nunca perde
-      // dinheiro — piso de 1.0. A casa absorve a diferença em casos extremos.
+      // Pari-mutuel puro: odd = netPool / winnerPool. Em casos de mega esmagamento
+      // (ex.: 50 num lado, 1000 no outro), a odd "crua" do lado popular fica < 1.0.
+      // Regra de produto: vencedor NUNCA recebe menos que o stake — piso 1.0.
+      //
+      // Invariante de proteção da casa (verificada pelo piso):
+      //   totalPayout = winnerPool * max(1.0, netPool / winnerPool)
+      //              <= winnerPool * (netPool / winnerPool)  quando rawOdd >= 1.0  ⇒ <= netPool < totalPool
+      //              <= winnerPool * 1.0 = winnerPool        quando rawOdd <  1.0  ⇒ <= totalPool (pois winnerPool <= totalPool)
+      // Em ambos os ramos, totalPayout <= totalPool. A casa pode coletar menos
+      // que os 20% nominais em esmagamento extremo, mas NUNCA paga do próprio bolso.
       const rawParimutuelOdd = winnerPool > 0 ? netPool / winnerPool : 0;
       const parimutuelOdd = winnerPool > 0 ? Math.max(1.0, rawParimutuelOdd) : 0;
 
@@ -379,8 +385,4 @@ export class SettlementService {
     return { marketId, status: 'VOIDED', refundedBets: market.odds.flatMap((o) => o.betItems).length };
   }
 
-  private getDefaultRakePercent(): number {
-    const env = Number(process.env.MARKET_MARGIN_PERCENT ?? '20');
-    return Number.isFinite(env) ? Math.min(50, Math.max(0, env)) : 20;
-  }
 }

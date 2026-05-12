@@ -647,7 +647,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           photoUrl: duel.leftCar.photoUrl ?? null,
           pool: Number(pool.leftPool),
           tickets: pool.leftTickets,
-          odd: 1.9,
+          odd: SEED_ODD,
           locked: false,
         },
         right: {
@@ -657,7 +657,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           photoUrl: duel.rightCar.photoUrl ?? null,
           pool: Number(pool.rightPool),
           tickets: pool.rightTickets,
-          odd: 1.9,
+          odd: SEED_ODD,
           locked: false,
         },
         history: existing?.history ?? [],
@@ -727,7 +727,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         photoUrl: null,
         pool: leftPool,
         tickets: 0,
-        odd: 1.9,
+        odd: SEED_ODD,
         locked: false,
       },
       right: {
@@ -737,7 +737,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         photoUrl: null,
         pool: rightPool,
         tickets: 0,
-        odd: 1.9,
+        odd: SEED_ODD,
         locked: false,
       },
       history: [],
@@ -747,17 +747,18 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
   private recalculateOdds(state: EngineState) {
     // Pari-mutuel puro (referência 201Bet):
     //   pool  = leftPool + rightPool
-    //   net   = pool * (1 - rake)
-    //   odd_X = net / pool_X   (piso 1.01, sem teto)
-    // Quando um lado ainda não tem aposta, odd = 0 ("—" na UI).
+    //   net   = pool * (1 - rake)         rake fixo 20% (regulamento da casa)
+    //   odd_X = net / pool_X              piso 1.01, sem teto
+    // Quando um lado ainda não tem aposta, exibimos a cotação inicial seed (1.00) —
+    // o cliente sabe que é só projeção e que vai se formar conforme o pote.
     const totalPool = state.left.pool + state.right.pool;
-    const rake = this.getMarginPercent() / 100;
+    const rake = HOUSE_MARGIN_PERCENT / 100;
     const net = totalPool * (1 - rake);
 
     state.left.odd =
-      state.left.pool > 0 ? Number(Math.max(1.01, net / state.left.pool).toFixed(2)) : 0;
+      state.left.pool > 0 ? Number(Math.max(1.01, net / state.left.pool).toFixed(2)) : SEED_ODD;
     state.right.odd =
-      state.right.pool > 0 ? Number(Math.max(1.01, net / state.right.pool).toFixed(2)) : 0;
+      state.right.pool > 0 ? Number(Math.max(1.01, net / state.right.pool).toFixed(2)) : SEED_ODD;
   }
 
   private evaluateLock(state: EngineState): {
@@ -987,8 +988,9 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
   }
 
   private getMarginPercent() {
-    const env = Number(process.env.MARKET_MARGIN_PERCENT ?? '20');
-    return Number.isFinite(env) ? this.clamp(env, 0, 50) : 20;
+    // Margem da casa é FIXA por regulamento (não admite override por env ou per-market).
+    // Toda a math de odd/settlement depende disso ser estável.
+    return HOUSE_MARGIN_PERCENT;
   }
 
   private getMinBetAmount() {
@@ -1010,3 +1012,18 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     return Math.min(max, Math.max(min, value));
   }
 }
+
+/**
+ * Constantes seladas do mecanismo de odds da 201bet. Não dependem de env nem
+ * de configuração por mercado — uma mudança aqui é mudança de regulamento.
+ *
+ *  HOUSE_MARGIN_PERCENT = 20  → comissão da casa fixa
+ *  SEED_ODD             = 1.0 → cotação exibida quando o pool de um lado é 0
+ *
+ * A invariante de proteção da casa é garantida pelo piso 1.0 no settlement:
+ * mesmo em "mega esmagamento" (ex.: 50 num lado, 1000 no outro), o pagamento
+ * total não excede o pool total — a casa pode coletar menos que 20%, mas
+ * nunca paga do próprio bolso.
+ */
+export const HOUSE_MARGIN_PERCENT = 20;
+export const SEED_ODD = 1.0;

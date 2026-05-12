@@ -359,6 +359,15 @@ export class BrazilListsService {
         },
       });
 
+      // Lifecycle do status:
+      //  - scheduledAt no futuro  → SCHEDULED (aparece como "Agendado" pro admin)
+      //  - scheduledAt já passou  → DRAFT (admin ainda precisa abrir mercado manualmente)
+      // O cron de event-lifecycle vai promover SCHEDULED → IN_PROGRESS ("Ao vivo")
+      // automaticamente quando o horário chegar.
+      const initialStatus: ListEventStatus = startDate.getTime() > Date.now()
+        ? ListEventStatus.SCHEDULED
+        : ListEventStatus.DRAFT;
+
       const event = await tx.listEvent.create({
         data: {
           listId,
@@ -369,7 +378,7 @@ export class BrazilListsService {
           bannerUrl: dto.bannerUrl,
           featured: dto.featured ?? false,
           notes: dto.notes,
-          status: ListEventStatus.DRAFT,
+          status: initialStatus,
           eventId: linkedEvent.id,
         },
       });
@@ -549,7 +558,9 @@ export class BrazilListsService {
         created.push({ id: matchup.id });
       }
 
-      if (event.status === ListEventStatus.DRAFT) {
+      // DRAFT (sem matchups) ou SCHEDULED (aguardando data) → IN_PROGRESS quando o
+      // admin gera matchups, porque já indica que o evento começou efetivamente.
+      if (event.status === ListEventStatus.DRAFT || event.status === ListEventStatus.SCHEDULED) {
         await tx.listEvent.update({
           where: { id: eventId },
           data: { status: ListEventStatus.IN_PROGRESS },
@@ -1002,7 +1013,7 @@ export class BrazilListsService {
             data: {
               marketId: market.id,
               label: leftDriver.name,
-              value: new Prisma.Decimal('1.90'),
+              value: new Prisma.Decimal('1.00'),
               status: OddStatus.ACTIVE,
             },
           });
@@ -1010,7 +1021,7 @@ export class BrazilListsService {
             data: {
               marketId: market.id,
               label: rightDriver.name,
-              value: new Prisma.Decimal('1.90'),
+              value: new Prisma.Decimal('1.00'),
               status: OddStatus.ACTIVE,
             },
           });
@@ -1021,7 +1032,13 @@ export class BrazilListsService {
           });
         }
 
-        if (matchup.listEvent.status === ListEventStatus.DRAFT) {
+        // DRAFT ou SCHEDULED → IN_PROGRESS quando o admin abre o 1º mercado manualmente
+        // (antes do scheduledAt, por exemplo). Cron normalmente cobre esse caso, mas o
+        // admin pode forçar abertura antecipada e o status deve seguir.
+        if (
+          matchup.listEvent.status === ListEventStatus.DRAFT ||
+          matchup.listEvent.status === ListEventStatus.SCHEDULED
+        ) {
           await tx.listEvent.update({
             where: { id: matchup.listEventId },
             data: { status: ListEventStatus.IN_PROGRESS },
