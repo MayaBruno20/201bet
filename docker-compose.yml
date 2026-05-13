@@ -21,6 +21,8 @@ services:
     image: redis:7-alpine
     container_name: bet-redis
     restart: unless-stopped
+    # BullMQ: evitar eviction silenciosa de chaves (jobs) quando houver limite de memória.
+    command: ['redis-server', '--maxmemory-policy', 'noeviction']
     ports:
       - '${REDIS_PORT:-3505}:6379'
     volumes:
