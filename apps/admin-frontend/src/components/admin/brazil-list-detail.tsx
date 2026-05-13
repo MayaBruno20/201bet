@@ -7,7 +7,7 @@ import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm';
 import { DatePicker } from '@/components/ui/datepicker';
 import { ListEventDetail } from '@/components/admin/list-event-detail';
-import { api } from '@/lib/api';
+import { api, apiUpload } from '@/lib/api';
 import { ENDPOINTS } from '@/lib/endpoints';
 
 /**
@@ -51,7 +51,7 @@ type ListEvent = {
   name: string;
   scheduledAt: string;
   endsAt?: string | null;
-  status: 'DRAFT' | 'IN_PROGRESS' | 'FINISHED' | 'CANCELED';
+  status: 'DRAFT' | 'SCHEDULED' | 'IN_PROGRESS' | 'FINISHED' | 'CANCELED';
   type: 'REGULAR' | 'ARMAGEDDON' | 'SHARK_TANK';
   notes?: string | null;
   matchups: ListMatchup[];
@@ -71,6 +71,7 @@ type ListDetail = {
 
 const EVENT_STATUS_LABEL: Record<ListEvent['status'], string> = {
   DRAFT: 'Rascunho',
+  SCHEDULED: 'Agendado',
   IN_PROGRESS: 'Ao vivo',
   FINISHED: 'Encerrado',
   CANCELED: 'Cancelado',
@@ -88,6 +89,7 @@ export function BrazilListDetail({ listId, onChanged }: { listId: string; onChan
   const [busy, setBusy] = React.useState<string | null>(null);
   const [tab, setTab] = React.useState<'roster' | 'events'>('roster');
   const [rosterModal, setRosterModal] = React.useState<RosterEntry | { newPosition: number } | null>(null);
+  const [importModalOpen, setImportModalOpen] = React.useState(false);
   const [eventModal, setEventModal] = React.useState<ListEvent | { creating: true } | null>(null);
   const [eventDetailId, setEventDetailId] = React.useState<string | null>(null);
   const { push } = useToast();
@@ -171,6 +173,9 @@ export function BrazilListDetail({ listId, onChanged }: { listId: string; onChan
         <Card className="p-5">
           <SectionTitle title={`Roster ${detail.format}`} sub="Pilotos titulares da lista, ordenados por posição."
             action={<>
+              <button className="btn btn-ghost" onClick={() => setImportModalOpen(true)}>
+                <I.Upload size={14}/> Importar PDF/DOCX
+              </button>
               <button className="btn btn-primary" onClick={() => setRosterModal({ newPosition: nextOpenPosition })} disabled={roster.length >= maxRoster}>
                 <I.Plus size={14}/> Adicionar piloto
               </button>
@@ -296,6 +301,15 @@ export function BrazilListDetail({ listId, onChanged }: { listId: string; onChan
           defaultPosition={rosterModal && 'newPosition' in rosterModal ? rosterModal.newPosition : undefined}
           onClose={() => setRosterModal(null)}
           onSaved={() => { setRosterModal(null); void load(); onChanged?.(); }}
+        />
+      )}
+
+      {importModalOpen && (
+        <ImportRosterModal
+          listId={listId}
+          maxPosition={maxRoster}
+          onClose={() => setImportModalOpen(false)}
+          onApplied={() => { setImportModalOpen(false); void load(); onChanged?.(); }}
         />
       )}
 
@@ -437,10 +451,12 @@ function EventModal({ listId, event, onClose, onSaved }: {
         name: name.trim(),
         scheduledAt,
         endsAt: endsAt || undefined,
-        type,
         notes: notes.trim() || undefined,
       };
       if (!isEdit) {
+        // O `type` só faz sentido na criação — depois disso, matchups e
+        // configuração específica (Shark Tank) já estão vinculados.
+        payload.type = type;
         payload.featured = featured;
         if (bannerUrl.trim()) payload.bannerUrl = bannerUrl.trim();
         await api.post(ENDPOINTS.BRAZIL_LISTS.events.create(listId), payload);
@@ -493,11 +509,18 @@ function EventModal({ listId, event, onClose, onSaved }: {
           </div>
           <div className={isEdit ? 'grid grid-cols-2 gap-3' : ''}>
             <div>
-              <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Tipo</label>
-              <select className="input mt-1" value={type} onChange={(e) => setType(e.target.value as ListEvent['type'])}>
-                <option value="REGULAR">Regular</option>
-                <option value="ARMAGEDDON">Armageddon</option>
-                <option value="SHARK_TANK">Shark Tank</option>
+              <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">
+                Tipo {isEdit && <span className='text-[10px] normal-case font-normal text-[color:var(--text-3)]'>(não editável)</span>}
+              </label>
+              <select
+                className='input mt-1'
+                value={type}
+                disabled={isEdit}
+                onChange={(e) => setType(e.target.value as ListEvent['type'])}
+              >
+                <option value='REGULAR'>Regular</option>
+                <option value='ARMAGEDDON'>Armageddon</option>
+                <option value='SHARK_TANK'>Shark Tank</option>
               </select>
             </div>
             {isEdit && (
@@ -505,6 +528,7 @@ function EventModal({ listId, event, onClose, onSaved }: {
                 <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Status</label>
                 <select className="input mt-1" value={status} onChange={(e) => setStatus(e.target.value as ListEvent['status'])}>
                   <option value="DRAFT">Rascunho</option>
+                  <option value="SCHEDULED">Agendado</option>
                   <option value="IN_PROGRESS">Ao vivo</option>
                   <option value="FINISHED">Encerrado</option>
                   <option value="CANCELED">Cancelado</option>
@@ -535,6 +559,255 @@ function EventModal({ listId, event, onClose, onSaved }: {
           <button className="btn btn-primary flex-1 justify-center" onClick={submit} disabled={busy}>
             {busy ? <><span className="pulse-dot"/> Salvando…</> : <><I.Check size={14}/> {isEdit ? 'Atualizar' : 'Criar evento'}</>}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Importar roster a partir de PDF/DOCX ─────────────────────────────
+
+type ParsedEntry = {
+  position: number;
+  driverName: string;
+  nickname: string | null;
+  carName: string | null;
+  carNumber: string | null;
+};
+
+function ImportRosterModal({
+  listId,
+  maxPosition,
+  onClose,
+  onApplied,
+}: {
+  listId: string;
+  maxPosition: number;
+  onClose: () => void;
+  onApplied: () => void;
+}) {
+  const [file, setFile] = React.useState<File | null>(null);
+  const [parsing, setParsing] = React.useState(false);
+  const [applying, setApplying] = React.useState(false);
+  const [entries, setEntries] = React.useState<ParsedEntry[] | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const { push } = useToast();
+
+  const upload = async (f: File) => {
+    setParsing(true);
+    setError(null);
+    setEntries(null);
+    try {
+      const data = await apiUpload<{ entries: ParsedEntry[] }>(
+        ENDPOINTS.BRAZIL_LISTS.rosters.parseFile(listId),
+        f,
+        'file',
+      );
+      const parsed = data.entries ?? [];
+      if (parsed.length === 0) {
+        setError('Nenhum piloto reconhecido. Confira o formato do arquivo.');
+        return;
+      }
+      setEntries(parsed);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Falha ao processar o arquivo.');
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    void upload(f);
+  };
+
+  const updateEntry = (idx: number, patch: Partial<ParsedEntry>) => {
+    setEntries((prev) => {
+      if (!prev) return prev;
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...patch };
+      return next;
+    });
+  };
+
+  const removeEntry = (idx: number) => {
+    setEntries((prev) => prev?.filter((_, i) => i !== idx) ?? null);
+  };
+
+  const apply = async () => {
+    if (!entries || entries.length === 0) return;
+    // Valida no client antes de mandar (resposta de erro do server é vaga)
+    const positions = new Set<number>();
+    for (const e of entries) {
+      if (!e.driverName.trim()) { push({ title: 'Nome vazio', body: `Piloto na posição ${e.position} sem nome.`, tone: 'rose' }); return; }
+      if (positions.has(e.position)) { push({ title: 'Posição duplicada', body: `Posição ${e.position} aparece mais de uma vez.`, tone: 'rose' }); return; }
+      if (e.position < 1 || e.position > maxPosition) { push({ title: 'Posição inválida', body: `${e.driverName}: posição ${e.position}. A lista é até ${maxPosition}.`, tone: 'rose' }); return; }
+      positions.add(e.position);
+    }
+
+    setApplying(true);
+    try {
+      const result = await api.post<{
+        created: number;
+        reused: number;
+        updated: number;
+        removed: number;
+        total: number;
+      }>(ENDPOINTS.BRAZIL_LISTS.rosters.bulkReplace(listId), { entries });
+      push({
+        title: 'Roster atualizado',
+        body: `${result.total} pilotos · ${result.created} novos, ${result.reused} reaproveitados, ${result.updated} atualizados, ${result.removed} removidos.`,
+        tone: 'emerald',
+      });
+      onApplied();
+    } catch (e) {
+      push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' });
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
+      <div className="surface-elev p-6 w-full max-w-3xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-10 h-10 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+            <I.Upload size={18}/>
+          </div>
+          <div className="flex-1">
+            <div className="font-display text-[18px] font-bold">Importar roster (PDF / DOCX)</div>
+            <div className="text-[12px] text-[color:var(--text-3)]">
+              Sobe o arquivo, revisa o que o parser leu e clica em aplicar. Substitui o roster atual da lista.
+              Pilotos retirados saem só desta lista — o cadastro do piloto permanece no banco.
+            </div>
+          </div>
+        </div>
+
+        {!entries && (
+          <div className="rounded-[12px] border-2 border-dashed p-8 text-center" style={{ borderColor: 'var(--border)' }}>
+            <I.Upload size={28} stroke={1.4}/>
+            <p className="mt-3 text-[13px] text-[color:var(--text-2)]">
+              Selecione o arquivo da lista <strong>(.pdf, .docx)</strong> — máx. 5MB
+            </p>
+            <label className="btn btn-primary mt-4 inline-flex cursor-pointer">
+              <I.Upload size={14}/> Escolher arquivo
+              <input
+                type="file"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                onChange={onFileChange}
+                disabled={parsing}
+              />
+            </label>
+            {file && parsing && (
+              <p className="mt-3 text-[12px] text-[color:var(--text-3)]"><span className="pulse-dot"/> Lendo {file.name}…</p>
+            )}
+            {error && (
+              <p className="mt-3 text-[12px]" style={{ color: '#ff7585' }}>{error}</p>
+            )}
+          </div>
+        )}
+
+        {entries && (
+          <>
+            <div className="rounded-[10px] px-3 py-2 mb-3 text-[12px]" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+              ✓ {entries.length} piloto(s) reconhecido(s). Revise abaixo — ao aplicar, o roster atual da lista é substituído.
+            </div>
+            <div className="overflow-y-auto flex-1 -mx-2 px-2">
+              <table className="w-full">
+                <thead className="sticky top-0 z-10" style={{ background: 'var(--surface)' }}>
+                  <tr>
+                    <th style={{ paddingLeft: 8, width: 60 }}>#</th>
+                    <th>Piloto</th>
+                    <th>Apelido</th>
+                    <th>Carro</th>
+                    <th style={{ width: 80 }}>Nº</th>
+                    <th style={{ paddingRight: 8, width: 50 }}/>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.map((e, idx) => (
+                    <tr key={idx}>
+                      <td style={{ paddingLeft: 8 }}>
+                        <input
+                          type="number"
+                          className="input"
+                          value={e.position}
+                          min={1}
+                          max={maxPosition}
+                          onChange={(ev) => updateEntry(idx, { position: Math.max(1, Number(ev.target.value) || 1) })}
+                          style={{ width: 60 }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          className="input"
+                          value={e.driverName}
+                          onChange={(ev) => updateEntry(idx, { driverName: ev.target.value })}
+                          placeholder="Nome do piloto"
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          className="input"
+                          value={e.nickname ?? ''}
+                          onChange={(ev) => updateEntry(idx, { nickname: ev.target.value || null })}
+                          placeholder="—"
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          className="input"
+                          value={e.carName ?? ''}
+                          onChange={(ev) => updateEntry(idx, { carName: ev.target.value || null })}
+                          placeholder="—"
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          className="input"
+                          value={e.carNumber ?? ''}
+                          onChange={(ev) => updateEntry(idx, { carNumber: ev.target.value || null })}
+                          placeholder="—"
+                        />
+                      </td>
+                      <td style={{ paddingRight: 8 }}>
+                        <button className="btn-icon" onClick={() => removeEntry(idx)} title="Remover do preview" style={{ color: '#ff7585' }}>
+                          <I.Trash size={15}/>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        <div className="flex gap-2 mt-5 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+          <button className="btn btn-ghost flex-1 justify-center" onClick={onClose} disabled={parsing || applying}>
+            Cancelar
+          </button>
+          {entries && (
+            <>
+              <button className="btn btn-ghost" onClick={() => { setEntries(null); setFile(null); }} disabled={applying}>
+                Trocar arquivo
+              </button>
+              <button
+                className="btn btn-primary flex-[2] justify-center"
+                onClick={apply}
+                disabled={applying || entries.length === 0}
+              >
+                {applying ? <><span className="pulse-dot"/> Aplicando…</> : <><I.Check size={14}/> Substituir roster ({entries.length} pilotos)</>}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

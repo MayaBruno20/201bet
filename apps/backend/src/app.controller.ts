@@ -14,7 +14,7 @@ import { Throttle } from '@nestjs/throttler';
 import { EmailVerifiedGuard } from './auth/email-verified.guard';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { CurrentUser } from './common/decorators/current-user.decorator';
-import { MarketService } from './market.service';
+import { HOUSE_MARGIN_PERCENT, MarketService } from './market.service';
 import { MultiRunnerMarketService } from './multi-runner-market.service';
 
 @Controller()
@@ -79,7 +79,7 @@ export class AppController {
   @Get('market/config')
   getConfig() {
     return {
-      marginPercent: Number(process.env.MARKET_MARGIN_PERCENT ?? '20'),
+      marginPercent: HOUSE_MARGIN_PERCENT,
       minBetAmount: Number(process.env.MIN_BET_AMOUNT ?? '10'),
     };
   }
@@ -90,7 +90,7 @@ export class AppController {
   getLiveProfit() {
     const duelSnapshots = this.marketService.getAllSnapshots();
     const mrSnapshots = this.multiRunnerService.getAllSnapshots();
-    const marginPercent = Number(process.env.MARKET_MARGIN_PERCENT ?? '20');
+    const marginPercent = HOUSE_MARGIN_PERCENT;
 
     let totalVolume = 0;
     let totalRake = 0;

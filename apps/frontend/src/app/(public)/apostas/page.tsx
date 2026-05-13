@@ -2,12 +2,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { Flag, Trophy, Zap, Flame, type LucideIcon } from 'lucide-react';
+import { Crown } from 'lucide-react';
 import { MainNav } from '@/components/site/main-nav';
 import { apiFetch } from '@/lib/api-request';
 import { getPublicApiUrl, getPublicWsUrl } from '@/lib/env-public';
 import { BettingBoard, BoardStage, MarketSnapshot, MultiRunnerSnapshot } from '@/types/market';
-import { MultiRunnerMarket } from '@/components/multi-runner-market';
+
+import { EventSelector, type BetEvent } from '@/components/apostas/event-selector';
+import { ModalityTabs, type ModalityTab } from '@/components/apostas/modality-tabs';
+import { DuelCard, type DuelData, type DuelStatus, type DuelSide } from '@/components/apostas/duel-card';
+import { MultiRunnerCard, type MultiRunnerMarket as MRCardMarket, type MultiRunnerMarketType } from '@/components/apostas/multi-runner-card';
+import { BetSlipDrawer, type BetSlipItem } from '@/components/apostas/bet-slip-drawer';
+import { MyBetsHistory, type BetHistoryItem, type BetHistoryStatus } from '@/components/apostas/my-bets-history';
+import { BetResultModal, type BetResult } from '@/components/apostas/bet-result-modal';
 
 const apiUrl = getPublicApiUrl();
 const wsUrl = getPublicWsUrl();
@@ -40,19 +47,18 @@ type MyBet = {
 
 type Tab = 'passadas' | 'vencedor' | 'reacao' | 'queimada';
 
-const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
-  { id: 'passadas', label: 'Passadas', Icon: Flag },
-  { id: 'vencedor', label: 'Vencedor Geral', Icon: Trophy },
-  { id: 'reacao', label: 'Reações Baixas', Icon: Zap },
-  { id: 'queimada', label: 'Queimadas', Icon: Flame },
-];
-
-const MARKET_TYPE_MAP: Record<Tab, string> = {
-  passadas: 'DUEL',
+const MARKET_TYPE_MAP: Record<Exclude<Tab, 'passadas'>, MultiRunnerMarketType> = {
   vencedor: 'WINNER',
   reacao: 'BEST_REACTION',
   queimada: 'FALSE_START',
 };
+
+const TAB_DEFS: { id: Tab; label: string; icon: 'flag' | 'trophy' | 'zap' | 'flame' }[] = [
+  { id: 'passadas', label: 'Passadas',       icon: 'flag' },
+  { id: 'vencedor', label: 'Vencedor Geral', icon: 'trophy' },
+  { id: 'reacao',   label: 'Reações',        icon: 'zap' },
+  { id: 'queimada', label: 'Queimadas',      icon: 'flame' },
+];
 
 export default function ApostasPage() {
   const [board, setBoard] = useState<BettingBoard | null>(null);
@@ -61,27 +67,20 @@ export default function ApostasPage() {
   const [selectedEventId, setSelectedEventId] = useState<string>('');
   const [selectedDuelId, setSelectedDuelId] = useState<string>('');
   const [selectedMarketId, setSelectedMarketId] = useState<string>('');
+  const [selectedOddId, setSelectedOddId] = useState<string | null>(null);
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('passadas');
-  const [statusFilter, setStatusFilter] = useState<'aberto' | 'auditado' | 'cancelado'>('aberto');
+  const [statusFilter, setStatusFilter] = useState<'OPEN' | 'SETTLED' | 'CANCELED'>('OPEN');
   // Carrinho (bilhete acumulado): cada item é uma aposta a ser enviada
   type CartItem = { duelId: string; side: 'LEFT' | 'RIGHT'; stake: number };
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartSubmitting, setCartSubmitting] = useState(false);
-  // Carrinho colapsado: mostra só o header com totais e botão de apostar.
-  // Útil no mobile pra deixar mais tela visível quando o usuário tem várias seleções.
-  const [cartCollapsed, setCartCollapsed] = useState(false);
-  // Resultados da última submissão em lote — exibidos em modal
-  const [cartResults, setCartResults] = useState<Array<{ duelId: string; side: 'LEFT' | 'RIGHT'; ok: boolean; message: string; betId?: string; potentialWin?: number }> | null>(null);
-  const [stakeRaw, setStakeRaw] = useState('100');
-  const stake = Number(stakeRaw) || 0;
-  const [side, setSide] = useState<'LEFT' | 'RIGHT'>('LEFT');
+  // Resultados da última submissão em lote — exibidos no BetResultModal
+  const [cartResults, setCartResults] = useState<BetResult[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [message, setMessage] = useState('');
   const [me, setMe] = useState<MeResponse | null>(null);
-  const [placingBet, setPlacingBet] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [myBets, setMyBets] = useState<MyBet[]>([]);
   const [minBet, setMinBet] = useState(10);
 
@@ -122,7 +121,6 @@ export default function ApostasPage() {
     });
 
     socket.on('market:settled', (payload: { marketId: string; winnerLabel: string }) => {
-      // Pode ter ganhado uma aposta — atualiza saldo e bets
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('wallet:refresh'));
       void loadMyBets();
       setMessage(`Mercado liquidado: vencedor ${payload.winnerLabel}`);
@@ -133,21 +131,24 @@ export default function ApostasPage() {
 
   const selectedEvent = useMemo(() => board?.events.find((e) => e.id === selectedEventId) ?? null, [board, selectedEventId]);
 
-  // Helper: classifica cada stage pelo filtro (aberto/auditado/cancelado).
-  // Usamos o snapshot quando disponível; fallback no matchupStatus do board.
-  const classifyStage = (stage: BoardStage): 'aberto' | 'auditado' | 'cancelado' => {
-    if (stage.matchupStatus === 'CANCELED' || stage.status === 'CANCELED') return 'cancelado';
+  /** Mapeia o snapshot + matchup pra um DuelStatus do novo componente. */
+  const classifyDuelStatus = (stage: BoardStage): DuelStatus => {
+    if (stage.matchupStatus === 'CANCELED' || stage.status === 'CANCELED') return 'CANCELED';
     const snap = snapshots[stage.duelId];
-    if (snap?.settlement) return 'auditado';
-    if (stage.matchupStatus === 'COMPLETED' || stage.matchupStatus === 'INVALIDATED') return 'auditado';
-    return 'aberto';
+    if (snap?.settlement) return 'SETTLED';
+    if (stage.matchupStatus === 'COMPLETED' || stage.matchupStatus === 'INVALIDATED') return 'SETTLED';
+    if (snap && (snap.locked || snap.status === 'BOOKING_CLOSED' || snap.status === 'FINISHED')) return 'CLOSED';
+    return 'OPEN';
   };
 
-  // Contadores por status (para badges nas tabs)
+  /** Reduz DuelStatus → 3 buckets do filtro (OPEN | SETTLED | CANCELED). CLOSED conta como OPEN visualmente. */
+  const filterBucket = (s: DuelStatus): 'OPEN' | 'SETTLED' | 'CANCELED' =>
+    s === 'CANCELED' ? 'CANCELED' : s === 'SETTLED' ? 'SETTLED' : 'OPEN';
+
   const statusCounts = useMemo(() => {
-    if (!selectedEvent) return { aberto: 0, auditado: 0, cancelado: 0 };
-    const c = { aberto: 0, auditado: 0, cancelado: 0 };
-    for (const s of selectedEvent.stages) c[classifyStage(s)] += 1;
+    if (!selectedEvent) return { OPEN: 0, SETTLED: 0, CANCELED: 0 };
+    const c = { OPEN: 0, SETTLED: 0, CANCELED: 0 };
+    for (const s of selectedEvent.stages) c[filterBucket(classifyDuelStatus(s))] += 1;
     return c;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEvent, snapshots]);
@@ -155,7 +156,7 @@ export default function ApostasPage() {
   // Agrupa stages por roundNumber → categoria, já filtrando pelo statusFilter
   const roundsForEvent = useMemo(() => {
     if (!selectedEvent) return [] as Array<{ roundNumber: number; categories: Array<{ category: string | null; categoryLabel: string | null; stages: BoardStage[] }> }>;
-    const filtered = selectedEvent.stages.filter((s) => classifyStage(s) === statusFilter);
+    const filtered = selectedEvent.stages.filter((s) => filterBucket(classifyDuelStatus(s)) === statusFilter);
     const byRound = new Map<number, Map<string, BoardStage[]>>();
     for (const s of filtered) {
       if (!byRound.has(s.roundNumber)) byRound.set(s.roundNumber, new Map());
@@ -189,48 +190,48 @@ export default function ApostasPage() {
     return roundsForEvent.find((r) => r.roundNumber === target) ?? roundsForEvent[0];
   }, [roundsForEvent, selectedRound]);
 
-  const currentDuelId = selectedDuelId || selectedEvent?.currentDuelId || selectedEvent?.stages[0]?.duelId || '';
-  const snapshot = currentDuelId ? snapshots[currentDuelId] : undefined;
-  const selectedSide = side === 'LEFT' ? snapshot?.duel.left : snapshot?.duel.right;
-  const expectedReturn = selectedSide ? stake * selectedSide.odd : 0;
-  const currentBalance = Number(me?.wallet?.balance ?? 0);
-  const balanceAfterBet = currentBalance - stake;
-  const canBet = !!snapshot && !!me && stake >= minBet && currentBalance >= stake;
-
   // Multi-runner markets for the selected event, grouped by type
   const eventMultiRunnerMarkets = useMemo(() => {
-    if (!selectedEventId) return [];
+    if (!selectedEventId) return [] as MultiRunnerSnapshot[];
     return Object.values(multiRunnerSnapshots).filter((mr) => mr.eventId === selectedEventId);
   }, [multiRunnerSnapshots, selectedEventId]);
 
-  const availableTabs = useMemo(() => {
-    return TABS.filter((tab) => {
-      if (tab.id === 'passadas') return true;
-      const type = MARKET_TYPE_MAP[tab.id];
-      return eventMultiRunnerMarkets.some((mr) => mr.marketType === type);
+  // Counts por tab (passadas = abertos, outras = nº de mercados disponíveis daquele tipo)
+  const tabsForUI: ModalityTab[] = useMemo(() => {
+    return TAB_DEFS.map((t) => {
+      if (t.id === 'passadas') {
+        return { id: t.id, label: t.label, icon: t.icon, available: true, count: statusCounts.OPEN };
+      }
+      const type = MARKET_TYPE_MAP[t.id];
+      const mks = eventMultiRunnerMarkets.filter((mr) => mr.marketType === type);
+      return { id: t.id, label: t.label, icon: t.icon, available: mks.length > 0, count: mks.length };
     });
-  }, [eventMultiRunnerMarkets]);
+  }, [eventMultiRunnerMarkets, statusCounts.OPEN]);
 
   const currentTabMarkets = useMemo(() => {
+    if (activeTab === 'passadas') return [] as MultiRunnerSnapshot[];
     const type = MARKET_TYPE_MAP[activeTab];
     return eventMultiRunnerMarkets.filter((mr) => mr.marketType === type);
   }, [eventMultiRunnerMarkets, activeTab]);
 
-  const currentMRSnapshot = selectedMarketId ? multiRunnerSnapshots[selectedMarketId] : currentTabMarkets[0] ?? null;
+  const currentMRSnapshot = selectedMarketId
+    ? multiRunnerSnapshots[selectedMarketId]
+    : currentTabMarkets[0] ?? null;
 
   // Auto-select first market when switching tabs
   useEffect(() => {
     if (activeTab !== 'passadas' && currentTabMarkets.length > 0) {
       setSelectedMarketId(currentTabMarkets[0].marketId);
+      setSelectedOddId(null);
     }
   }, [activeTab, currentTabMarkets]);
 
-  // Fall back to Passadas if the active tab disappears (e.g. trocou de evento sem mercado)
+  // Fall back to Passadas if the active tab disappears
   useEffect(() => {
-    if (!availableTabs.some((t) => t.id === activeTab)) {
+    if (!tabsForUI.some((t) => t.id === activeTab && t.available)) {
       setActiveTab('passadas');
     }
-  }, [availableTabs, activeTab]);
+  }, [tabsForUI, activeTab]);
 
   async function loadSession() {
     try {
@@ -288,7 +289,6 @@ export default function ApostasPage() {
       if (idx === -1) {
         return [...prev, { duelId, side: nextSide, stake: minBet }];
       }
-      // Mesmo lado: remove. Lado diferente: troca para o novo lado mantendo stake.
       if (prev[idx].side === nextSide) {
         return prev.filter((_, i) => i !== idx);
       }
@@ -302,28 +302,47 @@ export default function ApostasPage() {
     setCart((prev) => prev.filter((c) => c.duelId !== duelId));
   }
 
-  function cartUpdateStake(duelId: string, raw: string) {
-    const value = Number(raw.replace(',', '.')) || 0;
-    setCart((prev) => prev.map((c) => (c.duelId === duelId ? { ...c, stake: value } : c)));
+  function cartUpdateStake(duelId: string, value: number) {
+    // Clamp pra evitar números absurdos vindos do input (paste/scientific notation).
+    // Limite alto suficiente pra qualquer aposta real, baixo o suficiente pra não quebrar layout.
+    const safe = Math.min(99999, Math.max(0, Number.isFinite(value) ? value : 0));
+    setCart((prev) => prev.map((c) => (c.duelId === duelId ? { ...c, stake: safe } : c)));
   }
 
-  const cartTotalStake = cart.reduce((acc, c) => acc + (Number.isFinite(c.stake) ? c.stake : 0), 0);
-  // Retorno estimado total: soma de stake × odd atual de cada item (apenas estimativa).
-  const cartTotalReturn = cart.reduce((acc, c) => {
-    const snap = snapshots[c.duelId];
-    const odd = (c.side === 'LEFT' ? snap?.duel.left.odd : snap?.duel.right.odd) ?? 0;
-    return acc + (Number.isFinite(c.stake) ? c.stake : 0) * odd;
-  }, 0);
   const cartIndexByDuel = useMemo(() => {
     const m = new Map<string, CartItem>();
     cart.forEach((c) => m.set(c.duelId, c));
     return m;
   }, [cart]);
 
+  const cartTotalStake = cart.reduce((acc, c) => acc + (Number.isFinite(c.stake) ? c.stake : 0), 0);
+  const cartTotalReturn = cart.reduce((acc, c) => {
+    const snap = snapshots[c.duelId];
+    const odd = (c.side === 'LEFT' ? snap?.duel.left.odd : snap?.duel.right.odd) ?? 0;
+    return acc + (Number.isFinite(c.stake) ? c.stake : 0) * odd;
+  }, 0);
+  const currentBalance = Number(me?.wallet?.balance ?? 0);
+
+  // ── Mapeamento de carrinho → BetSlipItem para o drawer ─────────────
+  const slipItems: BetSlipItem[] = useMemo(() => {
+    return cart.map((c) => {
+      const snap = snapshots[c.duelId];
+      const sideData = c.side === 'LEFT' ? snap?.duel.left : snap?.duel.right;
+      const oppData = c.side === 'LEFT' ? snap?.duel.right : snap?.duel.left;
+      return {
+        duelId: c.duelId,
+        side: c.side,
+        label: sideData?.label ?? 'Aguardando...',
+        oppLabel: oppData?.label ?? 'Aguardando...',
+        odd: sideData?.odd ?? 0,
+        stake: c.stake,
+      };
+    });
+  }, [cart, snapshots]);
+
   async function submitCart() {
     if (!cart.length || cartSubmitting) return;
     if (!me) { setMessage('Faça login para apostar.'); return; }
-    // Validações pré-envio
     if (cartTotalStake > currentBalance) {
       setMessage('Saldo insuficiente para o bilhete inteiro.');
       return;
@@ -336,8 +355,11 @@ export default function ApostasPage() {
 
     setCartSubmitting(true);
     setMessage('');
-    const results: NonNullable<typeof cartResults> = [];
+    const results: BetResult[] = [];
     for (const item of cart) {
+      const snap = snapshots[item.duelId];
+      const sideData = item.side === 'LEFT' ? snap?.duel.left : snap?.duel.right;
+      const label = sideData?.label ?? '—';
       try {
         const response = await apiFetch(`${apiUrl}/market/bet`, {
           method: 'POST',
@@ -346,22 +368,22 @@ export default function ApostasPage() {
         });
         if (!response.ok) {
           const data = await response.json().catch(() => null as unknown);
-          results.push({ duelId: item.duelId, side: item.side, ok: false, message: parseApiError(data) ?? `Erro ${response.status}` });
+          results.push({ duelId: item.duelId, side: item.side, label, ok: false, message: parseApiError(data) ?? `Erro ${response.status}` });
           continue;
         }
         const data = (await response.json()) as { snapshot: MarketSnapshot; bet: { id: string; potentialWin: number }; wallet: { balance: number } };
         setSnapshots((prev) => ({ ...prev, [data.snapshot.duelId]: data.snapshot }));
         setMe((prev) => (prev ? { ...prev, wallet: { balance: data.wallet.balance, currency: prev.wallet?.currency ?? 'BRL' } } : prev));
-        results.push({ duelId: item.duelId, side: item.side, ok: true, message: 'OK', betId: data.bet.id, potentialWin: data.bet.potentialWin });
+        results.push({ duelId: item.duelId, side: item.side, label, ok: true, message: 'Aposta confirmada', potentialWin: data.bet.potentialWin });
       } catch (err) {
-        results.push({ duelId: item.duelId, side: item.side, ok: false, message: err instanceof Error ? err.message : 'Falha de rede' });
+        results.push({ duelId: item.duelId, side: item.side, label, ok: false, message: err instanceof Error ? err.message : 'Falha de rede' });
       }
     }
 
     if (typeof window !== 'undefined') window.dispatchEvent(new Event('wallet:refresh'));
     void loadMyBets();
 
-    // Remove do carrinho só os que deram certo; mantém os que falharam para o usuário corrigir
+    // Remove do carrinho só os que deram certo; mantém os que falharam
     const failedDuelIds = new Set(results.filter((r) => !r.ok).map((r) => r.duelId));
     setCart((prev) => prev.filter((c) => failedDuelIds.has(c.duelId)));
 
@@ -369,36 +391,11 @@ export default function ApostasPage() {
     setCartSubmitting(false);
   }
 
-  async function placeBet() {
-    if (!snapshot || !currentDuelId) return;
-    setPlacingBet(true); setMessage('');
-    try {
-      const response = await apiFetch(`${apiUrl}/market/bet`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ duelId: currentDuelId, side, amount: stake }),
-      });
-      if (response.status === 401) { setMessage('Faça login para apostar.'); return; }
-      if (!response.ok) {
-        const data = await response.json().catch(() => null as unknown);
-        throw new Error(parseApiError(data) ?? 'Não foi possível confirmar sua aposta');
-      }
-      const data = (await response.json()) as { snapshot: MarketSnapshot; bet: { id: string; oddAtPlacement: number; potentialWin: number }; wallet: { balance: number } };
-      setSnapshots((prev) => ({ ...prev, [data.snapshot.duelId]: data.snapshot }));
-      setMe((prev) => (prev ? { ...prev, wallet: { balance: data.wallet.balance, currency: prev.wallet?.currency ?? 'BRL' } } : prev));
-      // notifica nav (e qualquer outro componente) para atualizar saldo
-      if (typeof window !== 'undefined') window.dispatchEvent(new Event('wallet:refresh'));
-      void loadMyBets();
-      setMessage(`Aposta confirmada! Ticket ${data.bet.id.slice(0, 8)} • odd ${data.bet.oddAtPlacement.toFixed(2)} • retorno R$ ${data.bet.potentialWin.toFixed(2)}`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Falha ao enviar aposta');
-    } finally { setPlacingBet(false); }
-  }
-
-  async function placeMultiRunnerBet(oddId: string) {
+  async function placeMultiRunnerBet(oddId: string, stake: number) {
     const mrId = currentMRSnapshot?.marketId;
     if (!mrId) return;
-    setPlacingBet(true); setMessage('');
+    if (!me) { setMessage('Faça login para apostar.'); return; }
+    setMessage('');
     try {
       const response = await apiFetch(`${apiUrl}/market/multi-runner/bet`, {
         method: 'POST',
@@ -418,631 +415,379 @@ export default function ApostasPage() {
       setMessage(`Aposta confirmada! Ticket ${data.bet.id.slice(0, 8)} • odd ${data.bet.oddAtPlacement.toFixed(2)} • retorno R$ ${data.bet.potentialWin.toFixed(2)}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Falha ao enviar aposta');
-    } finally { setPlacingBet(false); }
+    }
   }
 
+  // ── BetEvent[] derivado do board ──────────────────────────────────
+  const eventsForSelector: BetEvent[] = useMemo(() => {
+    if (!board) return [];
+    return board.events.map((e) => ({
+      id: e.id,
+      name: e.name,
+      startAt: e.startAt,
+      status: (e.status === 'LIVE'
+        ? 'LIVE'
+        : e.status === 'FINISHED' || e.status === 'CANCELED'
+          ? 'FINISHED'
+          : 'SCHEDULED') as BetEvent['status'],
+    }));
+  }, [board]);
+
+  // ── DuelData[] derivado das stages do round ativo ───────────────────
+  const groupedDuels = useMemo(() => {
+    if (!activeRound) return [] as Array<{ category: string | null; categoryLabel: string | null; duels: Array<{ stage: BoardStage; duel: DuelData }> }>;
+    return activeRound.categories.map((cat) => ({
+      category: cat.category,
+      categoryLabel: cat.categoryLabel,
+      duels: cat.stages.map((stage) => {
+        const snap = snapshots[stage.duelId];
+        const duel: DuelData = {
+          id: stage.duelId,
+          status: classifyDuelStatus(stage),
+          totalPool: snap?.totalPool ?? 0,
+          isSuperFinal: !!stage.isSuperFinal,
+          left:  { label: snap?.duel.left.label  ?? 'Aguardando...', odd: snap?.duel.left.odd  ?? 1.9, photoUrl: snap?.duel.left.photoUrl  ?? null },
+          right: { label: snap?.duel.right.label ?? 'Aguardando...', odd: snap?.duel.right.odd ?? 1.9, photoUrl: snap?.duel.right.photoUrl ?? null },
+          settlement: snap?.settlement ? { winnerSide: snap.settlement.winnerSide } : undefined,
+          isInitialOdds: !!snap && snap.totalPool === 0,
+        };
+        return { stage, duel };
+      }),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRound, snapshots]);
+
+  // ── MultiRunnerMarket pro card visual ────────────────────────────────
+  const mrCardMarket: MRCardMarket | null = useMemo(() => {
+    if (!currentMRSnapshot) return null;
+    return {
+      id: currentMRSnapshot.marketId,
+      marketName: currentMRSnapshot.marketName,
+      marketType: currentMRSnapshot.marketType,
+      totalPool: currentMRSnapshot.totalPool,
+      status: currentMRSnapshot.status,
+      closeInSeconds: currentMRSnapshot.closeInSeconds,
+      runners: currentMRSnapshot.runners.map((r) => ({
+        oddId: r.oddId,
+        label: r.label,
+        odd: r.odd,
+        pool: r.pool,
+        // Backend retorna 0-100 (%), o componente espera 0-1 (fração).
+        poolShare: Math.min(1, Math.max(0, r.poolShare / 100)),
+        tickets: r.tickets,
+      })),
+    };
+  }, [currentMRSnapshot]);
+
+  // ── Histórico para o MyBetsHistory ───────────────────────────────────
+  const historyItems: BetHistoryItem[] = useMemo(() => {
+    return myBets.map((b) => {
+      const item = b.items[0];
+      const status: BetHistoryStatus = b.status === 'WON' ? 'WON'
+        : b.status === 'LOST' ? 'LOST'
+        : b.status === 'CANCELED' || b.status === 'REFUNDED' ? 'CANCELED'
+        : 'OPEN';
+      return {
+        id: b.id,
+        status,
+        stake: Number(b.stake),
+        potentialWin: Number(b.potentialWin),
+        oddAtPlacement: item?.oddAtPlacement ?? 0,
+        eventName: item?.eventName ?? 'Evento',
+        marketName: item?.marketName ?? '—',
+        oddLabel: item?.oddLabel ?? '—',
+        createdAt: b.createdAt,
+      };
+    });
+  }, [myBets]);
+
   return (
-    <main className='min-h-screen bg-[#090b11] text-white'>
-      <div className='mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8'>
+    <main className='min-h-screen bg-[#090b11] text-[#f1f3f8]'>
+      <div className='mx-auto max-w-7xl px-3 pt-4 sm:px-6 sm:pt-6 lg:px-8'>
         <MainNav />
 
         {/* Header */}
         <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-4 sm:p-6'>
-          <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-            <div className='min-w-0'>
-              <h1 className='text-xl font-semibold sm:text-2xl md:text-3xl'>Apostas em tempo real</h1>
-              <p className='mt-1 text-xs sm:text-sm text-white/60'>Escolha o evento e a modalidade.</p>
-            </div>
-            <div className='flex items-center justify-between gap-3 sm:justify-end sm:gap-4'>
-              {me && (
-                <div className='text-left sm:text-right'>
-                  <p className='text-[10px] text-white/40 uppercase tracking-wider'>Saldo</p>
-                  <p className='text-base sm:text-lg font-bold text-emerald-400'>R$ {formatMoney(currentBalance)}</p>
-                </div>
-              )}
-              <span className={`inline-flex items-center rounded-full px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-xs font-medium whitespace-nowrap ${connected ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                <span className={`mr-1.5 sm:mr-2 h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
-                {connected ? 'Ao vivo' : 'Reconectando'}
-              </span>
-            </div>
-          </div>
+          <h1 className='font-display text-2xl sm:text-3xl font-bold tracking-tight'>Apostar em tempo real</h1>
+          <p className='mt-1 text-xs sm:text-sm text-[#767b8a]'>Escolha o evento, o piloto e mande o bilhete.</p>
         </section>
 
         {message && <p className='mt-4 rounded-lg border border-white/20 bg-white/5 p-3 text-sm'>{message}</p>}
 
         {loading ? (
-          <p className='mt-6 text-white/70'>Carregando mercados...</p>
+          <p className='mt-6 text-[#b8bcc9]'>Carregando mercados...</p>
         ) : (
           <>
-            {/* Event selector — scroll horizontal no mobile */}
-            <div className='mt-4 -mx-3 sm:mx-0 overflow-x-auto px-3 sm:px-0 scrollbar-hide'>
-              <div className='flex gap-2 min-w-fit'>
-                {board?.events.map((event) => (
-                  <button
-                    key={event.id}
-                    type='button'
-                    className={`shrink-0 rounded-xl px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${selectedEventId === event.id
-                      ? 'bg-white text-[#090b11] shadow-lg'
-                      : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white border border-white/5'
-                    }`}
-                    onClick={() => {
-                      setSelectedEventId(event.id);
-                      setSelectedDuelId(event.currentDuelId ?? event.stages[0]?.duelId ?? '');
-                      setSelectedRound(null);
-                      setActiveTab('passadas');
-                    }}
-                  >
-                    {event.name}
-                  </button>
-                ))}
-              </div>
+            {/* Event selector */}
+            <div className='mt-5'>
+              <EventSelector
+                events={eventsForSelector}
+                selectedId={selectedEventId}
+                onSelect={(id) => {
+                  setSelectedEventId(id);
+                  const ev = board?.events.find((e) => e.id === id);
+                  setSelectedDuelId(ev?.currentDuelId ?? ev?.stages[0]?.duelId ?? '');
+                  setSelectedRound(null);
+                  setSelectedMarketId('');
+                  setSelectedOddId(null);
+                  setActiveTab('passadas');
+                }}
+              />
             </div>
 
-            {/* Tabs por modalidade — scroll horizontal no mobile */}
-            <div className='mt-4 -mx-3 sm:mx-0 overflow-x-auto scrollbar-hide'>
-              <div className='mx-3 sm:mx-0 flex gap-1 rounded-xl bg-[#101525] p-1 border border-white/10 min-w-fit'>
-                {availableTabs.map((tab) => {
-                  const { Icon } = tab;
-                  const active = activeTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type='button'
-                      className={`group flex flex-1 sm:flex-1 flex-col items-center justify-center gap-1 sm:gap-1.5 rounded-lg px-3 py-2.5 sm:px-4 sm:py-3 text-[11px] sm:text-sm font-semibold transition-all whitespace-nowrap min-w-[80px] ${active
-                        ? 'bg-white text-[#090b11] shadow-lg'
-                        : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-                      }`}
-                      onClick={() => setActiveTab(tab.id)}
-                    >
-                      <Icon
-                        size={18}
-                        strokeWidth={active ? 2.4 : 2}
-                        className={`transition-transform ${active ? 'scale-110' : 'group-hover:scale-105'}`}
-                      />
-                      <span className='leading-none text-center'>{tab.label}</span>
-                    </button>
-                  );
-                })}
+            {/* Modality tabs — só aparece se há mais de uma modalidade com mercado aberto */}
+            {tabsForUI.filter((t) => t.available).length > 1 && (
+              <div className='mt-5'>
+                <ModalityTabs tabs={tabsForUI} activeId={activeTab} onChange={(id) => setActiveTab(id as Tab)} />
               </div>
-            </div>
+            )}
 
-            <div className='mt-6'>
-              {/* ── TAB: PASSADAS (Duelos) ── */}
-              {activeTab === 'passadas' && (
-                <div className='space-y-4 sm:space-y-6'>
-                  {/* Aviso fixo: explica como o mercado funciona (uma vez, no topo) */}
-                  <div className='flex items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.05] px-4 py-3'>
-                    <svg className='h-5 w-5 text-amber-400 shrink-0 mt-0.5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
-                      <path strokeLinecap='round' strokeLinejoin='round' d='M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' />
-                    </svg>
-                    <p className='text-xs sm:text-sm text-amber-100/95 leading-relaxed'>
-                      <strong className='font-semibold text-amber-200'>Como o mercado funciona?</strong>{' '}
-                      A cotação é dinâmica e o retorno final depende do rateio do pote no fechamento das apostas. O número exibido é uma estimativa e pode variar até o fim do bilhete. <strong className='text-amber-200'>Quem acerta nunca recebe menos que o valor apostado.</strong>
+            {/* ── TAB: PASSADAS ── */}
+            {activeTab === 'passadas' && (
+              <div className='mt-6 space-y-6'>
+                {/* Aviso pari-mutuel */}
+                <div className='flex items-start gap-3 rounded-2xl border border-[rgba(255,176,40,0.25)] bg-[rgba(255,176,40,0.05)] px-4 py-3'>
+                  <svg className='h-5 w-5 text-[#ffb028] shrink-0 mt-0.5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+                    <path strokeLinecap='round' strokeLinejoin='round' d='M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' />
+                  </svg>
+                  <p className='text-xs sm:text-sm text-[#ffd887] leading-relaxed'>
+                    <strong className='font-semibold text-[#ffb028]'>Como o mercado funciona?</strong>{' '}
+                    A cotação é dinâmica e o retorno final depende do rateio do pote no fechamento das apostas. O número exibido é uma estimativa e pode variar até o fim do bilhete. <strong className='text-[#ffb028]'>Quem acerta nunca recebe menos que o valor apostado.</strong>
+                  </p>
+                </div>
+
+                {/* Status + Round row */}
+                <div className='flex flex-wrap items-center gap-3 justify-between'>
+                  <StatusFilterChips active={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
+                  {roundsForEvent.length > 1 && (
+                    <RoundSelector
+                      rounds={roundsForEvent.map((r) => ({
+                        id: String(r.roundNumber),
+                        label: r.roundNumber === 99 || r.categories.some((c) => c.stages.some((s) => s.isSuperFinal)) ? 'Super Final' : `Rodada ${r.roundNumber}`,
+                        special: r.roundNumber === 99 || r.categories.some((c) => c.stages.some((s) => s.isSuperFinal)),
+                      }))}
+                      activeId={String(activeRound?.roundNumber ?? '')}
+                      onChange={(id) => setSelectedRound(Number(id))}
+                    />
+                  )}
+                </div>
+
+                {/* Categorias + DuelCards */}
+                {groupedDuels.length > 0 ? (
+                  <div className='space-y-8'>
+                    {groupedDuels.map((group) => (
+                      <section key={group.category ?? 'sem-categoria'}>
+                        {group.categoryLabel && (
+                          <div className='flex items-center gap-2 mb-3'>
+                            <span className='h-px w-6 bg-[#ffb028]' />
+                            <h2 className='text-[11px] uppercase tracking-[0.22em] text-[#ffb028] font-semibold'>
+                              Categoria {group.categoryLabel}
+                            </h2>
+                            <span className='font-mono text-[11px] text-[#4a4f5d]'>· {group.duels.length} embates</span>
+                          </div>
+                        )}
+                        <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4'>
+                          {group.duels.map(({ stage, duel }) => {
+                            const cartEntry = cartIndexByDuel.get(stage.duelId);
+                            return (
+                              <DuelCard
+                                key={stage.duelId}
+                                duel={duel}
+                                selectedSide={cartEntry?.side ?? null}
+                                stakeForEstimate={cartEntry?.stake ?? minBet}
+                                onSelect={(side: DuelSide) => {
+                                  setSelectedDuelId(stage.duelId);
+                                  cartToggle(stage.duelId, side);
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                ) : (
+                  <div className='rounded-2xl border border-dashed border-white/10 p-12 text-center'>
+                    <p className='text-sm text-[#767b8a]'>
+                      {statusFilter === 'OPEN' && 'Nenhum embate aberto no momento.'}
+                      {statusFilter === 'SETTLED' && 'Nenhum embate auditado nesta rodada.'}
+                      {statusFilter === 'CANCELED' && 'Nenhum embate cancelado.'}
                     </p>
                   </div>
-
-                  {/* Filtro de status (Em aberto / Auditadas / Canceladas) */}
-                  <div className='flex gap-2 overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0 scrollbar-hide'>
-                    {([
-                      { key: 'aberto', label: 'Em aberto', count: statusCounts.aberto, tone: 'bg-emerald-500 text-white shadow-lg' },
-                      { key: 'auditado', label: 'Auditadas', count: statusCounts.auditado, tone: 'bg-blue-500 text-white shadow-lg' },
-                      { key: 'cancelado', label: 'Canceladas', count: statusCounts.cancelado, tone: 'bg-red-500 text-white shadow-lg' },
-                    ] as const).map((f) => {
-                      const isActive = statusFilter === f.key;
-                      return (
-                        <button
-                          key={f.key}
-                          type='button'
-                          onClick={() => { setStatusFilter(f.key); setSelectedRound(null); }}
-                          className={`shrink-0 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs sm:text-sm font-semibold transition-all ${
-                            isActive ? f.tone : 'bg-white/5 text-white/60 hover:bg-white/10'
-                          }`}
-                        >
-                          {f.label}
-                          <span className={`inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold ${
-                            isActive ? 'bg-white/20 text-white' : 'bg-white/10 text-white/50'
-                          }`}>{f.count}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Round selector — uma aba por rodada (chave) com todas as categorias dentro */}
-                  {roundsForEvent.length > 1 && (
-                    <div className='-mx-3 sm:mx-0 overflow-x-auto px-3 sm:px-0 scrollbar-hide'>
-                      <div className='flex gap-2 min-w-fit'>
-                        {roundsForEvent.map((r) => {
-                          const isActive = activeRound?.roundNumber === r.roundNumber;
-                          const isSF = r.roundNumber === 99 || r.categories.some((c) => c.stages.some((s) => s.isSuperFinal));
-                          const label = isSF ? 'Super Final' : `Rodada ${r.roundNumber}`;
-                          return (
-                            <button
-                              key={r.roundNumber}
-                              type='button'
-                              className={`shrink-0 rounded-full px-4 py-2 text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${isActive
-                                ? (isSF ? 'bg-amber-500 text-black shadow-lg' : 'bg-blue-500 text-white shadow-lg')
-                                : 'bg-white/5 text-white/60 hover:bg-white/10'
-                              }`}
-                              onClick={() => setSelectedRound(r.roundNumber)}
-                            >
-                              {isSF && <span className='mr-1'>🏆</span>}{label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Quadrantes por categoria — desktop: 2-col, mobile: 1-col (lista vertical) */}
-                  {activeRound && (
-                    <div className='grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4'>
-                      {activeRound.categories.map((cat) => (
-                        <section key={cat.category ?? 'none'} className='rounded-2xl border border-white/10 bg-[#0d1320] overflow-hidden flex flex-col'>
-                          {cat.categoryLabel && (
-                            <div className='flex items-center justify-between gap-2 border-b border-white/10 bg-white/[0.03] px-3 py-2 sm:px-4 sm:py-2.5'>
-                              <p className='text-xs sm:text-sm font-bold uppercase tracking-widest text-white'>
-                                Categoria <span className='text-amber-300'>{cat.categoryLabel}</span>
-                              </p>
-                              <span className='text-[10px] text-white/40'>{cat.stages.length} embate{cat.stages.length !== 1 ? 's' : ''}</span>
-                            </div>
-                          )}
-                          <ul className='flex flex-col divide-y divide-white/5'>
-                            {cat.stages.map((stage) => {
-                              const snap = snapshots[stage.duelId];
-                              const isActive = currentDuelId === stage.duelId;
-                              const leftLabel = snap?.duel.left.label ?? 'Aguardando...';
-                              const rightLabel = snap?.duel.right.label ?? 'Aguardando...';
-                              const leftOdd = snap?.duel.left.odd;
-                              const rightOdd = snap?.duel.right.odd;
-                              const isCanceled = stage.matchupStatus === 'CANCELED' || stage.status === 'CANCELED';
-                              const isClosed = !isCanceled && snap && (snap.locked || snap.status === 'BOOKING_CLOSED' || snap.status === 'FINISHED') && !snap.settlement;
-                              const isSettled = !isCanceled && !!snap?.settlement;
-                              const pillLabel = isCanceled ? 'CANCELADO' : isSettled ? 'AUDITADO' : isClosed ? 'FECHADO' : 'ABERTO';
-                              const pillClass = isCanceled ? 'bg-red-500/15 text-red-300'
-                                : isSettled ? 'bg-emerald-500/15 text-emerald-300'
-                                : isClosed ? 'bg-amber-500/15 text-amber-300'
-                                : 'bg-emerald-500/10 text-emerald-400';
-                              const cartEntry = cartIndexByDuel.get(stage.duelId);
-                              const cartLeft = cartEntry?.side === 'LEFT';
-                              const cartRight = cartEntry?.side === 'RIGHT';
-                              const canBetCard = !isCanceled && !isSettled && !isClosed;
-                              // Retorno estimado por lado: usa stake do carrinho se já adicionado, senão minBet.
-                              const stakeForEstimate = cartEntry ? cartEntry.stake : minBet;
-                              const leftEstimate = (leftOdd ?? 0) > 0 ? stakeForEstimate * (leftOdd ?? 0) : 0;
-                              const rightEstimate = (rightOdd ?? 0) > 0 ? stakeForEstimate * (rightOdd ?? 0) : 0;
-                              return (
-                                <li key={stage.duelId} className={`p-3 sm:p-4 transition-all ${
-                                  cartEntry
-                                    ? 'bg-emerald-500/[0.04] ring-1 ring-emerald-400/30 ring-inset'
-                                    : 'hover:bg-white/[0.02]'
-                                }`}>
-                                  <div className='flex items-center justify-between mb-2.5'>
-                                    <button
-                                      type='button'
-                                      onClick={() => setSelectedDuelId(stage.duelId)}
-                                      className='text-[10px] font-bold uppercase tracking-widest text-white/50 hover:text-white/80'
-                                      title='Ver detalhes deste embate'
-                                    >
-                                      {stage.isSuperFinal ? '🏆 Super Final' : `Pote R$ ${snap ? formatMoney(snap.totalPool) : '0,00'}`}
-                                    </button>
-                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold tracking-wider ${pillClass}`}>
-                                      {pillLabel}
-                                    </span>
-                                  </div>
-                                  <div className='grid grid-cols-2 gap-2'>
-                                    {/* PILOTO ESQUERDO (azul) */}
-                                    <button
-                                      type='button'
-                                      disabled={!canBetCard}
-                                      onClick={() => canBetCard && cartToggle(stage.duelId, 'LEFT')}
-                                      className={`group relative rounded-lg border p-2.5 sm:p-3 text-left transition-all ${
-                                        cartLeft ? 'border-blue-400 bg-blue-500/15 ring-2 ring-blue-400/40 shadow-[0_0_15px_rgba(59,130,246,0.25)]'
-                                          : canBetCard ? 'border-white/10 bg-gradient-to-br from-[#121c2d] to-[#0a101d] hover:border-blue-400/40 hover:bg-blue-500/[0.06]'
-                                          : 'border-white/5 bg-white/[0.02] opacity-50 cursor-not-allowed'
-                                      }`}
-                                    >
-                                      <div className='flex items-center gap-1.5 mb-1'>
-                                        {cartLeft && (
-                                          <span className='inline-flex items-center justify-center h-4 w-4 rounded-full bg-emerald-400 text-black text-[9px] font-bold'>✓</span>
-                                        )}
-                                        <p className='text-[10px] uppercase tracking-widest font-bold text-blue-400/70 truncate'>Piloto A</p>
-                                      </div>
-                                      <p className='text-xs sm:text-sm font-semibold text-white leading-tight line-clamp-2 min-h-[2.4em]'>
-                                        {leftLabel}
-                                      </p>
-                                      <div className='mt-2 pt-2 border-t border-white/5 flex items-center justify-between gap-2'>
-                                        <span className='text-[10px] text-white/50'>Cotação</span>
-                                        <span className='text-base sm:text-lg font-bold text-blue-400'>@{leftOdd?.toFixed(2) ?? '--'}</span>
-                                      </div>
-                                      <div className='mt-1 flex items-center justify-between gap-2 text-[10px]'>
-                                        <span className='text-white/40'>Retorno Estimado</span>
-                                        <span className='font-semibold text-emerald-400'>~ R$ {formatMoney(leftEstimate)}</span>
-                                      </div>
-                                    </button>
-
-                                    {/* PILOTO DIREITO (laranja) */}
-                                    <button
-                                      type='button'
-                                      disabled={!canBetCard}
-                                      onClick={() => canBetCard && cartToggle(stage.duelId, 'RIGHT')}
-                                      className={`group relative rounded-lg border p-2.5 sm:p-3 text-left transition-all ${
-                                        cartRight ? 'border-orange-400 bg-orange-500/15 ring-2 ring-orange-400/40 shadow-[0_0_15px_rgba(251,146,60,0.25)]'
-                                          : canBetCard ? 'border-white/10 bg-gradient-to-br from-[#2d1c12] to-[#1d100a] hover:border-orange-400/40 hover:bg-orange-500/[0.06]'
-                                          : 'border-white/5 bg-white/[0.02] opacity-50 cursor-not-allowed'
-                                      }`}
-                                    >
-                                      <div className='flex items-center gap-1.5 mb-1'>
-                                        {cartRight && (
-                                          <span className='inline-flex items-center justify-center h-4 w-4 rounded-full bg-emerald-400 text-black text-[9px] font-bold'>✓</span>
-                                        )}
-                                        <p className='text-[10px] uppercase tracking-widest font-bold text-orange-400/70 truncate'>Piloto B</p>
-                                      </div>
-                                      <p className='text-xs sm:text-sm font-semibold text-white leading-tight line-clamp-2 min-h-[2.4em]'>
-                                        {rightLabel}
-                                      </p>
-                                      <div className='mt-2 pt-2 border-t border-white/5 flex items-center justify-between gap-2'>
-                                        <span className='text-[10px] text-white/50'>Cotação</span>
-                                        <span className='text-base sm:text-lg font-bold text-orange-400'>@{rightOdd?.toFixed(2) ?? '--'}</span>
-                                      </div>
-                                      <div className='mt-1 flex items-center justify-between gap-2 text-[10px]'>
-                                        <span className='text-white/40'>Retorno Estimado</span>
-                                        <span className='font-semibold text-emerald-400'>~ R$ {formatMoney(rightEstimate)}</span>
-                                      </div>
-                                    </button>
-                                  </div>
-
-                                  {/* Marcador "no bilhete" */}
-                                  {cartEntry && (
-                                    <div className='mt-2 flex items-center justify-between gap-2 text-[10px]'>
-                                      <span className='inline-flex items-center gap-1 text-emerald-300'>
-                                        <span className='h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse'></span>
-                                        No bilhete · R$ {formatMoney(cartEntry.stake)}
-                                      </span>
-                                      <button
-                                        type='button'
-                                        onClick={() => cartRemove(stage.duelId)}
-                                        className='text-white/40 hover:text-red-300 underline-offset-2 hover:underline'
-                                      >
-                                        remover
-                                      </button>
-                                    </div>
-                                  )}
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </section>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Empty state — quando o filtro atual não tem embates */}
-                  {(!activeRound || activeRound.categories.length === 0) && (
-                    <div className='rounded-2xl border border-dashed border-white/10 p-12 text-center'>
-                      <p className='text-sm text-white/40'>
-                        {statusFilter === 'aberto' && 'Nenhum embate aberto no momento.'}
-                        {statusFilter === 'auditado' && 'Nenhum embate auditado nesta rodada.'}
-                        {statusFilter === 'cancelado' && 'Nenhum embate cancelado.'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── TABS: Vencedor / Reação / Queimada (Multi-Runner) ── */}
-              {activeTab !== 'passadas' && (
-                <div className='space-y-6'>
-                  {/* Market selector if multiple markets of this type */}
-                  {currentTabMarkets.length > 1 && (
-                    <div className='flex flex-wrap gap-2'>
-                      {currentTabMarkets.map((mr) => (
-                        <button
-                          key={mr.marketId}
-                          type='button'
-                          className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${selectedMarketId === mr.marketId
-                            ? 'bg-emerald-500 text-black shadow-lg'
-                            : 'bg-white/5 text-white/60 hover:bg-white/10'
-                          }`}
-                          onClick={() => setSelectedMarketId(mr.marketId)}
-                        >
-                          {mr.marketName}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {currentMRSnapshot ? (
-                    <MultiRunnerMarket
-                      snapshot={currentMRSnapshot}
-                      me={me}
-                      stake={stake}
-                      setStake={(value) => setStakeRaw(String(value))}
-                      onPlaceBet={placeMultiRunnerBet}
-                      placingBet={placingBet}
-                    />
-                  ) : (
-                    <div className='rounded-2xl border border-dashed border-white/10 p-12 text-center'>
-                      <p className='text-white/40'>Nenhum mercado de {TABS.find((t) => t.id === activeTab)?.label} criado para este evento.</p>
-                      <p className='mt-1 text-xs text-white/25'>Crie um mercado no painel admin para começar.</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── Meus Bilhetes ── */}
-              <div className='mt-10 pt-8 border-t border-white/8'>
-                <p className='text-lg font-semibold tracking-tight mb-4'>Meus Bilhetes</p>
-                <div className='max-h-96 space-y-3 overflow-auto pr-2'>
-                  {myBets.length ? (
-                    myBets.map((bet) => {
-                      const item = bet.items[0];
-                      const statusColor = bet.status === 'OPEN' ? 'bg-blue-500/20 text-blue-400' : bet.status === 'WON' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-white/50';
-                      return (
-                        <div key={bet.id} className='rounded-2xl border border-white/8 bg-white/[0.03] p-4 transition-colors hover:border-white/15'>
-                          <div className='flex justify-between items-start mb-3'>
-                            <div>
-                              <p className='text-sm font-medium'>{item?.eventName ?? 'Evento'}</p>
-                              <p className='text-xs text-white/40'>{item?.stageLabel ?? '--'} • {item?.marketName ?? '--'}</p>
-                            </div>
-                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${statusColor}`}>{bet.status}</span>
-                          </div>
-                          <div className='flex items-center justify-between text-xs'>
-                            <span className='text-white/50'>{item?.oddLabel ?? '-'} • @{item?.oddAtPlacement?.toFixed(2) ?? '--'} • R$ {formatMoney(bet.stake)}</span>
-                            <span className='font-medium text-emerald-400'>+ R$ {formatMoney(bet.potentialWin)}</span>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className='rounded-2xl border border-dashed border-white/10 p-8 text-center'>
-                      <p className='text-sm text-white/40'>Nenhum bilhete encontrado</p>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
+            )}
+
+            {/* ── TAB: VENCEDOR / REACAO / QUEIMADA ── */}
+            {activeTab !== 'passadas' && (
+              <div className='mt-6 space-y-4'>
+                {currentTabMarkets.length > 1 && (
+                  <div className='flex flex-wrap gap-2'>
+                    {currentTabMarkets.map((mr) => (
+                      <button
+                        key={mr.marketId}
+                        type='button'
+                        className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${selectedMarketId === mr.marketId
+                          ? 'bg-white text-[#0a0d14] font-semibold'
+                          : 'bg-white/[0.04] border border-white/10 text-[#b8bcc9] hover:bg-white/[0.08] hover:text-white'}
+                        `}
+                        onClick={() => { setSelectedMarketId(mr.marketId); setSelectedOddId(null); }}
+                      >
+                        {mr.marketName}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {mrCardMarket ? (
+                  <div className='grid grid-cols-1 lg:grid-cols-2 gap-4'>
+                    <MultiRunnerCard
+                      market={mrCardMarket}
+                      selectedOddId={selectedOddId}
+                      onPick={(oddId) => setSelectedOddId(oddId)}
+                      onPlaceBet={(oddId, stake) => placeMultiRunnerBet(oddId, stake)}
+                      userLoggedIn={!!me}
+                      minBet={minBet}
+                    />
+                  </div>
+                ) : (
+                  <div className='rounded-2xl border border-dashed border-white/10 p-12 text-center'>
+                    <p className='text-[#767b8a]'>Nenhum mercado de {TAB_DEFS.find((t) => t.id === activeTab)?.label} criado para este evento.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Histórico do usuário */}
+            <div className='mt-12 pb-2'>
+              <MyBetsHistory bets={historyItems} />
             </div>
           </>
         )}
       </div>
 
-      {/* ── Bilhete acumulado (sticky bottom) ── */}
-      {cart.length > 0 && (
-        <div className='fixed bottom-0 left-0 right-0 z-30 border-t border-white/10 bg-[#0a101d]/95 backdrop-blur-md shadow-[0_-8px_30px_rgba(0,0,0,0.6)]'>
-          <div className='mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-4 lg:px-8'>
-            {/* Header sempre visível — clicar nele alterna minimizado/expandido */}
-            <button
-              type='button'
-              onClick={() => setCartCollapsed((c) => !c)}
-              className='w-full flex items-center justify-between gap-3 mb-2 group'
-              aria-expanded={!cartCollapsed}
-              aria-label={cartCollapsed ? 'Expandir bilhete' : 'Minimizar bilhete'}
-            >
-              <div className='flex items-center gap-2'>
-                <span className='inline-flex items-center justify-center h-7 min-w-[28px] rounded-full bg-emerald-500 text-black text-xs font-bold px-2'>
-                  {cart.length}
-                </span>
-                <p className='text-sm font-semibold'>Bilhete <span className='text-white/50'>(seleções)</span></p>
-                {cartCollapsed && (
-                  <span className='hidden sm:inline text-xs text-white/40'>· R$ {formatMoney(cartTotalStake)} · ~R$ {formatMoney(cartTotalReturn)}</span>
-                )}
-              </div>
-              <div className='flex items-center gap-3'>
-                {!cartCollapsed && (
-                  <span
-                    role='button'
-                    tabIndex={0}
-                    onClick={(e) => { e.stopPropagation(); if (!cartSubmitting) setCart([]); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); if (!cartSubmitting) setCart([]); } }}
-                    className='text-xs text-white/50 hover:text-white/80 cursor-pointer'
-                    aria-disabled={cartSubmitting}
-                  >
-                    Limpar
-                  </span>
-                )}
-                <span className='inline-flex items-center justify-center h-7 w-7 rounded-full bg-white/10 group-hover:bg-white/20 transition-colors'>
-                  <svg className={`h-4 w-4 text-white/80 transition-transform duration-300 ${cartCollapsed ? 'rotate-180' : ''}`} fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2.5}>
-                    <path strokeLinecap='round' strokeLinejoin='round' d='M19 9l-7 7-7-7' />
-                  </svg>
-                </span>
-              </div>
-            </button>
+      {/* Bilhete sticky */}
+      <BetSlipDrawer
+        items={slipItems}
+        totalStake={cartTotalStake}
+        totalReturn={cartTotalReturn}
+        balance={currentBalance}
+        balanceAfter={currentBalance - cartTotalStake}
+        minBet={minBet}
+        submitting={cartSubmitting}
+        userLoggedIn={!!me}
+        onStakeChange={cartUpdateStake}
+        onRemove={cartRemove}
+        onClear={() => !cartSubmitting && setCart([])}
+        onSubmit={submitCart}
+      />
 
-            {!cartCollapsed && (
-            <>
-            <div className='max-h-[40vh] overflow-y-auto space-y-1.5 mb-3 pr-1'>
-              {cart.map((item) => {
-                const snap = snapshots[item.duelId];
-                const sideData = item.side === 'LEFT' ? snap?.duel.left : snap?.duel.right;
-                const oppData = item.side === 'LEFT' ? snap?.duel.right : snap?.duel.left;
-                const odd = sideData?.odd ?? 0;
-                const estReturn = item.stake * odd;
-                return (
-                  <div key={item.duelId} className='grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_140px_120px_auto] items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-2 py-2'>
-                    <div className='min-w-0'>
-                      <p className='text-xs font-semibold truncate'>
-                        <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold mr-1.5 ${
-                          item.side === 'LEFT' ? 'bg-blue-500/20 text-blue-300' : 'bg-orange-500/20 text-orange-300'
-                        }`}>
-                          {item.side === 'LEFT' ? 'A' : 'B'}
-                        </span>
-                        <span className={item.side === 'LEFT' ? 'text-blue-300' : 'text-orange-300'}>
-                          {sideData?.label ?? '...'}
-                        </span>
-                      </p>
-                      <p className='text-[10px] text-white/40 mt-0.5 truncate'>
-                        vs {oppData?.label ?? '...'}
-                      </p>
-                    </div>
-                    <div className='hidden sm:block text-right'>
-                      <p className='text-[9px] uppercase tracking-widest text-white/40'>Retorno est.</p>
-                      <p className='text-xs font-bold text-emerald-400'>@{odd.toFixed(2)} · ~R$ {formatMoney(estReturn)}</p>
-                    </div>
-                    <div className='flex items-center gap-1'>
-                      <span className='text-[10px] text-white/40'>R$</span>
-                      <input
-                        type='number'
-                        inputMode='decimal'
-                        min={minBet}
-                        step={5}
-                        value={item.stake}
-                        onChange={(e) => cartUpdateStake(item.duelId, e.target.value)}
-                        className='w-20 rounded-md border border-white/10 bg-[#090b11] px-2 py-1 text-sm font-semibold text-white outline-none focus:border-white/30'
-                        disabled={cartSubmitting}
-                      />
-                    </div>
-                    <button
-                      type='button'
-                      onClick={() => cartRemove(item.duelId)}
-                      className='rounded-md w-7 h-7 flex items-center justify-center text-white/50 hover:bg-red-500/20 hover:text-red-300'
-                      title='Remover do bilhete'
-                      disabled={cartSubmitting}
-                    >
-                      ×
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+      {/* Spacer pro conteúdo não ficar atrás do drawer fixo */}
+      {cart.length > 0 && <div className='h-40 sm:h-32' />}
 
-            {/* Totais — agora também mostra retorno estimado total */}
-            <div className='grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-3 border-t border-white/5 pt-3'>
-              <div className='rounded-lg bg-white/[0.03] px-3 py-2'>
-                <p className='text-[9px] uppercase tracking-widest text-white/40'>Seleções</p>
-                <p className='text-sm sm:text-base font-bold text-white'>{cart.length}</p>
-              </div>
-              <div className='rounded-lg bg-white/[0.03] px-3 py-2'>
-                <p className='text-[9px] uppercase tracking-widest text-white/40'>Total apostado</p>
-                <p className='text-sm sm:text-base font-bold text-white'>R$ {formatMoney(cartTotalStake)}</p>
-              </div>
-              <div className='rounded-lg bg-emerald-500/[0.05] px-3 py-2 ring-1 ring-emerald-500/20'>
-                <p className='text-[9px] uppercase tracking-widest text-emerald-300/70'>Retorno estimado <span className='text-emerald-300/50'>(varia)</span></p>
-                <p className='text-sm sm:text-base font-bold text-emerald-300'>~ R$ {formatMoney(cartTotalReturn)}</p>
-              </div>
-              <div className='rounded-lg bg-white/[0.03] px-3 py-2'>
-                <p className='text-[9px] uppercase tracking-widest text-white/40'>Saldo após</p>
-                <p className={`text-sm sm:text-base font-bold ${currentBalance - cartTotalStake < 0 ? 'text-red-400' : 'text-white'}`}>
-                  R$ {formatMoney(currentBalance - cartTotalStake)}
-                </p>
-              </div>
-            </div>
-            </>
-            )}
-
-            <button
-              type='button'
-              onClick={submitCart}
-              disabled={cartSubmitting || !me || cartTotalStake > currentBalance || cart.some((c) => c.stake < minBet)}
-              className='w-full rounded-xl bg-emerald-400 px-5 py-3.5 text-sm font-extrabold text-black hover:bg-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed'
-            >
-              {cartSubmitting ? 'Enviando...' : !me ? 'Faça login' : `Apostar ${cart.length} embate${cart.length !== 1 ? 's' : ''} · R$ ${formatMoney(cartTotalStake)}`}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Spacer para conteúdo não ficar atrás do bilhete sticky.
-           Reduzido drasticamente quando o bilhete está minimizado. */}
-      {cart.length > 0 && <div className={cartCollapsed ? 'h-24 sm:h-20' : 'h-48 sm:h-40'} />}
-
-      {/* Modal de resultado do bilhete enviado */}
+      {/* Modal de resultado */}
       {cartResults && (
-        <div className='fixed inset-0 z-[95] flex items-center justify-center bg-black/70 p-4'>
-          <div className='w-full max-w-md rounded-2xl border border-white/10 bg-[#101525] p-5 sm:p-6 shadow-2xl max-h-[80vh] flex flex-col'>
-            <h3 className='text-lg sm:text-xl font-bold mb-1'>
-              Bilhete enviado
-            </h3>
-            <p className='text-sm text-white/60 mb-4'>
-              {cartResults.filter((r) => r.ok).length} de {cartResults.length} aposta(s) confirmadas.
-            </p>
-            <div className='space-y-2 overflow-y-auto flex-1 pr-1'>
-              {cartResults.map((r, idx) => (
-                <div key={`${r.duelId}-${idx}`} className={`rounded-lg border p-2.5 ${r.ok ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
-                  <div className='flex items-center justify-between gap-2'>
-                    <p className={`text-sm font-semibold ${r.ok ? 'text-emerald-300' : 'text-red-300'}`}>
-                      {r.ok ? '✓ Confirmada' : '✗ Falhou'}
-                    </p>
-                    {r.ok && r.potentialWin !== undefined && (
-                      <p className='text-xs font-medium text-emerald-200'>~R$ {formatMoney(r.potentialWin)}</p>
-                    )}
-                  </div>
-                  <p className='text-[11px] text-white/60 mt-0.5'>{r.message}</p>
-                </div>
-              ))}
-            </div>
-            <button
-              type='button'
-              onClick={() => setCartResults(null)}
-              className='mt-4 w-full rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-black hover:bg-white/90'
-            >
-              Fechar
-            </button>
-          </div>
-        </div>
+        <BetResultModal
+          open
+          results={cartResults}
+          onClose={() => setCartResults(null)}
+        />
       )}
-
     </main>
   );
 }
 
-function OddCard({ title, odd, pool, tickets, photoUrl, active, onClick, tone }: {
-  title: string; odd?: number; pool?: number; tickets?: number; photoUrl?: string | null; active: boolean; onClick: () => void; tone: 'blue' | 'orange';
+// ── Inline helpers (StatusFilterChips + RoundSelector) ─────────────────
+
+function StatusFilterChips({
+  active,
+  onChange,
+  counts,
+}: {
+  active: 'OPEN' | 'SETTLED' | 'CANCELED';
+  onChange: (v: 'OPEN' | 'SETTLED' | 'CANCELED') => void;
+  counts: { OPEN: number; SETTLED: number; CANCELED: number };
 }) {
-  const isBlue = tone === 'blue';
-  const apiOrigin = (() => {
-    try {
-      const base = process.env.NEXT_PUBLIC_API_URL ?? '';
-      return base.replace(/\/api\/?$/, '');
-    } catch {
-      return '';
-    }
-  })();
-  const resolvedPhotoUrl = photoUrl
-    ? (photoUrl.startsWith('http') ? photoUrl : `${apiOrigin}${photoUrl}`)
-    : null;
+  const items: { id: 'OPEN' | 'SETTLED' | 'CANCELED'; label: string; cls: string }[] = [
+    { id: 'OPEN',     label: 'Em aberto',  cls: 'text-[#21d97a]' },
+    { id: 'SETTLED',  label: 'Auditadas',  cls: 'text-[#b8bcc9]' },
+    { id: 'CANCELED', label: 'Canceladas', cls: 'text-[#ff5a6c]' },
+  ];
   return (
-    <button
-      className={`group relative w-full overflow-hidden text-left transition-all duration-500 outline-none ${active ? 'scale-[1.02] shadow-2xl z-10' : 'hover:scale-[1.01] opacity-90 hover:opacity-100'}`}
-      type='button' onClick={onClick}
-    >
-      <div className={`absolute inset-0 border-2 rounded-2xl sm:rounded-3xl transition-colors duration-300 ${active ? (isBlue ? 'border-blue-500' : 'border-orange-500') : 'border-transparent'}`} />
-      <div className={`rounded-2xl sm:rounded-3xl p-4 sm:p-6 h-full flex flex-col justify-between relative overflow-hidden ${isBlue ? 'bg-gradient-to-br from-[#121c2d] to-[#0a101d]' : 'bg-gradient-to-br from-[#2d1c12] to-[#1d100a]'}`}>
-        {resolvedPhotoUrl ? (
-          <>
-            <div
-              className='absolute inset-0 bg-cover bg-center opacity-40 transition-opacity duration-500 group-hover:opacity-50'
-              style={{ backgroundImage: `url(${resolvedPhotoUrl})` }}
-              aria-hidden
-            />
-            <div
-              className={`absolute inset-0 ${isBlue ? 'bg-gradient-to-t from-[#0a101d] via-[#0a101d]/70 to-[#0a101d]/20' : 'bg-gradient-to-t from-[#1d100a] via-[#1d100a]/70 to-[#1d100a]/20'}`}
-              aria-hidden
-            />
-          </>
-        ) : null}
-        <div className={`absolute -right-12 -top-12 h-32 w-32 rounded-full blur-3xl transition-opacity duration-500 ${active ? 'opacity-30' : 'opacity-0'} ${isBlue ? 'bg-blue-400' : 'bg-orange-400'}`} />
-        <div className='relative z-10'>
-          <div className='flex items-center gap-2 mb-2'>
-            <div className={`w-2 h-2 rounded-full shadow-[0_0_10px_currentColor] ${isBlue ? 'text-blue-400 bg-blue-400' : 'text-orange-400 bg-orange-400'}`} />
-            <p className='text-[10px] font-bold uppercase tracking-widest text-white/50'>Opção</p>
-          </div>
-          <p className='text-base sm:text-lg font-medium tracking-tight text-white/90 leading-tight min-h-[40px] sm:min-h-[50px]'>{title}</p>
-        </div>
-        <div className='relative z-10 mt-4 sm:mt-6 flex items-end justify-between gap-2'>
-          <div className='min-w-0'>
-            <p className='text-[10px] sm:text-xs font-semibold text-white/40 mb-0.5 sm:mb-1'>Cotação atual <span className='text-white/30'>(varia)</span></p>
-            <div className='flex items-baseline gap-1'>
-              <span className={`text-lg sm:text-xl font-medium ${isBlue ? 'text-blue-400' : 'text-orange-400'}`}>@</span>
-              <p className='text-3xl sm:text-4xl font-bold tracking-tighter text-white'>{odd?.toFixed(2) ?? '--'}</p>
-            </div>
-          </div>
-          <div className='text-right shrink-0'>
-            <p className='text-[10px] font-medium uppercase tracking-widest text-white/30 mb-0.5 sm:mb-1'>Volume</p>
-            <p className='text-[11px] sm:text-xs font-medium text-white/60'>R$ {formatMoney(pool ?? 0)}</p>
-            <p className='text-[10px] text-white/40 mt-0.5'>{tickets ?? '--'} APOSTAS</p>
-          </div>
-        </div>
-      </div>
-    </button>
+    <div className='flex items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'>
+      {items.map((it) => {
+        const on = active === it.id;
+        return (
+          <button
+            key={it.id}
+            type='button'
+            onClick={() => onChange(it.id)}
+            className={`
+              inline-flex shrink-0 items-center gap-1.5 h-8 px-3 rounded-full text-[12px] transition-colors whitespace-nowrap
+              ${on
+                ? 'bg-white text-[#0a0d14] font-semibold'
+                : `bg-white/[0.04] border border-white/10 ${it.cls} hover:bg-white/[0.08]`}
+            `}
+          >
+            {it.label}
+            <span className={`font-mono text-[10px] tabular-nums ${on ? 'text-[#767b8a]' : 'text-[#4a4f5d]'}`}>
+              {counts[it.id]}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function RoundSelector({
+  rounds,
+  activeId,
+  onChange,
+}: {
+  rounds: Array<{ id: string; label: string; special: boolean }>;
+  activeId: string;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <div className='flex items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'>
+      {rounds.map((r) => {
+        const on = activeId === r.id;
+        if (r.special) {
+          return (
+            <button
+              key={r.id}
+              type='button'
+              onClick={() => onChange(r.id)}
+              className={`
+                inline-flex shrink-0 items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-display font-semibold transition-all whitespace-nowrap
+                ${on
+                  ? 'text-[#1a1305] bg-[linear-gradient(180deg,#ffc55a,#ff8a2a)] shadow-[0_8px_22px_-10px_rgba(255,138,42,0.65)]'
+                  : 'bg-[rgba(255,176,40,0.10)] border border-[rgba(255,176,40,0.25)] text-[#ffb028] hover:bg-[rgba(255,176,40,0.16)]'}
+              `}
+            >
+              <Crown className='h-3 w-3' />
+              {r.label}
+            </button>
+          );
+        }
+        return (
+          <button
+            key={r.id}
+            type='button'
+            onClick={() => onChange(r.id)}
+            className={`
+              inline-flex shrink-0 items-center h-8 px-3 rounded-full text-[12px] transition-colors whitespace-nowrap
+              ${on
+                ? 'bg-white text-[#0a0d14] font-semibold'
+                : 'bg-white/[0.04] border border-white/10 text-[#b8bcc9] hover:bg-white/[0.08] hover:text-white'}
+            `}
+          >
+            {r.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1054,16 +799,3 @@ function parseApiError(payload: unknown): string | null {
   return null;
 }
 
-function formatMoney(value: number) {
-  if (!Number.isFinite(value)) return '0,00';
-  return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function formatCloseWindow(seconds: number) {
-  if (seconds <= 0) return 'encerrado';
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}min ${seconds % 60}s`;
-  const hours = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  return `${hours}h ${mins}min`;
-}

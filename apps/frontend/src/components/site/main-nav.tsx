@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/api-request';
 import { clearClientSession, getStoredUser, logoutSession, SessionUser, setStoredUser } from '@/lib/auth';
+import { PrimaryCTAButton } from '@/components/site/primary-cta-button';
 
 import { getPublicApiUrl } from '@/lib/env-public';
 
@@ -275,6 +276,14 @@ export function MainNav() {
           </div>
 
           <div className='flex items-center gap-1.5 sm:gap-2 shrink-0'>
+            <PrimaryCTAButton
+              asLink
+              href='/apostas'
+              variant='compact'
+              className='hidden sm:inline-flex'
+            >
+              Apostar agora
+            </PrimaryCTAButton>
             {!user ? (
               <Link
                 href='/login'

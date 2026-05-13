@@ -620,7 +620,7 @@ export class ArmageddonService {
             data: {
               marketId: market.id,
               label: leftDriver.name,
-              value: new Prisma.Decimal('1.90'),
+              value: new Prisma.Decimal('1.00'),
               status: OddStatus.ACTIVE,
             },
           });
@@ -628,7 +628,7 @@ export class ArmageddonService {
             data: {
               marketId: market.id,
               label: rightDriver.name,
-              value: new Prisma.Decimal('1.90'),
+              value: new Prisma.Decimal('1.00'),
               status: OddStatus.ACTIVE,
             },
           });

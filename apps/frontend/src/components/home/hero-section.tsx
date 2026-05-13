@@ -172,12 +172,6 @@ export function HeroSection() {
       >
         <div className='flex flex-col items-start max-w-3xl'>
 
-          <AnimatedContent distance={20} delay={0.1}>
-            <div className='mb-6 inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-white/80 backdrop-blur-xl'>
-              <span className='mr-2.5 h-2 w-2 rounded-full bg-emerald-400 animate-ping' />
-            </div>
-          </AnimatedContent>
-
           <AnimatedContent distance={40} delay={0.3}>
             <h1 className='text-5xl font-extrabold leading-[1.05] text-white sm:text-6xl md:text-7xl lg:text-8xl tracking-tight'>
             Os 201 metros{' '}

@@ -5,6 +5,8 @@ import {
   BrazilListsAdminController,
 } from './brazil-lists.admin.controller';
 import { BrazilListsService } from './brazil-lists.service';
+import { EventLifecycleService } from './event-lifecycle.service';
+import { RosterParserService } from './roster-parser.service';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { SettlementService } from '../settlement.service';
 
@@ -14,7 +16,13 @@ import { SettlementService } from '../settlement.service';
     BrazilListsAdminController,
     BrazilListEventsAdminController,
   ],
-  providers: [BrazilListsService, RolesGuard, SettlementService],
+  providers: [
+    BrazilListsService,
+    EventLifecycleService,
+    RosterParserService,
+    RolesGuard,
+    SettlementService,
+  ],
   exports: [BrazilListsService],
 })
 export class BrazilListsModule {}

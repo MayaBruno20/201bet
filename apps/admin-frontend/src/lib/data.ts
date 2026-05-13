@@ -32,7 +32,20 @@ export type Pilot = {
   isGuest?: boolean;
 };
 export type Bet = { id: number; user: string; userTag: string; event: string; pilot: string; amount: number; odd: number; potential: number; status: string; date: string; method: string };
-export type ListItem = { id?: string; ddd: string; name: string; tier: string; pilots: number; status: string; sede: string; updated: string };
+export type ListItem = {
+  id?: string;
+  ddd: string;
+  name: string;
+  tier: string;
+  format?: 'TOP_10' | 'TOP_20';
+  pilots: number;
+  status: string;
+  active?: boolean;
+  sede: string;
+  hometown?: string;
+  administratorName?: string;
+  updated: string;
+};
 export type Activity = { who: string; what: string; target: string; when: string; tone: string };
 export type AuditEntry = { id: number; actor: string; actorRole: string; action: string; target: string; targetType: string; ip: string; when: string; severity: string };
 
@@ -206,6 +219,7 @@ type BackendListItem = {
   format: 'TOP_10' | 'TOP_20';
   active?: boolean;
   hometown?: string | null;
+  administratorName?: string | null;
   rosterCount?: number;
   updatedAt?: string;
 };
@@ -327,10 +341,10 @@ type BackendMarket = {
   odds: Array<{ id: string; label: string; value: string | number; status: string }>;
 };
 
-/** Lista todos os mercados (admin). */
+/** Lista todos os mercados ao vivo (admin) — TODOS os tipos, status não-SETTLED. */
 export async function fetchMarkets(): Promise<MarketRow[]> {
   try {
-    const list = await api.get<BackendMarket[]>(ENDPOINTS.MARKETS.list);
+    const list = await api.get<BackendMarket[]>(ENDPOINTS.MARKETS.live);
     return list.map((m) => {
       const left = Number(m.duel?.poolState?.leftPool ?? 0);
       const right = Number(m.duel?.poolState?.rightPool ?? 0);
@@ -446,9 +460,13 @@ export async function fetchLists(): Promise<ListItem[]> {
       ddd: String(l.areaCode).padStart(2, '0'),
       name: l.name,
       tier: l.format === 'TOP_10' ? 'TOP 10' : 'TOP 20',
+      format: l.format,
       pilots: l.rosterCount ?? 0,
       status: l.active === false ? 'PAUSADA' : 'ATIVA',
+      active: l.active !== false,
       sede: l.hometown ?? '—',
+      hometown: l.hometown ?? undefined,
+      administratorName: l.administratorName ?? undefined,
       updated: l.updatedAt ? ago(l.updatedAt) : '—',
     }));
   } catch { return LISTS; }

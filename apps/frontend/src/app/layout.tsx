@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: '201Bet | Front MVP',
-  description: 'MVP de apostas em tempo real com Next.js + WebSocket',
+  title: '201Bet',
+  description: 'A arrancada brasileira em apostas: Listas Brasil, embates ao vivo e o Trono Nacional disputado a cada semana.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -1112,10 +1112,10 @@ export class CategoryEventsService {
             },
           });
           await tx.odd.create({
-            data: { marketId: market.id, label: leftComp.driver.name, value: new Prisma.Decimal('1.90'), status: OddStatus.ACTIVE },
+            data: { marketId: market.id, label: leftComp.driver.name, value: new Prisma.Decimal('1.00'), status: OddStatus.ACTIVE },
           });
           await tx.odd.create({
-            data: { marketId: market.id, label: rightComp.driver.name, value: new Prisma.Decimal('1.90'), status: OddStatus.ACTIVE },
+            data: { marketId: market.id, label: rightComp.driver.name, value: new Prisma.Decimal('1.00'), status: OddStatus.ACTIVE },
           });
         } else {
           await tx.market.update({ where: { id: existingMarket.id }, data: { status: MarketStatus.OPEN, bookingCloseAt } });

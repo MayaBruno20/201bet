@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,14 +8,19 @@ import {
   Patch,
   Post,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import type { Request } from 'express';
 import { UserRole } from '@prisma/client';
 import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { BrazilListsService } from './brazil-lists.service';
+import type { ParsedRosterEntry } from './roster-parser.service';
 import { CreateBrazilListDto } from './dto/create-brazil-list.dto';
 import { UpdateBrazilListDto } from './dto/update-brazil-list.dto';
 import { UpsertRosterEntryDto } from './dto/upsert-roster.dto';
@@ -82,6 +88,41 @@ export class BrazilListsAdminController {
     @Req() req: ReqUser,
   ) {
     return this.service.adminRemoveRoster(listId, rosterId, this.auditFromReq(req));
+  }
+
+  // ── Roster import (PDF/DOCX) ────────────────────────
+
+  /**
+   * Recebe o arquivo (PDF/DOCX) em memória (max 5MB), extrai texto e devolve
+   * preview JSON pro admin revisar antes de aplicar.
+   */
+  @Post(':id/roster/parse-file')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  async parseRosterFile(
+    @Param('id') listId: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    if (!file) throw new BadRequestException('Arquivo não enviado (campo "file").');
+    return this.service.adminParseRosterFile(listId, file.buffer, file.mimetype);
+  }
+
+  /** Substitui o roster da lista pelo array de entries revisado pelo admin. */
+  @Post(':id/roster/bulk-replace')
+  bulkReplaceRoster(
+    @Param('id') listId: string,
+    @Body() body: { entries: ParsedRosterEntry[] },
+    @Req() req: ReqUser,
+  ) {
+    return this.service.adminBulkReplaceRoster(
+      listId,
+      body?.entries ?? [],
+      this.auditFromReq(req),
+    );
   }
 
   // ── Events ───────────────────────────────────────────

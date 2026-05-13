@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ArmageddonStatus, CategoryEventStatus, EventStatus } from '@prisma/client';
 import { CacheService } from '../cache/cache.service';
 import { PrismaService } from '../database/prisma.service';
+import { HOUSE_MARGIN_PERCENT, SEED_ODD } from '../market.service';
 
 type PublicMarket = {
   id: string;
@@ -94,7 +95,8 @@ export class EventsService {
       }),
     ]);
 
-    const defaultRake = Number(process.env.MARKET_MARGIN_PERCENT ?? '20') / 100;
+    // Margem da casa é FIXA — ver constante em market.service.
+    const rake = HOUSE_MARGIN_PERCENT / 100;
 
     // Filtro pós-load: esconde eventos sem nenhum duelo ativo (apostável).
     // Considera "ativo" qualquer duelo cujo status != CANCELED. Isso cobre 2 casos:
@@ -122,7 +124,6 @@ export class EventsService {
         const leftPool = Number(market.duel?.poolState?.leftPool ?? 0);
         const rightPool = Number(market.duel?.poolState?.rightPool ?? 0);
         const totalPool = leftPool + rightPool;
-        const rake = market.rakePercent ? Number(market.rakePercent) / 100 : defaultRake;
         const net = totalPool * (1 - rake);
 
         const computeOddByIndex = (idx: number) => {
@@ -134,13 +135,21 @@ export class EventsService {
             return winnerPool > 0 ? Math.max(1.0, net / winnerPool) : 0;
           }
           const sidePool = idx === 0 ? leftPool : rightPool;
-          return sidePool > 0 ? Math.max(1.01, net / sidePool) : 0;
+          if (sidePool > 0) {
+            return Math.max(1.01, net / sidePool);
+          }
+          // Pool zero (ninguém apostou nesse lado ainda): exibe a cotação seed.
+          // O campo `initialOdds` no payload sinaliza pro frontend mostrar o microcopy.
+          return Number(market.odds[idx]?.value ?? SEED_ODD);
         };
 
         return {
           id: market.id,
           name: market.name,
           status: market.status,
+          // Quando ambos os lados ainda têm pool zero, as cotações exibidas são
+          // valores seed iniciais. Frontend usa pra mostrar microcopy explicativo.
+          initialOdds: leftPool === 0 && rightPool === 0,
           odds: market.odds.map((odd, idx) => ({
             id: odd.id,
             label: odd.label,
