@@ -55,6 +55,7 @@ export const I = {
   Lock: (p: IconProps) => <Base {...p}><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></Base>,
   EyeOff: (p: IconProps) => <Base {...p}><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10.6 10.6 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.4 4.3M6.6 6.6A17 17 0 0 0 2 12s4 7 10 7a10 10 0 0 0 4.5-1.1"/></Base>,
   Login: (p: IconProps) => <Base {...p}><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></Base>,
+  RotateCcw: (p: IconProps) => <Base {...p}><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></Base>,
 };
 
 export type IconName = keyof typeof I;

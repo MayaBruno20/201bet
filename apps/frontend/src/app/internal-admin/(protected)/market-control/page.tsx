@@ -44,8 +44,52 @@ export default function MarketControlPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  const events = ['all', ...Array.from(new Set(markets.map((m) => m.eventName)))];
-  const filtered = eventFilter === 'all' ? markets : markets.filter((m) => m.eventName === eventFilter);
+  // Página é "Mercados ao vivo": lista APENAS mercados OPEN.
+  // Stats cards no topo continuam mostrando contadores totais (admin precisa ver
+  // se tem CLOSED/SUSPENDED pendentes de auditoria em outra aba).
+  const openMarkets = React.useMemo(() => markets.filter((m) => m.status === 'OPEN'), [markets]);
+  const events = ['all', ...Array.from(new Set(openMarkets.map((m) => m.eventName)))];
+  const filtered = eventFilter === 'all' ? openMarkets : openMarkets.filter((m) => m.eventName === eventFilter);
+
+  // Agrupa por evento e calcula pote total do evento (só dos mercados OPEN)
+  const groupedByEvent = React.useMemo(() => {
+    const map = new Map<string, { eventId: string; eventName: string; eventPool: number; rows: MarketRow[] }>();
+    for (const m of filtered) {
+      const key = m.eventId;
+      if (!map.has(key)) {
+        map.set(key, { eventId: m.eventId, eventName: m.eventName, eventPool: 0, rows: [] });
+      }
+      const g = map.get(key)!;
+      g.eventPool += m.totalPool;
+      g.rows.push(m);
+    }
+    return Array.from(map.values()).sort((a, b) => b.eventPool - a.eventPool);
+  }, [filtered]);
+
+  const restartEvent = async (eventId: string, eventName: string) => {
+    const ok = await confirm({
+      title: 'Reiniciar evento?',
+      body: (
+        <>
+          Vai <strong>reembolsar todas as apostas em aberto</strong> de <strong>{eventName}</strong> e
+          resetar os potes pra zero. O evento volta ao estado de "acabou de abrir".
+          Mercados já auditados ficam intocados.
+        </>
+      ),
+      tone: 'danger',
+      confirmLabel: 'Reembolsar e reiniciar',
+      icon: 'AlertTriangle',
+    });
+    if (!ok) return;
+    setBusy(eventId);
+    try {
+      await api.post(ENDPOINTS.MARKETS.restartEvent(eventId));
+      push({ title: 'Evento reiniciado', body: `${eventName} resetado e apostas reembolsadas.`, tone: 'emerald' });
+      await load();
+    } catch (e) {
+      push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' });
+    } finally { setBusy(null); }
+  };
 
   // Backend não expõe um endpoint genérico de "abrir/pausar/fechar" mercado. O que existe:
   //   - markets/:id/settle  (auditar vencedor — paga)
@@ -89,7 +133,8 @@ export default function MarketControlPage() {
   const suspended = markets.filter((m) => m.status === 'SUSPENDED').length;
   const closed = markets.filter((m) => m.status === 'CLOSED').length;
   const settled = markets.filter((m) => m.status === 'SETTLED').length;
-  const totalVolume = markets.reduce((s, m) => s + m.totalPool, 0);
+  // Volume total reflete só os mercados AO VIVO (OPEN) — fechados/auditados não contam.
+  const totalVolume = openMarkets.reduce((s, m) => s + m.totalPool, 0);
 
   return (
     <Page eyebrow="Operação" title="Mercados ao vivo"
@@ -118,7 +163,7 @@ export default function MarketControlPage() {
             <button key={e} onClick={() => setEventFilter(e)}
               className="px-3 py-1.5 text-[12px] font-semibold rounded-[10px]"
               style={{ background: eventFilter === e ? 'var(--accent-soft)' : 'var(--surface-2)', color: eventFilter === e ? 'var(--accent)' : 'var(--text-2)' }}>
-              {e === 'all' ? `Todos (${markets.length})` : e}
+              {e === 'all' ? `Todos (${openMarkets.length})` : e}
             </button>
           ))}
         </div>
@@ -131,8 +176,36 @@ export default function MarketControlPage() {
           <div className="p-8 text-center text-[13px] text-[color:var(--text-3)]">Nenhum mercado nessa visão.</div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4">
-          {filtered.map((m) => {
+        {/* Agrupado por evento com pote total + botão reiniciar */}
+        {groupedByEvent.map((group) => (
+          <div key={group.eventId} className="border-t" style={{ borderColor: 'var(--border)' }}>
+            <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap"
+                 style={{ background: 'rgba(255,255,255,0.02)' }}>
+              <div className="min-w-0">
+                <div className="text-[10.5px] tracking-[0.14em] uppercase font-semibold text-[color:var(--text-3)]">Evento</div>
+                <div className="font-display text-[15px] font-bold truncate">{group.eventName}</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-[color:var(--text-3)] font-semibold">Pote total</div>
+                  <div className="font-mono font-bold text-[14px]" style={{ color: '#7cd0ff' }}>
+                    R$ {group.eventPool.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                  </div>
+                </div>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => restartEvent(group.eventId, group.eventName)}
+                  disabled={busy === group.eventId}
+                  style={{ color: 'var(--accent)' }}
+                  title="Reembolsa apostas em aberto e zera os potes"
+                >
+                  <I.RotateCcw size={13}/> {busy === group.eventId ? 'Reiniciando…' : 'Reiniciar evento'}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4">
+          {group.rows.map((m) => {
             const canSettle = m.status === 'OPEN' || m.status === 'CLOSED' || m.status === 'SUSPENDED';
             const canVoid = m.status !== 'SETTLED';
             const winnerOdd = m.winnerOddId ? m.odds.find((o) => o.id === m.winnerOddId) : null;
@@ -209,7 +282,9 @@ export default function MarketControlPage() {
               </div>
             );
           })}
-        </div>
+            </div>
+          </div>
+        ))}
       </Card>
 
       {/* ── Modal de auditoria do vencedor ── */}
