@@ -292,7 +292,7 @@ No Google Cloud Console, configure origem autorizada:
 - `/apostas` Apostas por evento/etapa com cotações dinâmicas
 - `/eventos` Catálogo de eventos
 - `/carteira` Conta, saldo, histórico, transações
-- `/admin` Painel administrativo
+- Painel administrativo: mesmo deploy que o site (`apps/frontend`), host `admin.201-bet.com` ou em dev `admin.localhost` / `admin.127.0.0.1.nip.io` (ver `src/lib/domain-config.ts`). Rotas internas em `/internal-admin` (bloqueadas no domínio público pelo middleware).
 
 ## 15) Comandos úteis
 

@@ -14,15 +14,37 @@ export default function ListasPage() {
   const [loading, setLoading] = React.useState(true);
   const [selected, setSelected] = React.useState<ListItem | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [togglingActive, setTogglingActive] = React.useState(false);
+  const [editModalOpen, setEditModalOpen] = React.useState(false);
   const [form, setForm] = React.useState({ areaCode: '', format: 'TOP_20' as 'TOP_10' | 'TOP_20', name: '', hometown: '', administratorName: '' });
   const { push } = useToast();
 
   const load = React.useCallback(async () => {
     setLoading(true);
-    try { setLists(await fetchLists()); }
+    try {
+      const fresh = await fetchLists();
+      setLists(fresh);
+      // Mantém a lista selecionada atualizada (status/pilots/etc) sem perder a seleção
+      setSelected((prev) => (prev?.id ? fresh.find((l) => l.id === prev.id) ?? prev : prev));
+    }
     finally { setLoading(false); }
   }, []);
   React.useEffect(() => { void load(); }, [load]);
+
+  const toggleActive = async () => {
+    if (!selected?.id || togglingActive) return;
+    setTogglingActive(true);
+    try {
+      const nextActive = !selected.active;
+      await api.patch(ENDPOINTS.BRAZIL_LISTS.update(selected.id), { active: nextActive });
+      push({ title: nextActive ? 'Lista ativada' : 'Lista pausada', tone: nextActive ? 'emerald' : 'amber' });
+      await load();
+    } catch (e) {
+      push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' });
+    } finally {
+      setTogglingActive(false);
+    }
+  };
 
   const create = async () => {
     if (!form.areaCode.trim()) { push({ title: 'Informe o DDD', tone: 'rose' }); return; }
@@ -106,8 +128,25 @@ export default function ListasPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <StatusChip status={selected.status}/>
-                    <button className="btn btn-ghost"><I.Edit size={14}/> Editar</button>
-                    <button className="btn btn-ghost"><I.Pause size={14}/> Pausar</button>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => setEditModalOpen(true)}
+                      disabled={!selected.id}
+                    >
+                      <I.Edit size={14}/> Editar
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={toggleActive}
+                      disabled={!selected.id || togglingActive}
+                      style={selected.active ? undefined : { color: 'var(--emerald)' }}
+                    >
+                      {togglingActive
+                        ? <><span className="pulse-dot"/> {selected.active ? 'Pausando…' : 'Ativando…'}</>
+                        : selected.active
+                          ? <><I.Pause size={14}/> Pausar</>
+                          : <><I.Play size={14}/> Ativar</>}
+                    </button>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-5">
@@ -140,6 +179,107 @@ export default function ListasPage() {
           )}
         </div>
       </div>
+
+      {editModalOpen && selected?.id && (
+        <EditListModal
+          list={selected}
+          onClose={() => setEditModalOpen(false)}
+          onSaved={() => { setEditModalOpen(false); void load(); }}
+        />
+      )}
     </Page>
+  );
+}
+
+// ─── Modal de edição da lista ─────────────────────────────────────────
+
+function EditListModal({
+  list,
+  onClose,
+  onSaved,
+}: {
+  list: ListItem;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = React.useState(list.name);
+  const [format, setFormat] = React.useState<'TOP_10' | 'TOP_20'>(list.format ?? (list.tier === 'TOP 10' ? 'TOP_10' : 'TOP_20'));
+  const [hometown, setHometown] = React.useState(list.hometown ?? '');
+  const [administratorName, setAdministratorName] = React.useState(list.administratorName ?? '');
+  const [busy, setBusy] = React.useState(false);
+  const { push } = useToast();
+
+  const submit = async () => {
+    if (!list.id) return;
+    if (!name.trim()) { push({ title: 'Informe o nome da lista', tone: 'rose' }); return; }
+    setBusy(true);
+    try {
+      await api.patch(ENDPOINTS.BRAZIL_LISTS.update(list.id), {
+        name: name.trim(),
+        format,
+        hometown: hometown.trim() || null,
+        administratorName: administratorName.trim() || null,
+      });
+      push({ title: 'Lista atualizada', tone: 'emerald' });
+      onSaved();
+    } catch (e) {
+      push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
+      <div className="surface-elev p-6 w-full max-w-lg">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-10 h-10 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+            <I.Edit size={18}/>
+          </div>
+          <div>
+            <div className="font-display text-[18px] font-bold">Editar lista</div>
+            <div className="text-[12px] text-[color:var(--text-3)]">DDD {list.ddd} · não dá pra trocar o DDD aqui (criar uma nova se precisar).</div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Nome *</label>
+            <input className="input mt-1" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Lista Área 45"/>
+          </div>
+
+          <div>
+            <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Formato</label>
+            <select className="input mt-1" value={format} onChange={(e) => setFormat(e.target.value as 'TOP_10' | 'TOP_20')}>
+              <option value="TOP_20">TOP 20</option>
+              <option value="TOP_10">TOP 10</option>
+            </select>
+            {list.pilots > (format === 'TOP_10' ? 10 : 20) && (
+              <p className="text-[11px] mt-1" style={{ color: '#ff7585' }}>
+                ⚠ A lista tem {list.pilots} pilotos e não cabe em {format === 'TOP_10' ? 'TOP 10' : 'TOP 20'}. Remova pilotos antes.
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Cidade sede</label>
+              <input className="input mt-1" value={hometown} onChange={(e) => setHometown(e.target.value)} placeholder="—"/>
+            </div>
+            <div>
+              <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Administrador</label>
+              <input className="input mt-1" value={administratorName} onChange={(e) => setAdministratorName(e.target.value)} placeholder="—"/>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-5 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+          <button className="btn btn-ghost flex-1 justify-center" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button className="btn btn-primary flex-1 justify-center" onClick={submit} disabled={busy}>
+            {busy ? <><span className="pulse-dot"/> Salvando…</> : <><I.Check size={14}/> Salvar</>}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

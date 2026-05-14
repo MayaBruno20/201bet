@@ -188,6 +188,36 @@ export function ListEventDetail({ eventId, onClose, onChanged }: {
     finally { setBusy(null); }
   };
 
+  const openAllForRound = async (roundNumber: number, roundType: Matchup['roundType']) => {
+    const ok = await confirm({
+      title: 'Abrir todos os mercados desta rodada?',
+      body: <>Vai abrir simultaneamente todos os embates pendentes da rodada <strong>{roundNumber}</strong> ({roundType === 'ODD' ? 'ÍMPAR' : roundType === 'EVEN' ? 'PAR' : 'Shark Tank'}). O fluxo padrão é abertura sequencial (cada mercado abre quando o anterior é auditado).</>,
+      tone: 'warning',
+      confirmLabel: 'Abrir todos',
+      icon: 'Play',
+    });
+    if (!ok) return;
+    setBusy(`open-all-${roundNumber}-${roundType}`);
+    try {
+      const result = await api.post<{ opened: number; total: number; failures?: Array<{ id: string; error: string }> }>(
+        ENDPOINTS.BRAZIL_LISTS.events.openAllMarkets(eventId),
+        { roundNumber, roundType },
+      );
+      if (result.opened === 0 && (result.failures?.length ?? 0) === 0) {
+        push({ title: 'Nenhum embate pendente para abrir', tone: 'amber' });
+      } else {
+        push({
+          title: `${result.opened} mercado(s) abertos`,
+          body: result.failures?.length ? `${result.failures.length} falha(s) — verifique audit log.` : `Total processado: ${result.total}.`,
+          tone: result.failures?.length ? 'amber' : 'emerald',
+        });
+      }
+      await load();
+      onChanged?.();
+    } catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
+    finally { setBusy(null); }
+  };
+
   const removeMatchup = async (m: Matchup) => {
     const ok = await confirm({
       title: 'Excluir embate?',
@@ -280,7 +310,14 @@ export function ListEventDetail({ eventId, onClose, onChanged }: {
           {/* Generate matchups */}
           <div className="p-5" style={{ borderBottom: '1px solid var(--border)' }}>
             <SectionTitle title="Gerar rodada"
-              sub={`A regra ÍMPAR pareia ${detail.list.format === 'TOP_20' ? '20×19, 18×17… 4×3 (rei senta)' : '10×9, 8×7… 4×3'}. PAR pareia ${detail.list.format === 'TOP_20' ? '19×18, 17×16… 3×2 (e rei × 2º)' : '9×8, 7×6… 3×2'}.`}/>
+              sub={
+                <>
+                  <strong>ÍMPAR:</strong> 3×2, 5×4, 7×6{detail.list.format === 'TOP_20' ? ', … 19×18' : ', 9×8'} (rei senta).{' '}
+                  <strong>PAR:</strong> 2×1, 4×3, 6×5{detail.list.format === 'TOP_20' ? ', … 20×19' : ', 8×7, 10×9'} (rei é desafiado).
+                  <br/>
+                  Ao gerar, o <strong>primeiro embate abre automaticamente</strong>; os seguintes abrem conforme o admin audita o anterior.
+                </>
+              }/>
             <div className="flex flex-wrap gap-2 mt-3">
               <button
                 className="btn btn-primary"
@@ -327,16 +364,32 @@ export function ListEventDetail({ eventId, onClose, onChanged }: {
                   const sorted = [...matchups].sort((a, b) => a.order - b.order);
                   const settled = sorted.filter((m) => m.winnerSide).length;
                   const open = sorted.filter((m) => m.marketOpen).length;
+                  const pendingClosed = sorted.filter((m) => !m.winnerSide && !m.marketOpen).length;
+                  const roundType = sorted[0].roundType;
+                  const canOpenAll = pendingClosed > 0 && detail.status !== 'CANCELED' && detail.status !== 'FINISHED';
+                  const openAllKey = `open-all-${roundNumber}-${roundType}`;
                   return (
                     <div key={roundNumber}>
-                      <div className="flex items-center gap-3 mb-3">
+                      <div className="flex items-center gap-3 mb-3 flex-wrap">
                         <div className="font-display text-[14px] font-bold">Rodada {roundNumber}</div>
                         <span className="chip" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>
-                          {ROUND_TYPE_LABEL[sorted[0].roundType]}
+                          {ROUND_TYPE_LABEL[roundType]}
                         </span>
                         <span className="text-[11.5px] text-[color:var(--text-3)]">
                           {settled}/{sorted.length} auditados · {open} mercado(s) aberto(s)
                         </span>
+                        {canOpenAll && (
+                          <button
+                            className="btn btn-ghost focusable ml-auto"
+                            onClick={() => void openAllForRound(roundNumber, roundType)}
+                            disabled={busy === openAllKey}
+                            title="Abre todos os mercados pendentes desta rodada de uma vez"
+                          >
+                            {busy === openAllKey
+                              ? <><span className="pulse-dot"/> Abrindo {pendingClosed}…</>
+                              : <><I.Play size={13}/> Abrir todos ({pendingClosed})</>}
+                          </button>
+                        )}
                       </div>
                       <div className="space-y-2">
                         {sorted.map((m) => (
