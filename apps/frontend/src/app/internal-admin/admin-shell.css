@@ -166,13 +166,23 @@
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 12px;
-  padding: 10px 12px;
+  /* Padding em props individuais (não shorthand) pras utilities pl-X e pr-X
+     do Tailwind conseguirem sobrescrever quando o input tem ícone. */
+  padding-top: 10px;
+  padding-bottom: 10px;
+  padding-left: 12px;
+  padding-right: 12px;
   font-size: 13px;
   outline: none;
   transition:
     border-color 0.15s,
     box-shadow 0.15s;
 }
+/* Garante que pl-X e pr-X do Tailwind sobrescrevam o padding base mesmo
+   estando em CSS de menor especificidade — preserva espaço pros ícones. */
+.admin-shell .input.pl-7 { padding-left: 28px; }
+.admin-shell .input.pl-9 { padding-left: 36px; }
+.admin-shell .input.pr-10 { padding-right: 40px; }
 .admin-shell .input::placeholder {
   color: var(--text-4);
 }
