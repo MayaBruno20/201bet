@@ -237,16 +237,34 @@ export default function MarketControlPage() {
                 </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-2">
-                  {m.odds.map((o) => (
-                    <div key={o.id} className="rounded-[10px] px-2 py-1.5 flex items-center justify-between gap-2"
-                      style={{ background: m.winnerOddId === o.id ? 'rgba(33, 217, 122, 0.15)' : 'rgba(255,255,255,0.02)', border: '1px solid ' + (m.winnerOddId === o.id ? 'var(--emerald)' : 'var(--border)') }}>
-                      <div className="text-[12px] font-semibold truncate">
-                        {m.winnerOddId === o.id && '🏆 '}
-                        {o.label}
+                  {m.odds.map((o, idx) => {
+                    const pos = m.matchupOrigin
+                      ? (idx === 0 ? m.matchupOrigin.leftPosition : idx === 1 ? m.matchupOrigin.rightPosition : null)
+                      : null;
+                    const sidePool = idx === 0 ? m.leftPool : idx === 1 ? m.rightPool : 0;
+                    const sideShare = m.totalPool > 0 ? (sidePool / m.totalPool) * 100 : 50;
+                    return (
+                      <div key={o.id} className="rounded-[10px] px-2 py-1.5 flex items-center justify-between gap-2"
+                        style={{ background: m.winnerOddId === o.id ? 'rgba(33, 217, 122, 0.15)' : 'rgba(255,255,255,0.02)', border: '1px solid ' + (m.winnerOddId === o.id ? 'var(--emerald)' : 'var(--border)') }}>
+                        <div className="text-[12px] font-semibold truncate flex items-center gap-1.5 min-w-0">
+                          {m.winnerOddId === o.id && '🏆 '}
+                          {pos != null && (
+                            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded-[6px] flex-shrink-0"
+                              style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+                              #{pos}
+                            </span>
+                          )}
+                          <span className="truncate">{o.label}</span>
+                        </div>
+                        <div className="text-right flex-shrink-0 leading-tight">
+                          <div className="font-mono font-bold text-[12px]" style={{ color: '#7cd0ff' }}>{sideShare.toFixed(0)}%</div>
+                          <div className="font-mono text-[10px]" style={{ color: 'var(--text-3)' }}>
+                            R$ {sidePool.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                          </div>
+                        </div>
                       </div>
-                      <div className="font-mono font-bold text-[12px]" style={{ color: '#7cd0ff' }}>@{o.value.toFixed(2)}</div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {winnerOdd && m.status === 'SETTLED' && (
@@ -307,19 +325,28 @@ export default function MarketControlPage() {
 
             <div className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] mt-4 mb-2">Selecione o vencedor</div>
             <div className="space-y-2">
-              {auditModal.odds.map((o) => (
-                <button key={o.id} type="button" onClick={() => setSelectedWinnerOdd(o.id)}
-                  className="w-full surface-2 p-3 flex items-center justify-between gap-3"
-                  style={{ border: '1px solid ' + (selectedWinnerOdd === o.id ? 'var(--emerald)' : 'var(--border)'), background: selectedWinnerOdd === o.id ? 'var(--emerald-soft)' : undefined }}>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full grid place-items-center" style={{ border: '2px solid ' + (selectedWinnerOdd === o.id ? 'var(--emerald)' : 'var(--text-3)') }}>
-                      {selectedWinnerOdd === o.id && <div className="w-2 h-2 rounded-full" style={{ background: 'var(--emerald)' }}/>}
+              {auditModal.odds.map((o, idx) => {
+                const sidePool = idx === 0 ? auditModal.leftPool : idx === 1 ? auditModal.rightPool : 0;
+                const sideShare = auditModal.totalPool > 0 ? (sidePool / auditModal.totalPool) * 100 : 50;
+                return (
+                  <button key={o.id} type="button" onClick={() => setSelectedWinnerOdd(o.id)}
+                    className="w-full surface-2 p-3 flex items-center justify-between gap-3"
+                    style={{ border: '1px solid ' + (selectedWinnerOdd === o.id ? 'var(--emerald)' : 'var(--border)'), background: selectedWinnerOdd === o.id ? 'var(--emerald-soft)' : undefined }}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-full grid place-items-center" style={{ border: '2px solid ' + (selectedWinnerOdd === o.id ? 'var(--emerald)' : 'var(--text-3)') }}>
+                        {selectedWinnerOdd === o.id && <div className="w-2 h-2 rounded-full" style={{ background: 'var(--emerald)' }}/>}
+                      </div>
+                      <div className="font-semibold text-[13px]">{o.label}</div>
                     </div>
-                    <div className="font-semibold text-[13px]">{o.label}</div>
-                  </div>
-                  <div className="font-mono font-bold" style={{ color: '#7cd0ff' }}>@{o.value.toFixed(2)}</div>
-                </button>
-              ))}
+                    <div className="text-right leading-tight">
+                      <div className="font-mono font-bold text-[13px]" style={{ color: '#7cd0ff' }}>{sideShare.toFixed(0)}%</div>
+                      <div className="font-mono text-[10px]" style={{ color: 'var(--text-3)' }}>
+                        R$ {sidePool.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="flex gap-2 mt-5">

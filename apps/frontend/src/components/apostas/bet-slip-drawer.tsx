@@ -40,9 +40,6 @@ export interface BetSlipDrawerProps {
 function formatBRL(n: number): string {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-function formatOdd(odd: number): string {
-  return `@${odd.toFixed(2).replace('.', ',')}`;
-}
 
 export function BetSlipDrawer({
   items = [],
@@ -165,7 +162,7 @@ export function BetSlipDrawer({
                 <div className='mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2'>
                   <SlipStat label='Seleções' value={String(count)} />
                   <SlipStat label='Total apostado' value={formatBRL(totalStake)} accent='muted' />
-                  <SlipStat label='Retorno estimado' value={formatBRL(totalReturn)} accent='emerald' />
+                  <SlipStat label='Retorno agora*' value={formatBRL(totalReturn)} accent='emerald' />
                   <SlipStat
                     label='Saldo após'
                     value={formatBRL(balanceAfter)}
@@ -183,7 +180,8 @@ export function BetSlipDrawer({
                     onClick={() => onSubmit?.()}
                   />
                   <p className='mt-2.5 text-[11px] leading-relaxed text-[#767b8a]'>
-                    Cotação varia conforme o pote vai sendo formado. Use com critério.{' '}
+                    * O retorno final é definido só no fechamento das apostas — sistema pari-mutuel, o pote é dividido
+                    entre quem acertar. Quanto mais gente do lado oposto, maior seu retorno. Use com critério.{' '}
                     <Wallet className='inline h-3 w-3 align-[-2px]' /> saldo{' '}
                     <span className='font-mono text-[#b8bcc9] tabular-nums'>{formatBRL(balance)}</span>{' '}
                     · <span className='text-[#b8bcc9]'>+18</span>
@@ -222,9 +220,6 @@ function BetSlipRow({ item, minBet, onStakeChange, onRemove }: BetSlipRowProps) 
           <div className='text-[11px] text-[#767b8a] truncate'>vs {item.oppLabel}</div>
         </div>
         <div className='flex items-center gap-2 shrink-0'>
-          <span className={`font-mono text-sm font-semibold tabular-nums ${accent.text}`}>
-            {formatOdd(item.odd)}
-          </span>
           <button
             type='button'
             onClick={onRemove}
@@ -251,8 +246,8 @@ function BetSlipRow({ item, minBet, onStakeChange, onRemove }: BetSlipRowProps) 
             aria-label={`Valor para ${item.label}`}
           />
         </div>
-        <div className='text-right shrink-0 min-w-[88px]'>
-          <div className='text-[10px] uppercase tracking-wider text-[#767b8a]'>retorno</div>
+        <div className='text-right shrink-0 min-w-[100px]'>
+          <div className='text-[10px] uppercase tracking-wider text-[#767b8a]'>retorno agora*</div>
           <div className='font-mono text-[13px] font-semibold tabular-nums text-[#21d97a] leading-tight'>
             {formatBRL(estimate)}
           </div>

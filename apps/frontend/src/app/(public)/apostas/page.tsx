@@ -446,8 +446,8 @@ export default function ApostasPage() {
           status: classifyDuelStatus(stage),
           totalPool: snap?.totalPool ?? 0,
           isSuperFinal: !!stage.isSuperFinal,
-          left:  { label: snap?.duel.left.label  ?? 'Aguardando...', odd: snap?.duel.left.odd  ?? 1.9, photoUrl: snap?.duel.left.photoUrl  ?? null },
-          right: { label: snap?.duel.right.label ?? 'Aguardando...', odd: snap?.duel.right.odd ?? 1.9, photoUrl: snap?.duel.right.photoUrl ?? null },
+          left:  { label: snap?.duel.left.label  ?? 'Aguardando...', odd: snap?.duel.left.odd  ?? 1.9, poolShare: snap?.duel.left.poolShare  ?? 50, photoUrl: snap?.duel.left.photoUrl  ?? null },
+          right: { label: snap?.duel.right.label ?? 'Aguardando...', odd: snap?.duel.right.odd ?? 1.9, poolShare: snap?.duel.right.poolShare ?? 50, photoUrl: snap?.duel.right.photoUrl ?? null },
           settlement: snap?.settlement ? { winnerSide: snap.settlement.winnerSide } : undefined,
           isInitialOdds: !!snap && snap.totalPool === 0,
         };

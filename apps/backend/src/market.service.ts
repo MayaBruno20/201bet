@@ -88,6 +88,7 @@ export type MarketSnapshot = {
       odd: number;
       tickets: number;
       pool: number;
+      poolShare: number;
       locked: boolean;
       photoUrl: string | null;
     };
@@ -97,6 +98,7 @@ export type MarketSnapshot = {
       odd: number;
       tickets: number;
       pool: number;
+      poolShare: number;
       locked: boolean;
       photoUrl: string | null;
     };
@@ -812,6 +814,11 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     const totalPool = state.left.pool + state.right.pool;
     const lock = this.evaluateLock(state);
 
+    // Pool share: usado como display público no lugar da odd. Quando ninguém
+    // apostou ainda, mostra 50/50 (UI fica neutra em vez de mostrar 0/0).
+    const leftShare = totalPool > 0 ? Number(((state.left.pool / totalPool) * 100).toFixed(1)) : 50;
+    const rightShare = totalPool > 0 ? Number(((state.right.pool / totalPool) * 100).toFixed(1)) : 50;
+
     return {
       duelId: state.duelId,
       eventId: state.eventId,
@@ -838,6 +845,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           odd: state.left.odd,
           tickets: state.left.tickets,
           pool: Number(state.left.pool.toFixed(2)),
+          poolShare: leftShare,
           locked:
             lock.locked &&
             (lock.lockedSide === 'LEFT' || lock.lockedSide === 'BOTH'),
@@ -849,6 +857,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           odd: state.right.odd,
           tickets: state.right.tickets,
           pool: Number(state.right.pool.toFixed(2)),
+          poolShare: rightShare,
           locked:
             lock.locked &&
             (lock.lockedSide === 'RIGHT' || lock.lockedSide === 'BOTH'),

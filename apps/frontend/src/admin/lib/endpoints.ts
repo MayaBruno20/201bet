@@ -215,6 +215,9 @@ export const ENDPOINTS = {
       `/admin/analytics/export?type=${type}&format=${format}`,
     eventsPerformance: '/admin/analytics/events-performance',
     profitSummary: '/admin/analytics/profit-summary',
+    listEventFinancialClosing: (id: string) => `/admin/list-events/${id}/financial-closing`,
+    armageddonEventFinancialClosing: (id: string) => `/admin/armageddon-events/${id}/financial-closing`,
+    closingEligibleEvents: '/admin/analytics/closing-eligible-events',
   },
 
   AUDIT: {

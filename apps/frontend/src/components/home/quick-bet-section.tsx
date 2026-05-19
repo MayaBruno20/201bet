@@ -80,10 +80,12 @@ export function QuickBetSection({ className }: { className?: string }) {
     leftDriver: {
       name: snapshot.duel.left.label,
       odd: snapshot.duel.left.odd,
+      poolShare: snapshot.duel.left.poolShare,
     },
     rightDriver: {
       name: snapshot.duel.right.label,
       odd: snapshot.duel.right.odd,
+      poolShare: snapshot.duel.right.poolShare,
     },
   };
 

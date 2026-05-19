@@ -429,6 +429,24 @@ export class AdminController {
     return this.adminService.getProfitSummary();
   }
 
+  /** Lista de eventos elegíveis pra fechamento (Listas + Armageddon). */
+  @Get('analytics/closing-eligible-events')
+  closingEligibleEvents() {
+    return this.adminService.listClosingEligibleEvents();
+  }
+
+  /** Fechamento financeiro de um ListEvent (depósitos/saques/apostas/ganhos/perdas). */
+  @Get('list-events/:id/financial-closing')
+  listEventFinancialClosing(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getEventFinancialClosing(id, 'list');
+  }
+
+  /** Fechamento financeiro de um ArmageddonEvent. */
+  @Get('armageddon-events/:id/financial-closing')
+  armageddonEventFinancialClosing(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getEventFinancialClosing(id, 'armageddon');
+  }
+
   @Get('audit-logs')
   @Roles(UserRole.ADMIN, UserRole.AUDITOR)
   auditLogs(
