@@ -12,6 +12,7 @@ import { Loader2, Lock, Plus, Zap } from 'lucide-react';
 export interface QuickBetDriver {
   name: string;
   odd: number;
+  poolShare: number;
 }
 
 export interface QuickBetDuel {
@@ -34,8 +35,8 @@ export interface QuickBetPanelProps {
 const DEFAULT_DUEL: QuickBetDuel = {
   id: 'duel-mock-1',
   eventName: 'Embate Curitiba · Final',
-  leftDriver: { name: 'Caio "Trovão" Marques', odd: 1.9 },
-  rightDriver: { name: 'Pedro "Diesel" Lima', odd: 1.85 },
+  leftDriver: { name: 'Caio "Trovão" Marques', odd: 1.9, poolShare: 50 },
+  rightDriver: { name: 'Pedro "Diesel" Lima', odd: 1.85, poolShare: 50 },
 };
 
 const QUICK_AMOUNTS = [5, 10, 50, 100];
@@ -197,16 +198,16 @@ export function QuickBetPanel({
                                 bg-[#0b0e18] border border-white/5 px-4 py-3'>
                   <div>
                     <div className='text-[11px] uppercase tracking-wider text-[#767b8a]'>
-                      Retorno potencial
+                      Retorno se fechasse agora*
                     </div>
                     <div className='font-mono text-[22px] font-semibold tabular-nums text-[#ffb028] leading-tight'>
                       {formatBRL(potentialReturn)}
                     </div>
                   </div>
                   <div className='text-right'>
-                    <div className='text-[11px] uppercase tracking-wider text-[#767b8a]'>cotação</div>
+                    <div className='text-[11px] uppercase tracking-wider text-[#767b8a]'>das apostas</div>
                     <div className='font-mono text-base text-[#f1f3f8] tabular-nums'>
-                      @{chosenDriver?.odd.toFixed(2).replace('.', ',')}
+                      {chosenDriver?.poolShare.toFixed(0)}%
                     </div>
                   </div>
                 </div>
@@ -239,7 +240,8 @@ export function QuickBetPanel({
                 </button>
 
                 <p className='mt-3 text-[11px] leading-relaxed text-[#767b8a]'>
-                  Cotação varia conforme as apostas. Use com critério. <span className='text-[#b8bcc9]'>+18</span>
+                  * Pari-mutuel: o pote total é dividido entre quem acertar. Valor final só sai no fechamento — pode
+                  subir conforme o outro lado aposta. Use com critério. <span className='text-[#b8bcc9]'>+18</span>
                 </p>
               </div>
             </motion.div>
@@ -312,9 +314,9 @@ function SideButton({ label, driver, side, selected, dimmed, onClick }: SideButt
         {driver.name}
       </div>
       <div className='mt-3 flex items-end justify-between'>
-        <span className='text-[10px] uppercase tracking-wider text-[#767b8a]'>cotação</span>
+        <span className='text-[10px] uppercase tracking-wider text-[#767b8a]'>das apostas</span>
         <span className={`font-mono text-2xl font-bold tabular-nums ${accent.text}`}>
-          @{driver.odd.toFixed(2).replace('.', ',')}
+          {driver.poolShare.toFixed(0)}%
         </span>
       </div>
     </button>

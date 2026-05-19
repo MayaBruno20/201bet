@@ -26,6 +26,7 @@ export default function UsuariosPage() {
   const [filter, setFilter] = React.useState<'all' | 'active' | 'inactive' | 'staff'>('all');
   const [createOpen, setCreateOpen] = React.useState(false);
   const [adjustUser, setAdjustUser] = React.useState<Pilot | null>(null);
+  const [editUser, setEditUser] = React.useState<Pilot | null>(null);
   const [busy, setBusy] = React.useState(false);
   const { push } = useToast();
   const confirm = useConfirm();
@@ -33,6 +34,20 @@ export default function UsuariosPage() {
   const [form, setForm] = React.useState({
     name: '', email: '', password: '', cpf: '', birthDate: '', role: 'OPERATOR' as Exclude<Role, 'USER'>,
   });
+
+  const [editForm, setEditForm] = React.useState({
+    name: '', role: 'USER' as Role, status: 'ACTIVE' as 'ACTIVE' | 'BLOCKED' | 'PENDING_KYC' | 'DELETED', password: '',
+  });
+
+  React.useEffect(() => {
+    if (!editUser) return;
+    setEditForm({
+      name: editUser.name,
+      role: (editUser.cat as Role) ?? 'USER',
+      status: editUser.status === 'Ativo' ? 'ACTIVE' : editUser.status === 'Inativo' ? 'BLOCKED' : 'ACTIVE',
+      password: '',
+    });
+  }, [editUser]);
 
   const [adjust, setAdjust] = React.useState({ amount: '', operation: 'CREDIT' as 'CREDIT' | 'DEBIT', reason: '' });
 
@@ -93,6 +108,32 @@ export default function UsuariosPage() {
       push({ title: 'Conta desativada', body: u.tag, tone: 'amber' });
       await load();
     } catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
+  };
+
+  const submitEdit = async () => {
+    if (!editUser?.realId) return;
+    if (!editForm.name.trim()) {
+      push({ title: 'Nome obrigatório', tone: 'rose' });
+      return;
+    }
+    if (editForm.password && editForm.password.length < 8) {
+      push({ title: 'Senha mínima 8 caracteres', tone: 'rose' });
+      return;
+    }
+    setBusy(true);
+    try {
+      const payload: Record<string, unknown> = {
+        name: editForm.name.trim(),
+        role: editForm.role,
+        status: editForm.status,
+      };
+      if (editForm.password) payload.password = editForm.password;
+      await api.patch(ENDPOINTS.USERS.update(editUser.realId), payload);
+      push({ title: 'Usuário atualizado', body: `${editUser.tag} → ${editForm.role}`, tone: 'emerald' });
+      setEditUser(null);
+      await load();
+    } catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
+    finally { setBusy(false); }
   };
 
   const submitAdjust = async () => {
@@ -196,6 +237,9 @@ export default function UsuariosPage() {
                     <td><StatusChip status={u.status}/></td>
                     <td className="text-right" style={{ paddingRight: 20 }}>
                       <div className="flex justify-end gap-1">
+                        <button className="btn-icon focusable" title="Editar (nome, role, status, senha)" onClick={() => setEditUser(u)}>
+                          <I.Edit size={15}/>
+                        </button>
                         <button className="btn-icon focusable" title="Ajustar saldo" onClick={() => setAdjustUser(u)} disabled={role !== 'USER'}>
                           <I.Wallet size={15}/>
                         </button>
@@ -291,6 +335,97 @@ export default function UsuariosPage() {
               <button className="btn btn-ghost flex-1 justify-center" onClick={() => setCreateOpen(false)} disabled={busy}>Cancelar</button>
               <button className="btn btn-primary flex-1 justify-center" onClick={create} disabled={busy}>
                 {busy ? <><span className="pulse-dot"/> Criando…</> : <><I.Check size={14}/> Cadastrar</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Editar Usuário ── */}
+      {editUser && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
+          <div className="surface-elev p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+                <I.Edit size={18}/>
+              </div>
+              <div className="flex-1">
+                <div className="font-display text-[18px] font-bold">Editar usuário</div>
+                <div className="text-[12px] text-[color:var(--text-3)] truncate">{editUser.tag}</div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Nome *</label>
+                <input className="input mt-1" value={editForm.name}
+                  onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}/>
+              </div>
+
+              <div>
+                <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] block mb-2">Permissão (role) *</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(['USER', 'ADMIN', 'OPERATOR', 'AUDITOR'] as const).map((r) => (
+                    <button key={r} type="button" onClick={() => setEditForm((f) => ({ ...f, role: r }))}
+                      className="rounded-[10px] px-3 py-2 text-[12px] font-bold"
+                      style={{
+                        background: editForm.role === r ? ROLE_TONE[r] + '22' : 'var(--surface-2)',
+                        color: editForm.role === r ? ROLE_TONE[r] : 'var(--text-2)',
+                        border: '1px solid ' + (editForm.role === r ? ROLE_TONE[r] : 'var(--border)'),
+                      }}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[10.5px] text-[color:var(--text-3)]">
+                  {editForm.role === 'USER' && 'Apostador comum. Sem acesso ao painel admin.'}
+                  {editForm.role === 'ADMIN' && '⚠ Acesso total — pode criar/remover outros admins, alterar saldos.'}
+                  {editForm.role === 'OPERATOR' && 'Operação dia-a-dia: criar eventos, abrir mercados, aprovar saques.'}
+                  {editForm.role === 'AUDITOR' && 'Apenas leitura + auditoria de liquidações.'}
+                </p>
+              </div>
+
+              <div>
+                <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] block mb-2">Status</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { v: 'ACTIVE' as const, label: 'Ativo', tone: 'var(--emerald)' },
+                    { v: 'BLOCKED' as const, label: 'Bloqueado', tone: '#ff7585' },
+                    { v: 'PENDING_KYC' as const, label: 'Pendente KYC', tone: 'var(--accent)' },
+                  ]).map((s) => (
+                    <button key={s.v} type="button" onClick={() => setEditForm((f) => ({ ...f, status: s.v }))}
+                      className="rounded-[10px] px-3 py-2 text-[12px] font-bold"
+                      style={{
+                        background: editForm.status === s.v ? s.tone + '22' : 'var(--surface-2)',
+                        color: editForm.status === s.v ? s.tone : 'var(--text-2)',
+                        border: '1px solid ' + (editForm.status === s.v ? s.tone : 'var(--border)'),
+                      }}>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">
+                  Nova senha <span className="text-[color:var(--text-4)]">(opcional · mín. 8)</span>
+                </label>
+                <input className="input mt-1" type="password" autoComplete="new-password"
+                  value={editForm.password}
+                  onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))}
+                  placeholder="Deixe em branco pra manter a senha atual"/>
+              </div>
+
+              <div className="rounded-[10px] px-3 py-2 text-[11.5px]"
+                style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+                ⚠ Promover/rebaixar é registrado em auditoria. Só ADMIN pode atribuir/remover roles privilegiadas (ADMIN/OPERATOR/AUDITOR).
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-5 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+              <button className="btn btn-ghost flex-1 justify-center" onClick={() => setEditUser(null)} disabled={busy}>Cancelar</button>
+              <button className="btn btn-primary flex-1 justify-center" onClick={submitEdit} disabled={busy}>
+                {busy ? <><span className="pulse-dot"/> Salvando…</> : <><I.Check size={14}/> Salvar alterações</>}
               </button>
             </div>
           </div>

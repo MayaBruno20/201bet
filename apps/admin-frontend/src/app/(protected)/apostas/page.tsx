@@ -4,12 +4,14 @@ import * as React from 'react';
 import { I } from '@/components/ui/icons';
 import { Page, Card, StatusChip, Avatar } from '@/components/ui/primitives';
 import { fetchBets, type Bet } from '@/lib/data';
+import { PeriodFilter, PERIOD_OPTIONS, filterByPeriod, type PeriodHours } from '@/components/ui/period-filter';
 
 export default function ApostasPage() {
   const [bets, setBets] = React.useState<Bet[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [filter, setFilter] = React.useState<'all'|'Pendente'|'Ganhou'|'Perdeu'|'Cancelada'>('all');
   const [q, setQ] = React.useState('');
+  const [period, setPeriod] = React.useState<PeriodHours>(24);
 
   React.useEffect(() => {
     let alive = true;
@@ -20,31 +22,40 @@ export default function ApostasPage() {
     return () => { alive = false; };
   }, []);
 
-  const filtered = bets.filter((b) =>
+  // Filtragem client-side por período usando o campo `rawDate` (ISO) que o
+  // backend retorna em fetchBets — fallback pra `date` quando não disponível.
+  const periodFiltered = React.useMemo(
+    () => filterByPeriod(bets, period, (b) => b.rawDate ?? b.date),
+    [bets, period],
+  );
+
+  const filtered = periodFiltered.filter((b) =>
     (filter === 'all' || b.status === filter) &&
     (!q || (b.user + b.event + b.pilot).toLowerCase().includes(q.toLowerCase()))
   );
 
-  // KPIs derivados dos dados reais
+  // KPIs derivados das bets do período selecionado.
   const kpis = React.useMemo(() => {
-    const volumeHoje = bets.reduce((s, b) => s + b.amount, 0);
-    const pendentes = bets.filter((b) => b.status === 'Pendente');
-    const ganhou = bets.filter((b) => b.status === 'Ganhou');
-    const cancelaram = bets.filter((b) => b.status === 'Cancelada');
+    const volume = periodFiltered.reduce((s, b) => s + b.amount, 0);
+    const pendentes = periodFiltered.filter((b) => b.status === 'Pendente');
+    const ganhou = periodFiltered.filter((b) => b.status === 'Ganhou');
+    const cancelaram = periodFiltered.filter((b) => b.status === 'Cancelada');
     return [
-      { l: 'Volume', v: 'R$ ' + (volumeHoje / 1000).toFixed(1) + 'k', d: bets.length + ' apostas', tone: '#3ee093' },
+      { l: 'Volume', v: 'R$ ' + (volume / 1000).toFixed(1) + 'k', d: periodFiltered.length + ' apostas', tone: '#3ee093' },
       { l: 'Pendentes', v: pendentes.length, d: 'R$ ' + pendentes.reduce((s, b) => s + b.amount, 0).toFixed(0), tone: 'var(--accent)' },
       { l: 'Ganhou', v: ganhou.length, d: 'R$ ' + ganhou.reduce((s, b) => s + b.potential, 0).toFixed(0), tone: '#7cd0ff' },
-      { l: 'Reembolsos', v: cancelaram.length, d: bets.length ? ((cancelaram.length / bets.length) * 100).toFixed(1) + '%' : '0%', tone: '#ff7585' },
+      { l: 'Reembolsos', v: cancelaram.length, d: periodFiltered.length ? ((cancelaram.length / periodFiltered.length) * 100).toFixed(1) + '%' : '0%', tone: '#ff7585' },
     ] as const;
-  }, [bets]);
+  }, [periodFiltered]);
 
   const fmt = (n: number) => 'R$ ' + n.toFixed(2).replace('.', ',');
+  const periodShort = PERIOD_OPTIONS.find((o) => o.hours === period)?.short ?? 'Hoje';
 
   return (
     <Page eyebrow="Financeiro" title="Apostas & Saques"
-      sub="Liquidação, cancelamentos e auditoria de transações."
+      sub={`Liquidação, cancelamentos e auditoria de transações. Mostrando: ${periodShort}.`}
       actions={<>
+        <PeriodFilter value={period} onChange={setPeriod}/>
         <button className="btn btn-ghost focusable"><I.Download size={15}/> Exportar CSV</button>
         <button className="btn btn-primary focusable"><I.Wallet size={15}/> Liquidar lote</button>
       </>}>

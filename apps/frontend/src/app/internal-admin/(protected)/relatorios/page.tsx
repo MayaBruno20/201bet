@@ -2,10 +2,21 @@
 
 import * as React from 'react';
 import { I } from '@admin/components/ui/icons';
-import { Page, Card } from '@admin/components/ui/primitives';
+import { Page, Card, SectionTitle } from '@admin/components/ui/primitives';
 import { useToast } from '@admin/components/ui/toast';
-import { apiFetch, getApiBaseUrl } from '@admin/lib/api';
+import { api, apiFetch, getApiBaseUrl } from '@admin/lib/api';
 import { ENDPOINTS } from '@admin/lib/endpoints';
+import { FinancialClosingPanel } from '@admin/components/admin/financial-closing-panel';
+
+type ClosingEligibleEvent = {
+  id: string;
+  name: string;
+  source: 'list' | 'armageddon';
+  scheduledAt: string;
+  endsAt: string | null;
+  status: string;
+  contextName: string | null;
+};
 
 /**
  * Relatórios usa o endpoint de export do backend pra baixar JSON ou CSV.
@@ -68,6 +79,10 @@ export default function RelatoriosPage() {
         })}
       </div>
 
+      <div className="mt-8">
+        <EventClosingSection />
+      </div>
+
       <Card className="p-8 text-center mt-6">
         <div className="w-12 h-12 rounded-[12px] grid place-items-center mx-auto" style={{ background: 'var(--surface-2)' }}>
           <I.Chart size={20} style={{ color: 'var(--text-3)' }}/>
@@ -79,5 +94,72 @@ export default function RelatoriosPage() {
         </div>
       </Card>
     </Page>
+  );
+}
+
+function EventClosingSection() {
+  const [events, setEvents] = React.useState<ClosingEligibleEvent[]>([]);
+  const [selectedId, setSelectedId] = React.useState<string>('');
+  const [loading, setLoading] = React.useState(true);
+  const { push } = useToast();
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const list = await api.get<ClosingEligibleEvent[]>(ENDPOINTS.ANALYTICS.closingEligibleEvents);
+        if (alive) setEvents(list);
+      } catch (e) {
+        if (alive) push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' });
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [push]);
+
+  const selected = events.find((e) => e.id === selectedId) ?? null;
+
+  return (
+    <Card className="p-0 overflow-hidden">
+      <div className="p-5" style={{ borderBottom: '1px solid var(--border)' }}>
+        <SectionTitle
+          title="Evento"
+          sub="Fechamento financeiro detalhado por evento (Listas e Armageddon). Selecione um para ver totais e exportar."
+        />
+        <div className="mt-3 flex items-center gap-3 flex-wrap">
+          <label className="text-[11px] tracking-[0.14em] uppercase font-semibold text-[color:var(--text-3)]">
+            Selecione o evento
+          </label>
+          <select
+            value={selectedId}
+            onChange={(e) => setSelectedId(e.target.value)}
+            disabled={loading || events.length === 0}
+            className="flex-1 min-w-[280px] h-9 rounded-[10px] px-3 text-[13px] font-medium"
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
+          >
+            <option value="">
+              {loading ? 'Carregando eventos…' : events.length === 0 ? 'Nenhum evento disponível' : '— escolha um evento —'}
+            </option>
+            {events.map((e) => {
+              const label = `${e.source === 'list' ? '🏁' : '⚔️'} ${e.name}${e.contextName ? ` · ${e.contextName}` : ''} · ${new Date(e.scheduledAt).toLocaleDateString('pt-BR')}`;
+              return (
+                <option key={`${e.source}-${e.id}`} value={e.id}>
+                  {label}
+                </option>
+              );
+            })}
+          </select>
+        </div>
+      </div>
+
+      {selected ? (
+        <FinancialClosingPanel eventId={selected.id} source={selected.source} />
+      ) : (
+        <div className="p-10 text-center text-[13px] text-[color:var(--text-3)]">
+          {loading ? 'Carregando…' : 'Escolha um evento acima para ver o fechamento e exportar.'}
+        </div>
+      )}
+    </Card>
   );
 }

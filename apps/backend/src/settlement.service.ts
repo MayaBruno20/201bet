@@ -124,6 +124,37 @@ export class SettlementService {
         },
       });
 
+      // 1.5. Propaga liquidação pro matchup de origem (Lista/Armageddon/SharkTank).
+      // Convenção: odds ordenadas por createdAt asc — odds[0]=LEFT, odds[1]=RIGHT
+      // (mesma convenção usada em settleDuel, ver linha ~299).
+      // updateMany com winnerSide:null evita sobrescrever se o matchup já foi
+      // auditado pelo seu próprio endpoint (idempotência).
+      if (market.duelId) {
+        const orderedOdds = await tx.odd.findMany({
+          where: { marketId },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true },
+        });
+
+        let derivedSide: 'LEFT' | 'RIGHT' | null = null;
+        if (orderedOdds.length >= 2) {
+          if (winnerOddId === orderedOdds[0].id) derivedSide = 'LEFT';
+          else if (winnerOddId === orderedOdds[1].id) derivedSide = 'RIGHT';
+        }
+
+        if (derivedSide) {
+          const settledNow = new Date();
+          await tx.listMatchup.updateMany({
+            where: { duelId: market.duelId, winnerSide: null },
+            data: { winnerSide: derivedSide, settledAt: settledNow },
+          });
+          await tx.armageddonMatchup.updateMany({
+            where: { duelId: market.duelId, winnerSide: null },
+            data: { winnerSide: derivedSide, settledAt: settledNow },
+          });
+        }
+      }
+
       // 2. Close all odds
       await tx.odd.updateMany({
         where: { marketId },

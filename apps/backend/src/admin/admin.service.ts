@@ -12,6 +12,7 @@ import {
   MarketStatus,
   MarketType,
   OddStatus,
+  PaymentStatus,
   PaymentType,
   Prisma,
   UserRole,
@@ -20,7 +21,7 @@ import {
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../database/prisma.service';
-import { MarketService } from '../market.service';
+import { HOUSE_MARGIN_PERCENT, MarketService } from '../market.service';
 import { MultiRunnerMarketService } from '../multi-runner-market.service';
 import { SettlementService } from '../settlement.service';
 import {
@@ -49,6 +50,12 @@ type AuditContext = {
   actorRole?: UserRole;
   ipAddress?: string;
   userAgent?: string;
+};
+
+type MatchupOrigin = {
+  type: 'LIST' | 'ARMAGEDDON';
+  leftPosition: number | null;
+  rightPosition: number | null;
 };
 
 const PRIVILEGED_ROLES: UserRole[] = [
@@ -1358,7 +1365,7 @@ export class AdminService {
    * multi-runner no admin de eventos.
    */
   async listLiveMarkets(eventId?: string) {
-    return this.prisma.market.findMany({
+    const markets = await this.prisma.market.findMany({
       where: {
         status: { in: [MarketStatus.OPEN, MarketStatus.CLOSED, MarketStatus.SUSPENDED] },
         ...(eventId ? { eventId } : {}),
@@ -1370,6 +1377,50 @@ export class AdminService {
         duel: { select: { poolState: true } },
       },
     });
+
+    // Enriquece com origem (Lista/Armageddon) + posição dos pilotos pra ajudar
+    // a auditoria saber qual confronto de cada lista está vendo. Sem isso, o
+    // operador precisa abrir outra aba e cruzar manualmente.
+    const duelIds = markets.map((m) => m.duelId).filter((id): id is string => !!id);
+    if (duelIds.length === 0) {
+      return markets.map((m) => ({ ...m, matchupOrigin: null as MatchupOrigin | null }));
+    }
+
+    const [listMatchups, armaMatchups] = await Promise.all([
+      this.prisma.listMatchup.findMany({
+        where: { duelId: { in: duelIds } },
+        select: { duelId: true, leftPosition: true, rightPosition: true },
+      }),
+      this.prisma.armageddonMatchup.findMany({
+        where: { duelId: { in: duelIds } },
+        select: { duelId: true, leftPosition: true, rightPosition: true },
+      }),
+    ]);
+
+    const originByDuel = new Map<string, MatchupOrigin>();
+    for (const m of listMatchups) {
+      if (m.duelId) {
+        originByDuel.set(m.duelId, {
+          type: 'LIST',
+          leftPosition: m.leftPosition,
+          rightPosition: m.rightPosition,
+        });
+      }
+    }
+    for (const m of armaMatchups) {
+      if (m.duelId) {
+        originByDuel.set(m.duelId, {
+          type: 'ARMAGEDDON',
+          leftPosition: m.leftPosition,
+          rightPosition: m.rightPosition,
+        });
+      }
+    }
+
+    return markets.map((m) => ({
+      ...m,
+      matchupOrigin: m.duelId ? originByDuel.get(m.duelId) ?? null : null,
+    }));
   }
 
   /**
@@ -1709,6 +1760,226 @@ export class AdminService {
       totalAffiliatePayouts,
       totalNetProfit,
       averageRakePercent: markets.length > 0 ? totalRake / totalPool * 100 : 0,
+    };
+  }
+
+  /**
+   * Lista combinada de ListEvents + ArmageddonEvents pra alimentar o seletor
+   * de "Fechamento por evento" no Relatórios. Retorna mínimo de campos.
+   */
+  async listClosingEligibleEvents() {
+    const [listEvents, armageddonEvents] = await Promise.all([
+      this.prisma.listEvent.findMany({
+        select: {
+          id: true,
+          name: true,
+          scheduledAt: true,
+          endsAt: true,
+          status: true,
+          list: { select: { name: true } },
+        },
+        orderBy: { scheduledAt: 'desc' },
+        take: 200,
+      }),
+      this.prisma.armageddonEvent.findMany({
+        select: { id: true, name: true, scheduledAt: true, endsAt: true, status: true },
+        orderBy: { scheduledAt: 'desc' },
+        take: 200,
+      }),
+    ]);
+
+    const items: Array<{
+      id: string;
+      name: string;
+      source: 'list' | 'armageddon';
+      scheduledAt: string;
+      endsAt: string | null;
+      status: string;
+      contextName: string | null;
+    }> = [];
+
+    for (const e of listEvents) {
+      items.push({
+        id: e.id,
+        name: e.name,
+        source: 'list',
+        scheduledAt: e.scheduledAt.toISOString(),
+        endsAt: e.endsAt?.toISOString() ?? null,
+        status: e.status,
+        contextName: e.list.name,
+      });
+    }
+    for (const e of armageddonEvents) {
+      items.push({
+        id: e.id,
+        name: e.name,
+        source: 'armageddon',
+        scheduledAt: e.scheduledAt.toISOString(),
+        endsAt: e.endsAt?.toISOString() ?? null,
+        status: e.status,
+        contextName: null,
+      });
+    }
+
+    // Ordena por data desc (mais recente primeiro), combinando os dois.
+    items.sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));
+    return items;
+  }
+
+  /**
+   * Fechamento financeiro de um evento (Lista ou Armageddon).
+   *
+   * - Apostas, ganhos, perdas e reembolsos são derivados das bets cujos
+   *   `BetItem.oddId` apontam pra mercados vinculados a duels dos matchups do
+   *   evento.
+   * - Depósitos e saques NÃO têm vínculo direto com evento. Usa-se a janela
+   *   temporal `scheduledAt → endsAt ?? scheduledAt+24h` como proxy. Documentar
+   *   essa aproximação na UI.
+   */
+  async getEventFinancialClosing(eventId: string, source: 'list' | 'armageddon') {
+    // 1. Evento + janela temporal
+    const event =
+      source === 'list'
+        ? await this.prisma.listEvent.findUnique({
+            where: { id: eventId },
+            select: { id: true, name: true, scheduledAt: true, endsAt: true },
+          })
+        : await this.prisma.armageddonEvent.findUnique({
+            where: { id: eventId },
+            select: { id: true, name: true, scheduledAt: true, endsAt: true },
+          });
+
+    if (!event) {
+      throw new NotFoundException(
+        source === 'list' ? 'ListEvent não encontrado' : 'ArmageddonEvent não encontrado',
+      );
+    }
+
+    const windowStart = event.scheduledAt;
+    const windowEnd = event.endsAt ?? new Date(event.scheduledAt.getTime() + 24 * 60 * 60 * 1000);
+
+    // 2. Matchups do evento → duelIds → mercados → odds → betItems → bets
+    const matchups =
+      source === 'list'
+        ? await this.prisma.listMatchup.findMany({
+            where: { listEventId: eventId, duelId: { not: null } },
+            select: { duelId: true },
+          })
+        : await this.prisma.armageddonMatchup.findMany({
+            where: { eventId, duelId: { not: null } },
+            select: { duelId: true },
+          });
+
+    const duelIds = matchups.map((m) => m.duelId).filter((id): id is string => !!id);
+
+    let totalStaked = 0;
+    let totalWinnings = 0;
+    let totalRefunds = 0;
+    let betCount = 0;
+    let wonBets = 0;
+    let lostBets = 0;
+    const bettors = new Set<string>();
+    const marketIdsList: string[] = [];
+
+    if (duelIds.length > 0) {
+      const markets = await this.prisma.market.findMany({
+        where: { duelId: { in: duelIds } },
+        select: { id: true },
+      });
+      marketIdsList.push(...markets.map((m) => m.id));
+
+      if (marketIdsList.length > 0) {
+        // Pegar betIds DISTINCT que tocaram qualquer odd desses mercados.
+        const betItems = await this.prisma.betItem.findMany({
+          where: { odd: { marketId: { in: marketIdsList } } },
+          select: { betId: true },
+          distinct: ['betId'],
+        });
+        const betIds = betItems.map((b) => b.betId);
+
+        if (betIds.length > 0) {
+          const bets = await this.prisma.bet.findMany({
+            where: { id: { in: betIds } },
+            select: { id: true, userId: true, stake: true, status: true },
+          });
+
+          for (const b of bets) {
+            betCount++;
+            bettors.add(b.userId);
+            totalStaked += Number(b.stake);
+            if (b.status === 'WON') wonBets++;
+            else if (b.status === 'LOST') lostBets++;
+          }
+
+          const ledger = await this.prisma.walletTransaction.findMany({
+            where: {
+              reference: { in: betIds },
+              type: { in: [WalletTransactionType.BET_WON, WalletTransactionType.BET_REFUND] },
+            },
+            select: { type: true, amount: true },
+          });
+          for (const t of ledger) {
+            if (t.type === WalletTransactionType.BET_WON) totalWinnings += Number(t.amount);
+            else if (t.type === WalletTransactionType.BET_REFUND) totalRefunds += Number(t.amount);
+          }
+        }
+      }
+    }
+
+    // 3. Pagamentos na janela (proxy — não há vínculo direto Payment↔Event).
+    const payments = await this.prisma.payment.findMany({
+      where: {
+        status: PaymentStatus.APPROVED,
+        createdAt: { gte: windowStart, lte: windowEnd },
+      },
+      select: { type: true, amount: true },
+    });
+
+    let totalDeposits = 0;
+    let totalWithdrawals = 0;
+    for (const p of payments) {
+      if (p.type === PaymentType.DEPOSIT) totalDeposits += Number(p.amount);
+      else if (p.type === PaymentType.WITHDRAW) totalWithdrawals += Number(p.amount);
+    }
+
+    // 4. Derivados.
+    // Perda dos apostadores = stake - ganhos - reembolsos (clamp em 0 pra
+    // proteger contra dados inconsistentes).
+    const totalLosses = Math.max(0, totalStaked - totalWinnings - totalRefunds);
+    // Rake estimado: HOUSE_MARGIN_PERCENT do stake já liquidado (vencedores +
+    // perdedores). Valor real só é exato pelo audit log dos settlements; aqui
+    // é estimativa pra fechamento rápido.
+    const settledStake =
+      totalStaked > 0 && (wonBets + lostBets) > 0
+        ? totalStaked * ((wonBets + lostBets) / betCount)
+        : 0;
+    const rakeEstimated = settledStake * (HOUSE_MARGIN_PERCENT / 100);
+
+    return {
+      eventId,
+      eventName: event.name,
+      source,
+      window: {
+        start: windowStart.toISOString(),
+        end: windowEnd.toISOString(),
+        note: 'Depósitos/saques são filtrados pela janela temporal do evento (não há vínculo direto).',
+      },
+      bets: {
+        count: betCount,
+        uniqueBettors: bettors.size,
+        wonBets,
+        lostBets,
+        totalStaked,
+        totalWinnings,
+        totalRefunds,
+        totalLosses,
+        rakeEstimated,
+      },
+      payments: {
+        totalDeposits,
+        totalWithdrawals,
+        netCashFlow: totalDeposits - totalWithdrawals,
+      },
     };
   }
 

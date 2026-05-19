@@ -2,11 +2,16 @@
 
 import * as React from 'react';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
-import { Check, Crown, Trophy } from 'lucide-react';
+import { Check, Crown, Info, Trophy } from 'lucide-react';
 
 /**
  * 201bet · /apostas — DuelCard
  * Central betting unit: a 1×1 duel between two pilots.
+ *
+ * Display: mostra "% das apostas" por lado em vez de odd cravada.
+ * Sistema é pari-mutuel (pote dividido entre vencedores), então a odd flutua
+ * até o fechamento — mostrar uma odd fixa criava expectativa de retorno X que
+ * virava Y no pagamento. A % mostra a distribuição atual sem prometer payout.
  */
 
 export type DuelStatus = 'OPEN' | 'CLOSED' | 'SETTLED' | 'CANCELED';
@@ -15,6 +20,7 @@ export type DuelSide = 'LEFT' | 'RIGHT';
 export interface DuelSideData {
   label: string;
   odd: number;
+  poolShare: number; // 0-100, distribuição atual das apostas no lado
   photoUrl?: string | null;
 }
 
@@ -32,20 +38,18 @@ export interface DuelData {
 export interface DuelCardProps {
   duel: DuelData;
   selectedSide?: DuelSide | null;
-  stakeForEstimate: number;
+  /** @deprecated não é mais usado — display público não mostra retorno estimado por odd */
+  stakeForEstimate?: number;
   onSelect?: (side: DuelSide) => void;
   className?: string;
 }
 
-function formatBRL(n: number): string {
-  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function formatBRLShort(n: number): string {
   if (n >= 1000) return `R$ ${(n / 1000).toFixed(1).replace('.', ',')}k`;
-  return formatBRL(n);
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-function formatOdd(odd: number): string {
-  return `@${odd.toFixed(2).replace('.', ',')}`;
+function formatShare(share: number): string {
+  return `${share.toFixed(0).replace('.', ',')}%`;
 }
 
 const STATUS_PILL: Record<DuelStatus, { label: string; cls: string }> = {
@@ -55,9 +59,9 @@ const STATUS_PILL: Record<DuelStatus, { label: string; cls: string }> = {
   CANCELED:{ label: 'CANCELADO', cls: 'text-[#ff5a6c]' },
 };
 
-function AnimatedOdd({ value, className }: { value: number; className?: string }) {
+function AnimatedShare({ value, className }: { value: number; className?: string }) {
   const mv = useMotionValue(value);
-  const display = useTransform(mv, (latest: number) => formatOdd(latest));
+  const display = useTransform(mv, (latest: number) => formatShare(latest));
   React.useEffect(() => {
     const controls = animate(mv, value, { duration: 0.6, ease: [0.16, 1, 0.3, 1] });
     return () => controls.stop();
@@ -68,7 +72,6 @@ function AnimatedOdd({ value, className }: { value: number; className?: string }
 export function DuelCard({
   duel,
   selectedSide = null,
-  stakeForEstimate,
   onSelect,
   className = '',
 }: DuelCardProps) {
@@ -128,7 +131,6 @@ export function DuelCard({
           isLoser={isSettled && winnerSide !== 'LEFT'}
           interactive={isInteractive}
           onSelect={() => isInteractive && onSelect?.('LEFT')}
-          stake={stakeForEstimate}
         />
         <SideButton
           side='RIGHT'
@@ -138,15 +140,22 @@ export function DuelCard({
           isLoser={isSettled && winnerSide !== 'RIGHT'}
           interactive={isInteractive}
           onSelect={() => isInteractive && onSelect?.('RIGHT')}
-          stake={stakeForEstimate}
         />
       </div>
 
-      {(duel.isInitialOdds && duel.status === 'OPEN') || duel.status === 'CLOSED' || isSettled || isCanceled ? (
+      {isInteractive && (
+        <div className='mt-3 flex items-start gap-1.5 text-[11px] text-[#767b8a] leading-snug'>
+          <Info className='h-3 w-3 mt-0.5 flex-shrink-0' />
+          <span>
+            % indica a distribuição atual das apostas. Sistema pari-mutuel: o pote total é dividido entre quem
+            acertar, proporcional à aposta. Quanto mais gente no lado oposto, maior seu retorno. O valor final
+            só é definido no fechamento.
+          </span>
+        </div>
+      )}
+
+      {(duel.status === 'CLOSED' || isSettled || isCanceled) && (
         <div className='mt-3 text-[11px] text-[#767b8a] leading-tight'>
-          {duel.isInitialOdds && duel.status === 'OPEN' && (
-            <span>Cotação inicial — varia conforme o pote vai sendo formado.</span>
-          )}
           {duel.status === 'CLOSED' && <span>Apostas encerradas. Aguardando auditoria.</span>}
           {isSettled && (
             <span className='inline-flex items-center gap-1 text-[#21d97a]'>
@@ -156,7 +165,7 @@ export function DuelCard({
           )}
           {isCanceled && <span>Embate cancelado. Apostas serão estornadas.</span>}
         </div>
-      ) : null}
+      )}
     </motion.div>
   );
 }
@@ -169,10 +178,9 @@ interface SideButtonProps {
   isLoser: boolean;
   interactive: boolean;
   onSelect: () => void;
-  stake: number;
 }
 
-function SideButton({ side, data, selected, isWinner, isLoser, interactive, onSelect, stake }: SideButtonProps) {
+function SideButton({ side, data, selected, isWinner, isLoser, interactive, onSelect }: SideButtonProps) {
   const isLeft = side === 'LEFT';
   const accent = isLeft
     ? {
@@ -190,15 +198,13 @@ function SideButton({ side, data, selected, isWinner, isLoser, interactive, onSe
         selectedGlow: 'shadow-[0_0_0_1px_rgba(249,115,22,0.45),0_14px_36px_-18px_rgba(249,115,22,0.40)]',
       };
 
-  const estimate = stake > 0 ? stake * data.odd : 0;
-
   return (
     <button
       type='button'
       onClick={onSelect}
       disabled={!interactive}
       aria-pressed={selected}
-      aria-label={`${isLeft ? 'Piloto A' : 'Piloto B'}: ${data.label} — cotação ${formatOdd(data.odd)}`}
+      aria-label={`${isLeft ? 'Piloto A' : 'Piloto B'}: ${data.label} — ${formatShare(data.poolShare)} das apostas`}
       className={`
         group relative text-left rounded-xl border
         pl-3.5 pr-3 py-3 sm:py-3.5
@@ -237,10 +243,10 @@ function SideButton({ side, data, selected, isWinner, isLoser, interactive, onSe
 
       <div className='mt-3 flex items-baseline justify-between gap-2'>
         <span className={`font-mono text-[26px] sm:text-[28px] font-bold tabular-nums leading-none ${accent.text}`}>
-          <AnimatedOdd value={data.odd} />
+          <AnimatedShare value={data.poolShare} />
         </span>
-        <span className='font-mono text-[11px] tabular-nums text-[#767b8a] whitespace-nowrap min-w-0 truncate'>
-          ~{estimate >= 10000 ? formatBRLShort(estimate) : formatBRL(estimate)}
+        <span className='font-mono text-[10px] uppercase tracking-[0.12em] text-[#767b8a] whitespace-nowrap'>
+          das apostas
         </span>
       </div>
     </button>

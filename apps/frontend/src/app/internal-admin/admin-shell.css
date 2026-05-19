@@ -114,6 +114,15 @@
   white-space: nowrap;
   cursor: pointer;
 }
+.admin-shell .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.3);
+}
+.admin-shell .btn:disabled:hover {
+  transform: none;
+  filter: grayscale(0.3);
+}
 .admin-shell .btn-primary {
   background: linear-gradient(180deg, #ffc55a, #ff8a2a);
   color: #1a1106;

@@ -582,7 +582,8 @@ export class PaymentsService {
 
   /** Resumo agregado de pagamentos para os KPIs da aba Financeiro. */
   async adminPaymentsSummary(hours: number) {
-    const since = new Date(Date.now() - hours * 3_600_000);
+    // hours <= 0 sinaliza "total" — não aplica filtro temporal.
+    const dateFilter = hours > 0 ? { createdAt: { gte: new Date(Date.now() - hours * 3_600_000) } } : {};
     const [
       depositsApprovedAgg,
       depositsPendingCount,
@@ -591,7 +592,7 @@ export class PaymentsService {
       withdrawalsPendingAgg,
     ] = await Promise.all([
       this.prisma.payment.aggregate({
-        where: { type: PaymentType.DEPOSIT, status: PaymentStatus.APPROVED, createdAt: { gte: since } },
+        where: { type: PaymentType.DEPOSIT, status: PaymentStatus.APPROVED, ...dateFilter },
         _sum: { amount: true },
         _count: { _all: true },
       }),
@@ -599,7 +600,7 @@ export class PaymentsService {
         where: { type: PaymentType.DEPOSIT, status: PaymentStatus.PENDING },
       }),
       this.prisma.payment.aggregate({
-        where: { type: PaymentType.WITHDRAW, status: PaymentStatus.APPROVED, createdAt: { gte: since } },
+        where: { type: PaymentType.WITHDRAW, status: PaymentStatus.APPROVED, ...dateFilter },
         _sum: { amount: true },
         _count: { _all: true },
       }),

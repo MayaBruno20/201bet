@@ -53,8 +53,8 @@ function formatBRLShort(n: number): string {
   if (n >= 1000) return `R$ ${(n / 1000).toFixed(1).replace('.', ',')}k`;
   return formatBRL(n);
 }
-function formatOdd(odd: number): string {
-  return `@${odd.toFixed(2).replace('.', ',')}`;
+function formatShare(share01: number): string {
+  return `${(share01 * 100).toFixed(0)}%`;
 }
 
 const MARKET_TYPE_LABEL: Record<MultiRunnerMarketType, string> = {
@@ -63,9 +63,9 @@ const MARKET_TYPE_LABEL: Record<MultiRunnerMarketType, string> = {
   FALSE_START: 'Queima de largada',
 };
 
-function AnimatedOdd({ value, className }: { value: number; className?: string }) {
+function AnimatedShare({ value, className }: { value: number; className?: string }) {
   const mv = useMotionValue(value);
-  const display = useTransform(mv, (latest: number) => formatOdd(latest));
+  const display = useTransform(mv, (latest: number) => formatShare(latest));
   React.useEffect(() => {
     const controls = animate(mv, value, { duration: 0.6, ease: [0.16, 1, 0.3, 1] });
     return () => controls.stop();
@@ -169,10 +169,6 @@ export function MultiRunnerCard({
                   <PoolShareBar share={runner.poolShare} />
                   <div className='mt-1 flex items-center gap-3 text-[11px] text-[#767b8a]'>
                     <span className='font-mono tabular-nums'>
-                      {(runner.poolShare * 100).toFixed(0)}% do pote
-                    </span>
-                    <span className='text-white/15'>·</span>
-                    <span className='font-mono tabular-nums'>
                       {runner.tickets} apostas
                     </span>
                     <span className='text-white/15'>·</span>
@@ -182,9 +178,9 @@ export function MultiRunnerCard({
 
                 <div className='text-right shrink-0'>
                   <div className={`font-mono text-xl sm:text-[22px] font-bold tabular-nums ${isSelected ? 'text-[#ffb028]' : 'text-[#f1f3f8] group-hover:text-[#ffb028]'} transition-colors`}>
-                    <AnimatedOdd value={runner.odd} />
+                    <AnimatedShare value={runner.poolShare} />
                   </div>
-                  <div className='text-[10px] uppercase tracking-wider text-[#767b8a]'>cotação</div>
+                  <div className='text-[10px] uppercase tracking-wider text-[#767b8a]'>das apostas</div>
                 </div>
               </button>
             </li>
@@ -202,10 +198,7 @@ export function MultiRunnerCard({
               <div className='flex items-center justify-between gap-3 mb-3'>
                 <div className='text-[12px] text-[#b8bcc9]'>
                   Apostando em{' '}
-                  <span className='text-[#f1f3f8] font-medium'>{selectedRunner.label}</span>{' '}
-                  <span className='font-mono text-[#ffb028] tabular-nums'>
-                    {formatOdd(selectedRunner.odd)}
-                  </span>
+                  <span className='text-[#f1f3f8] font-medium'>{selectedRunner.label}</span>
                 </div>
               </div>
 
@@ -269,11 +262,15 @@ export function MultiRunnerCard({
               </div>
 
               <div className='mt-3 flex items-center justify-between text-[12px] text-[#767b8a]'>
-                <span>Retorno potencial</span>
+                <span>Retorno se fechasse agora*</span>
                 <span className='font-mono text-[#ffb028] font-semibold tabular-nums text-[15px]'>
                   {formatBRL(potentialReturn)}
                 </span>
               </div>
+              <p className='mt-2 text-[10.5px] leading-snug text-[#767b8a]'>
+                * Pari-mutuel: pote total dividido entre quem acertar. Valor final só é definido no fechamento —
+                pode subir conforme mais gente aposta nos outros pilotos, ou cair se mais gente aposta no seu.
+              </p>
             </div>
           )}
         </div>

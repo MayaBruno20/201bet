@@ -122,7 +122,10 @@ export class AdminPaymentsController {
 
   @Get('summary')
   summary(@Query('hours') hours?: string) {
-    const h = hours ? Number.parseInt(hours, 10) : 24;
-    return this.paymentsService.adminPaymentsSummary(Number.isFinite(h) ? Math.min(Math.max(h, 1), 720) : 24);
+    // hours=0 (ou negativo) → "Total" sem filtro temporal. Caso contrário,
+    // janela em horas, limitada a 8760 (1 ano) pra evitar abuso.
+    const h = hours !== undefined ? Number.parseInt(hours, 10) : 24;
+    if (Number.isFinite(h) && h <= 0) return this.paymentsService.adminPaymentsSummary(0);
+    return this.paymentsService.adminPaymentsSummary(Number.isFinite(h) ? Math.min(Math.max(h, 1), 8760) : 24);
   }
 }

@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/toast';
 import { useConfirm } from '@/components/ui/confirm';
 import { api } from '@/lib/api';
 import { ENDPOINTS } from '@/lib/endpoints';
+import { PeriodFilter, PERIOD_OPTIONS, type PeriodHours } from '@/components/ui/period-filter';
 
 type HoldReason = 'HIGH_AMOUNT' | 'CPF_MISMATCH' | null;
 
@@ -95,13 +96,14 @@ export default function FinanceiroPage() {
   const [tab, setTab] = React.useState<Tab>('pending');
   const [summary, setSummary] = React.useState<PaymentsSummary | null>(null);
   const [lastUpdate, setLastUpdate] = React.useState<Date>(new Date());
+  const [period, setPeriod] = React.useState<PeriodHours>(24);
 
   const loadSummary = React.useCallback(async () => {
     try {
-      setSummary(await api.get<PaymentsSummary>(ENDPOINTS.PAYMENTS.summary(24)));
+      setSummary(await api.get<PaymentsSummary>(ENDPOINTS.PAYMENTS.summary(period)));
       setLastUpdate(new Date());
     } catch { /* ignore */ }
-  }, []);
+  }, [period]);
 
   React.useEffect(() => {
     void loadSummary();
@@ -109,29 +111,32 @@ export default function FinanceiroPage() {
     return () => clearInterval(i);
   }, [loadSummary]);
 
+  const periodShort = PERIOD_OPTIONS.find((o) => o.hours === period)?.short ?? 'Hoje';
+
   return (
     <Page
       eyebrow="Financeiro"
       title="Financeiro"
       sub="Depósitos, saques e solicitações de aprovação. Atualizado em tempo real."
-      actions={
-        <span className="text-[11.5px] text-[color:var(--text-3)] flex items-center gap-1.5">
+      actions={<>
+        <span className="text-[11.5px] text-[color:var(--text-3)] flex items-center gap-1.5 mr-2">
           <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: 'var(--emerald)' }}/>
           Tempo real · {lastUpdate.toLocaleTimeString('pt-BR')}
         </span>
-      }
+        <PeriodFilter value={period} onChange={setPeriod}/>
+      </>}
     >
-      {/* KPIs (24h) */}
+      {/* KPIs do período selecionado (Hoje / 7d / 30d / Total) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
         <Card className="p-4">
-          <div className="text-[10.5px] tracking-[0.14em] uppercase font-semibold text-[color:var(--text-3)]">Depósitos 24h</div>
+          <div className="text-[10.5px] tracking-[0.14em] uppercase font-semibold text-[color:var(--text-3)]">Depósitos {periodShort}</div>
           <div className="font-display text-[22px] font-bold mt-1 tabular-nums" style={{ color: 'var(--emerald)' }}>
             {summary ? fmtBRL(summary.deposits.approvedAmount) : '—'}
           </div>
           <div className="text-[11px] text-[color:var(--text-3)] mt-0.5">{summary?.deposits.approvedCount ?? 0} aprovados</div>
         </Card>
         <Card className="p-4">
-          <div className="text-[10.5px] tracking-[0.14em] uppercase font-semibold text-[color:var(--text-3)]">Saques 24h</div>
+          <div className="text-[10.5px] tracking-[0.14em] uppercase font-semibold text-[color:var(--text-3)]">Saques {periodShort}</div>
           <div className="font-display text-[22px] font-bold mt-1 tabular-nums" style={{ color: '#ff7585' }}>
             {summary ? fmtBRL(summary.withdrawals.approvedAmount) : '—'}
           </div>

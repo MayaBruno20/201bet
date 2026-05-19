@@ -31,7 +31,7 @@ export type Pilot = {
   /** Apenas pilotos: marca convidados criados por embate rápido. */
   isGuest?: boolean;
 };
-export type Bet = { id: number; user: string; userTag: string; event: string; pilot: string; amount: number; odd: number; potential: number; status: string; date: string; method: string };
+export type Bet = { id: number; user: string; userTag: string; event: string; pilot: string; amount: number; odd: number; potential: number; status: string; date: string; rawDate?: string; method: string };
 export type ListItem = { id?: string; ddd: string; name: string; tier: string; pilots: number; status: string; sede: string; updated: string };
 export type Activity = { who: string; what: string; target: string; when: string; tone: string };
 export type AuditEntry = { id: number; actor: string; actorRole: string; action: string; target: string; targetType: string; ip: string; when: string; severity: string };
@@ -301,6 +301,12 @@ export async function fetchEventTypes(days = 30): Promise<EventTypeSlice[]> {
 
 /* ─── Mercados (admin/markets) ─── */
 
+export type MatchupOrigin = {
+  type: 'LIST' | 'ARMAGEDDON';
+  leftPosition: number | null;
+  rightPosition: number | null;
+};
+
 export type MarketRow = {
   id: string;
   eventId: string;
@@ -313,7 +319,10 @@ export type MarketRow = {
   duelId: string | null;
   winnerOddId: string | null;
   totalPool: number;
+  leftPool: number;
+  rightPool: number;
   odds: Array<{ id: string; label: string; value: number; status: string }>;
+  matchupOrigin: MatchupOrigin | null;
 };
 
 type BackendMarket = {
@@ -323,6 +332,7 @@ type BackendMarket = {
   event: { name: string };
   duel?: { poolState?: { leftPool?: string | number; rightPool?: string | number } | null } | null;
   odds: Array<{ id: string; label: string; value: string | number; status: string }>;
+  matchupOrigin?: MatchupOrigin | null;
 };
 
 /** Lista todos os mercados (admin). */
@@ -344,7 +354,10 @@ export async function fetchMarkets(): Promise<MarketRow[]> {
         duelId: m.duelId ?? null,
         winnerOddId: m.winnerOddId ?? null,
         totalPool: left + right,
+        leftPool: left,
+        rightPool: right,
         odds: m.odds.map((o) => ({ id: o.id, label: o.label, value: Number(o.value), status: o.status })),
+        matchupOrigin: m.matchupOrigin ?? null,
       };
     });
   } catch { return []; }
@@ -419,7 +432,7 @@ export async function fetchBets(): Promise<Bet[]> {
     type ExportResp = { data: BackendBet[] };
     const resp = await api.get<ExportResp>(ENDPOINTS.ANALYTICS.export('bets', 'json'));
     const items = Array.isArray(resp?.data) ? resp.data : [];
-    return items.slice(0, 50).map((b, i) => ({
+    return items.slice(0, 500).map((b, i) => ({
       id: i + 1,
       user: b.user?.name ?? b.userEmail ?? b.user?.email ?? '—',
       userTag: initials(b.user?.name ?? b.userEmail ?? '??'),
@@ -430,6 +443,7 @@ export async function fetchBets(): Promise<Bet[]> {
       potential: Number(b.potentialWin),
       status: b.status === 'WON' ? 'Ganhou' : b.status === 'LOST' ? 'Perdeu' : b.status === 'REFUNDED' ? 'Cancelada' : 'Pendente',
       date: ago(b.createdAt),
+      rawDate: b.createdAt,
       method: 'Vencedor',
     }));
   } catch { return BETS; }
