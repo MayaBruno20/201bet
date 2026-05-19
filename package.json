@@ -4,26 +4,22 @@
   "description": "Monorepo MVP 201Bet (Next.js + NestJS + WebSocket)",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n backend,frontend,admin -c cyan,magenta,yellow \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:admin\"",
+    "dev": "concurrently -n backend,frontend -c cyan,magenta \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:full": "npm run infra:up && npm run dev",
     "dev:backend": "dotenv -e .env -- npm --prefix apps/backend run start:dev",
     "dev:frontend": "dotenv -e .env -- npm --prefix apps/frontend run dev",
-    "dev:admin": "dotenv -e .env -- npm --prefix apps/admin-frontend run dev",
-    "dev:local": "concurrently -n backend,frontend,admin -c cyan,magenta,yellow \"npm run dev:backend:local\" \"npm run dev:frontend\" \"npm run dev:admin\"",
+    "dev:local": "concurrently -n backend,frontend -c cyan,magenta \"npm run dev:backend:local\" \"npm run dev:frontend\"",
     "dev:backend:local": "dotenv -e apps/backend/.env -- npm --prefix apps/backend run start:dev",
     "db:migrate:local": "dotenv -e apps/backend/.env -- npm --prefix apps/backend run prisma:migrate:deploy",
     "db:seed:local": "dotenv -e apps/backend/.env -- npm --prefix apps/backend run prisma:seed",
-    "build": "npm run build:backend && npm run build:frontend && npm run build:admin",
+    "build": "npm run build:backend && npm run build:frontend",
     "build:backend": "npm --prefix apps/backend run build",
     "build:frontend": "dotenv -e .env -- npm --prefix apps/frontend run build",
-    "build:admin": "dotenv -e .env -- npm --prefix apps/admin-frontend run build",
     "start:backend": "npm --prefix apps/backend run start:prod",
     "start:frontend": "dotenv -e .env -- npm --prefix apps/frontend run start",
-    "start:admin": "dotenv -e .env -- npm --prefix apps/admin-frontend run start",
-    "lint": "npm run lint:backend && npm run lint:frontend && npm run lint:admin",
+    "lint": "npm run lint:backend && npm run lint:frontend",
     "lint:backend": "npm --prefix apps/backend run lint",
     "lint:frontend": "npm --prefix apps/frontend run lint",
-    "lint:admin": "npm --prefix apps/admin-frontend run lint",
     "db:generate": "dotenv -e .env -- npm --prefix apps/backend run prisma:generate",
     "db:push": "dotenv -e .env -- npm --prefix apps/backend run prisma:push",
     "db:migrate": "dotenv -e .env -- npm --prefix apps/backend run prisma:migrate",
@@ -50,13 +46,8 @@
   "author": "201Bet Team",
   "license": "MIT",
   "devDependencies": {
-    "@types/pdf-parse": "^1.1.5",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "dotenv-cli": "^11.0.0"
-  },
-  "dependencies": {
-    "mammoth": "^1.12.0",
-    "pdf-parse": "^2.4.5"
   }
 }

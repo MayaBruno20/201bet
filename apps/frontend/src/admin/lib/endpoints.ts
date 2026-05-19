@@ -67,9 +67,11 @@ export const ENDPOINTS = {
 
   MARKETS: {
     list: '/admin/markets',
+    live: '/admin/markets/live',
     create: '/admin/markets',
     settle: (id: string) => `/admin/markets/${id}/settle`,
     void: (id: string) => `/admin/markets/${id}/void`,
+    restartEvent: (eventId: string) => `/admin/events/${eventId}/restart`,
   },
 
   CATEGORY_EVENTS: {
@@ -114,10 +116,13 @@ export const ENDPOINTS = {
       update: (eventId: string) => `/admin/brazil-list-events/${eventId}`,
       delete: (eventId: string) => `/admin/brazil-list-events/${eventId}`,
       generateMatchups: (eventId: string) => `/admin/brazil-list-events/${eventId}/generate-matchups`,
+      openAllMarkets: (eventId: string) => `/admin/brazil-list-events/${eventId}/open-all-markets`,
     },
     rosters: {
       upsert: (listId: string) => `/admin/brazil-lists/${listId}/roster`,
       delete: (listId: string, rosterId: string) => `/admin/brazil-lists/${listId}/roster/${rosterId}`,
+      parseFile: (listId: string) => `/admin/brazil-lists/${listId}/roster/parse-file`,
+      bulkReplace: (listId: string) => `/admin/brazil-lists/${listId}/roster/bulk-replace`,
     },
     sharkTank: {
       // SharkTank é per-EVENT no schema (listEventId), endpoints sob /brazil-list-events
@@ -198,7 +203,7 @@ export const ENDPOINTS = {
   },
 
   CONFIG: {
-    margin: '/admin/config/margin',
+    // margin: fixa em 20% por regulamento, sem endpoint de alteração.
     minBet: '/admin/config/min-bet',
     settings: '/admin/settings',
     settingDelete: (id: string) => `/admin/settings/${id}`,

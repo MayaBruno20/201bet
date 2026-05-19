@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { motion } from 'framer-motion';
+import type { HTMLMotionProps } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 
 /**
@@ -22,12 +23,12 @@ type CommonProps = {
 
 type ButtonProps = CommonProps & {
   asLink?: false;
-} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, keyof CommonProps>;
+} & Omit<HTMLMotionProps<'button'>, keyof CommonProps | 'children'>;
 
 type LinkProps = CommonProps & {
   asLink: true;
   href: string;
-} & Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, keyof CommonProps | 'href'>;
+} & Omit<HTMLMotionProps<'a'>, keyof CommonProps | 'children' | 'href'>;
 
 export type PrimaryCTAButtonProps = ButtonProps | LinkProps;
 

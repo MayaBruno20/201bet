@@ -174,7 +174,7 @@ export const Card: React.FC<{ children: React.ReactNode; className?: string; sty
   <div className={`surface ${className}`} style={style}>{children}</div>
 );
 
-export const SectionTitle: React.FC<{ title: string; sub?: string; action?: React.ReactNode }> = ({ title, sub, action }) => (
+export const SectionTitle: React.FC<{ title: string; sub?: React.ReactNode; action?: React.ReactNode }> = ({ title, sub, action }) => (
   <div className="flex items-end justify-between gap-4 mb-3">
     <div>
       <h3 className="font-display text-lg font-semibold">{title}</h3>

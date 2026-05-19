@@ -1,4 +1,4 @@
-/* Tokens e componentes do painel admin (ex-admin-frontend), escopados para conviver com o site público + Tailwind v4. */
+/* Tokens e estilos do painel admin (escopo .admin-shell), convivem com o site público + Tailwind v4. */
 
 .admin-shell {
   --radius: 16px;

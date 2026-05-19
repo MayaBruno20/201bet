@@ -184,16 +184,16 @@ export default function FinanceiroPage() {
         ))}
       </div>
 
-      {tab === 'pending' && <PendingApprovalsTab onTick={() => { setLastUpdate(new Date()); void loadSummary(); }}/>}
-      {tab === 'withdrawals' && <PaymentsHistoryTab type="WITHDRAW" onTick={() => setLastUpdate(new Date())}/>}
-      {tab === 'deposits' && <PaymentsHistoryTab type="DEPOSIT" onTick={() => setLastUpdate(new Date())}/>}
+      {tab === 'pending' && <PendingApprovalsTab onAfterAction={loadSummary}/>}
+      {tab === 'withdrawals' && <PaymentsHistoryTab type="WITHDRAW"/>}
+      {tab === 'deposits' && <PaymentsHistoryTab type="DEPOSIT"/>}
     </Page>
   );
 }
 
 /* ── Solicitações de saque (review pendente) ───────────── */
 
-const PendingApprovalsTab: React.FC<{ onTick: () => void }> = ({ onTick }) => {
+const PendingApprovalsTab: React.FC<{ onAfterAction?: () => void }> = ({ onAfterAction }) => {
   const [list, setList] = React.useState<PendingWithdraw[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -202,11 +202,16 @@ const PendingApprovalsTab: React.FC<{ onTick: () => void }> = ({ onTick }) => {
   const { push } = useToast();
   const confirm = useConfirm();
 
+  // Mantém callback fresca sem invalidar `load` — evita loop de refetch quando
+  // o parent re-renderiza por causa de polling de summary.
+  const onAfterActionRef = React.useRef(onAfterAction);
+  React.useEffect(() => { onAfterActionRef.current = onAfterAction; }, [onAfterAction]);
+
   const load = React.useCallback(async () => {
     try { setList(await api.get<PendingWithdraw[]>(ENDPOINTS.WITHDRAWALS.listPending)); }
     catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
-    finally { setLoading(false); onTick(); }
-  }, [push, onTick]);
+    finally { setLoading(false); }
+  }, [push]);
 
   React.useEffect(() => {
     void load();
@@ -228,6 +233,7 @@ const PendingApprovalsTab: React.FC<{ onTick: () => void }> = ({ onTick }) => {
       await api.post(ENDPOINTS.WITHDRAWALS.approve(p.id));
       push({ title: 'Saque aprovado', body: `${p.user.email} · ${fmtBRL(Number(p.amount))}`, tone: 'emerald' });
       await load();
+      onAfterActionRef.current?.();
     } catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
     finally { setBusy(null); }
   };
@@ -240,6 +246,7 @@ const PendingApprovalsTab: React.FC<{ onTick: () => void }> = ({ onTick }) => {
       push({ title: 'Saque rejeitado', body: `Saldo devolvido a ${rejectFor.user.email}`, tone: 'amber' });
       setRejectFor(null); setRejectReason('');
       await load();
+      onAfterActionRef.current?.();
     } catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
     finally { setBusy(null); }
   };
@@ -373,7 +380,7 @@ const PendingApprovalsTab: React.FC<{ onTick: () => void }> = ({ onTick }) => {
 
 /* ── Histórico de pagamentos (depósitos OU saques) ────── */
 
-const PaymentsHistoryTab: React.FC<{ type: 'DEPOSIT' | 'WITHDRAW'; onTick: () => void }> = ({ type, onTick }) => {
+const PaymentsHistoryTab: React.FC<{ type: 'DEPOSIT' | 'WITHDRAW' }> = ({ type }) => {
   const [list, setList] = React.useState<PaymentsList | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [status, setStatus] = React.useState<'all' | 'PENDING' | 'APPROVED' | 'FAILED' | 'CANCELED'>('all');
@@ -395,8 +402,8 @@ const PaymentsHistoryTab: React.FC<{ type: 'DEPOSIT' | 'WITHDRAW'; onTick: () =>
       : ENDPOINTS.PAYMENTS.withdrawals({ status, search: searchDebounced || undefined, limit, offset: page * limit });
     try { setList(await api.get<PaymentsList>(url)); }
     catch { /* ignore */ }
-    finally { setLoading(false); onTick(); }
-  }, [type, status, searchDebounced, page, onTick]);
+    finally { setLoading(false); }
+  }, [type, status, searchDebounced, page]);
 
   React.useEffect(() => {
     setLoading(true);
