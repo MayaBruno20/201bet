@@ -7,6 +7,11 @@ export type ApiEvent = {
   featured?: boolean;
   startAt: string;
   status: string;
+  /**
+   * Quando preenchido, este "evento" é um embate personalizado avulso renderizado
+   * como evento standalone. O deep-link de aposta deve usar `?duelId=...`.
+   */
+  customDuelId?: string;
   markets: Array<{
     id: string;
     name: string;

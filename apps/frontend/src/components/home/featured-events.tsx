@@ -156,7 +156,8 @@ export function FeaturedEvents() {
                     <EventBanner url={ev.bannerUrl} alt={ev.name} className='absolute inset-0 w-full h-full object-cover' />
                   </div>
                 ) : (
-                  <img src={ev.bannerUrl} alt={ev.name} className='w-full h-full object-cover' />
+                  // EventBanner resolve URLs relativas (uploads) contra o host da API.
+                  <EventBanner url={ev.bannerUrl} alt={ev.name} className='w-full h-full object-cover' />
                 )
               ) : (
                 <div className='w-full h-full bg-gradient-to-br from-blue-500/20 to-orange-500/20' />

@@ -1,5 +1,7 @@
 'use client';
 
+import { getPublicApiUrl } from '@/lib/env-public';
+
 type EventBannerProps = {
   url: string | null | undefined;
   alt?: string;
@@ -7,6 +9,18 @@ type EventBannerProps = {
   /** Quando true, o vídeo roda em modo "background" (autoplay, loop, mudo, sem controles). Default: true. */
   background?: boolean;
 };
+
+/**
+ * URLs relativas (ex.: `/api/uploads/banners/xxx.jpg` vindas do upload do admin)
+ * precisam ser resolvidas contra o host da API — admin e site podem estar em
+ * subdomínios diferentes (`admin.201-bet.com` / `201-bet.com`) com a API num
+ * terceiro (`api.201-bet.com`). URLs já absolutas passam direto.
+ */
+function resolveAssetUrl(url: string): string {
+  if (/^(https?:)?\/\//i.test(url) || url.startsWith('data:')) return url;
+  const base = getPublicApiUrl().replace(/\/api\/?$/, '');
+  return url.startsWith('/') ? `${base}${url}` : `${base}/${url}`;
+}
 
 type ParsedMedia =
   | { kind: 'image'; src: string }
@@ -66,11 +80,11 @@ export function parseBannerUrl(url: string | null | undefined, background = true
 
   // Vídeo direto (.mp4, .webm, .mov)
   if (/\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(trimmed)) {
-    return { kind: 'video', src: trimmed };
+    return { kind: 'video', src: resolveAssetUrl(trimmed) };
   }
 
-  // Imagem (default)
-  return { kind: 'image', src: trimmed };
+  // Imagem (default) — resolve URLs relativas contra a API.
+  return { kind: 'image', src: resolveAssetUrl(trimmed) };
 }
 
 export function isVideoBanner(url: string | null | undefined) {

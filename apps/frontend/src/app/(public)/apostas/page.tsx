@@ -15,6 +15,8 @@ import { MultiRunnerCard, type MultiRunnerMarket as MRCardMarket, type MultiRunn
 import { BetSlipDrawer, type BetSlipItem } from '@/components/apostas/bet-slip-drawer';
 import { MyBetsHistory, type BetHistoryItem, type BetHistoryStatus } from '@/components/apostas/my-bets-history';
 import { BetResultModal, type BetResult } from '@/components/apostas/bet-result-modal';
+import { FeaturedDuelsBanner, type FeaturedCustomDuel } from '@/components/apostas/featured-duels-banner';
+import { FeaturedDuelBetModal } from '@/components/apostas/featured-duel-bet-modal';
 
 const apiUrl = getPublicApiUrl();
 const wsUrl = getPublicWsUrl();
@@ -83,13 +85,24 @@ export default function ApostasPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [myBets, setMyBets] = useState<MyBet[]>([]);
   const [minBet, setMinBet] = useState(10);
+  const [featuredCustomDuels, setFeaturedCustomDuels] = useState<FeaturedCustomDuel[]>([]);
+  const [featuredBetTarget, setFeaturedBetTarget] = useState<FeaturedCustomDuel | null>(null);
 
   useEffect(() => {
     void loadBoardAndDefaults();
     void loadSession();
     void loadMyBets();
     void loadConfig();
+    void loadFeaturedCustomDuels();
   }, []);
+
+  async function loadFeaturedCustomDuels() {
+    try {
+      const res = await fetch(`${apiUrl}/custom-duels/featured`, { cache: 'no-store' });
+      if (!res.ok) return;
+      setFeaturedCustomDuels((await res.json()) as FeaturedCustomDuel[]);
+    } catch { /* ignore — faixa some se falhar */ }
+  }
 
   async function loadConfig() {
     try {
@@ -267,7 +280,25 @@ export default function ApostasPage() {
         const mrList = (await mrRes.json()) as MultiRunnerSnapshot[];
         setMultiRunnerSnapshots(Object.fromEntries(mrList.map((s) => [s.marketId, s])));
       }
-      if (firstSnapshot) {
+
+      // Deep-link: ?duelId=...&eventId=... entra direto no embate (usado pelo painel
+      // admin de Embates Personalizados pra compartilhar link de aposta).
+      const search = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const wantedDuelId = search?.get('duelId') ?? '';
+      const wantedEventId = search?.get('eventId') ?? '';
+
+      const targetEvent = wantedDuelId
+        ? boardData.events.find((e) => e.stages.some((s) => s.duelId === wantedDuelId))
+          ?? (wantedEventId ? boardData.events.find((e) => e.id === wantedEventId) : undefined)
+        : undefined;
+      const targetStage = targetEvent?.stages.find((s) => s.duelId === wantedDuelId);
+
+      if (targetEvent && wantedDuelId) {
+        setSelectedEventId(targetEvent.id);
+        setSelectedDuelId(wantedDuelId);
+        if (targetStage) setSelectedRound(targetStage.roundNumber);
+        if (firstSnapshot) setSnapshots({ [firstSnapshot.duelId]: firstSnapshot });
+      } else if (firstSnapshot) {
         setSnapshots({ [firstSnapshot.duelId]: firstSnapshot });
         setSelectedEventId(firstSnapshot.eventId);
         setSelectedDuelId(firstSnapshot.duelId);
@@ -419,9 +450,11 @@ export default function ApostasPage() {
   }
 
   // ── BetEvent[] derivado do board ──────────────────────────────────
+  // Filtra o evento curinga "✨ Embates Personalizados" — ele só serve como
+  // container interno pra duelos avulsos; o público chega neles via deep-link.
   const eventsForSelector: BetEvent[] = useMemo(() => {
     if (!board) return [];
-    return board.events.map((e) => ({
+    return board.events.filter((e) => e.name !== '✨ Embates Personalizados').map((e) => ({
       id: e.id,
       name: e.name,
       startAt: e.startAt,
@@ -518,6 +551,12 @@ export default function ApostasPage() {
           <p className='mt-6 text-[#b8bcc9]'>Carregando mercados...</p>
         ) : (
           <>
+            <FeaturedDuelsBanner
+              duels={featuredCustomDuels}
+              snapshots={snapshots}
+              onSelect={(d) => setFeaturedBetTarget(d)}
+            />
+
             {/* Event selector */}
             <div className='mt-5'>
               <EventSelector
@@ -691,6 +730,28 @@ export default function ApostasPage() {
           open
           results={cartResults}
           onClose={() => setCartResults(null)}
+        />
+      )}
+
+      {/* Modal de aposta direta no embate em destaque */}
+      {featuredBetTarget && (
+        <FeaturedDuelBetModal
+          duel={featuredBetTarget}
+          balance={me?.wallet ? Number(me.wallet.balance) : null}
+          isLoggedIn={!!me}
+          minBet={minBet}
+          snapshot={snapshots[featuredBetTarget.id] ?? null}
+          onClose={() => setFeaturedBetTarget(null)}
+          onBetPlaced={({ newBalance }) => {
+            setMe((prev) => (prev ? {
+              ...prev,
+              wallet: { balance: newBalance, currency: prev.wallet?.currency ?? 'BRL' },
+            } : prev));
+            if (typeof window !== 'undefined') window.dispatchEvent(new Event('wallet:refresh'));
+            void loadMyBets();
+            void loadFeaturedCustomDuels();
+            setFeaturedBetTarget(null);
+          }}
         />
       )}
     </main>

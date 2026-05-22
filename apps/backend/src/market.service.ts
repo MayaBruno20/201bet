@@ -295,11 +295,19 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // Eventos sem nenhum duelo "vivo" (todos CANCELED ou sem duelo nenhum) saem
-    // da listagem pública. Isso esconde, por exemplo, o container "⚡ Embates
-    // Rápidos" quando o admin cancela o único embate criado nele.
+    // Eventos sem nenhum duelo apostável saem da listagem do /apostas.
+    // "Apostável" = SCHEDULED | BOOKING_OPEN | BOOKING_CLOSED (esse último ainda
+    // aguarda settlement). Duelos FINISHED/CANCELED não contam — então quando
+    // todos os embates de um evento já foram auditados (ou cancelados), o
+    // evento some do EventSelector. Histórico de bets segue visível pelo
+    // componente "Minhas Apostas" (independente de qual evento).
     const visibleEvents = events.filter((e) =>
-      e.duels.some((d) => d.status !== 'CANCELED'),
+      e.duels.some(
+        (d) =>
+          d.status === 'BOOKING_OPEN' ||
+          d.status === 'BOOKING_CLOSED' ||
+          d.status === 'SCHEDULED',
+      ),
     );
 
     return {

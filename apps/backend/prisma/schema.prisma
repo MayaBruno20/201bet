@@ -380,6 +380,17 @@ model Duel {
   bookingCloseAt DateTime
   status         DuelStatus @default(SCHEDULED)
   notes          String?
+  // Marca duelos criados via painel "Embates personalizados". Habilita banner próprio,
+  // título customizado e listagem separada de outros formatos (Listas, Armageddon, Copa, rápidos).
+  isCustom       Boolean    @default(false)
+  // Título exibido no card do site público quando isCustom=true (ex.: "Final do Festival do Opala").
+  // Cai pra "<leftCar> x <rightCar>" se vazio.
+  customTitle    String?
+  // Banner específico do embate personalizado (URL externa OU caminho /api/uploads/banners/...).
+  bannerUrl      String?
+  // Quando true (e o duelo está vinculado a um Event real, não ao curinga), o embate aparece
+  // numa faixa "Embates em destaque" no topo da página /apostas. Só faz sentido com isCustom=true.
+  isFeatured     Boolean    @default(false)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
@@ -391,6 +402,8 @@ model Duel {
 
   @@index([eventId, startsAt])
   @@index([status])
+  @@index([isCustom, startsAt])
+  @@index([isFeatured, isCustom])
 }
 
 model DuelPoolState {

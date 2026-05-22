@@ -31,6 +31,12 @@ type PublicEvent = {
   status: string;
   markets: PublicMarket[];
   duels: PublicDuel[];
+  /**
+   * Quando preenchido, este "evento" é na verdade um embate personalizado avulso
+   * renderizado como evento standalone. O frontend usa esse campo pra deep-linkar
+   * `/apostas?duelId=...` em vez de `?eventId=...` (que não funciona para o curinga).
+   */
+  customDuelId?: string;
 };
 
 type FeaturedEvent = {
@@ -52,7 +58,8 @@ export class EventsService {
   ) {}
 
   async listEvents() {
-    const cacheKey = 'events:public:v2';
+    // v3: passa a incluir embates personalizados avulsos como eventos sintéticos.
+    const cacheKey = 'events:public:v3';
     const cached = await this.cache.get<unknown>(cacheKey);
     if (cached) {
       return cached as PublicEvent[];
@@ -105,9 +112,25 @@ export class EventsService {
     //   2. Event órfão criado antes mas sem duelos (rascunho que ninguém pode usar).
     // Eventos com pelo menos 1 duelo BOOKING_OPEN/CLOSED/SCHEDULED/FINISHED passam,
     // permitindo o público acompanhar resultados.
+    //
+    // O evento "✨ Embates Personalizados" é filtrado: ele é apenas container
+    // interno. Cada duelo avulso dentro dele vira um "evento sintético" abaixo,
+    // exibido na /eventos com banner próprio e título customTitle.
     const eventsWithActiveDuels = events.filter((event) =>
+      event.name !== '✨ Embates Personalizados' &&
       event.duels.some((d) => d.status !== 'CANCELED'),
     );
+
+    // Embates personalizados avulsos (sem vínculo a evento real) — viram cards
+    // standalone na /eventos, usando seu banner + customTitle. Já vinculados
+    // aparecem dentro do evento-pai e não precisam de card próprio.
+    const curingaEvent = events.find((e) => e.name === '✨ Embates Personalizados');
+    const avulsoCustomDuels = curingaEvent
+      ? curingaEvent.duels.filter((d) => d.isCustom && d.status !== 'CANCELED')
+      : [];
+    const curingaMarketsByDuelId = curingaEvent
+      ? new Map(curingaEvent.markets.filter((m) => m.duelId).map((m) => [m.duelId as string, m]))
+      : new Map();
 
     const fromEvent: PublicEvent[] = eventsWithActiveDuels.map((event) => ({
       id: event.id,
@@ -205,7 +228,92 @@ export class EventsService {
       duels: [],
     }));
 
-    const payload = [...fromEvent, ...fromCategory, ...fromArmageddon].sort(
+    // Sintéticos: cada embate personalizado avulso vira um "evento" próprio.
+    const fromCustomDuels: PublicEvent[] = avulsoCustomDuels.map((duel) => {
+      const market = curingaMarketsByDuelId.get(duel.id);
+      const leftLabel = duel.leftCar.name?.trim() || duel.leftCar.driver.name;
+      const rightLabel = duel.rightCar.name?.trim() || duel.rightCar.driver.name;
+      const title = duel.customTitle?.trim() || `${leftLabel} x ${rightLabel}`;
+
+      // Reaproveita a math de odds (pari-mutuel) usada para eventos reais.
+      let markets: PublicMarket[] = [];
+      if (market) {
+        const leftPool = Number(market.duel?.poolState?.leftPool ?? 0);
+        const rightPool = Number(market.duel?.poolState?.rightPool ?? 0);
+        const totalPool = leftPool + rightPool;
+        const net = totalPool * (1 - rake);
+        const computeOddByIndex = (idx: number) => {
+          if (market.status === 'SETTLED' && market.winnerOddId) {
+            const winnerIndex = market.odds.findIndex((o) => o.id === market.winnerOddId);
+            if (idx !== winnerIndex) return 0;
+            const winnerPool = winnerIndex === 0 ? leftPool : rightPool;
+            return winnerPool > 0 ? Math.max(1.0, net / winnerPool) : 0;
+          }
+          const sidePool = idx === 0 ? leftPool : rightPool;
+          if (sidePool > 0) return Math.max(1.01, net / sidePool);
+          return Number(market.odds[idx]?.value ?? SEED_ODD);
+        };
+        markets = [{
+          id: market.id,
+          name: market.name,
+          status: market.status,
+          odds: market.odds.map((odd, idx) => ({
+            id: odd.id,
+            label: odd.label,
+            value: Number(computeOddByIndex(idx).toFixed(2)),
+            status: odd.status,
+            version: odd.version,
+          })),
+        }];
+      }
+
+      // Status do "evento" sintético reflete o status do duelo:
+      //   - BOOKING_OPEN/SCHEDULED → LIVE (admin abriu o mercado já na criação)
+      //   - BOOKING_CLOSED → LIVE (ainda visível, mas booking fechou)
+      //   - FINISHED → FINISHED
+      const eventStatus =
+        duel.status === 'FINISHED' ? 'FINISHED' :
+        duel.status === 'CANCELED' ? 'CANCELED' :
+        'LIVE';
+
+      return {
+        id: `custom-duel:${duel.id}`,
+        sport: 'DRAG_RACE',
+        name: title,
+        description: null,
+        bannerUrl: duel.bannerUrl ?? null,
+        featured: false,
+        startAt: duel.startsAt,
+        status: eventStatus,
+        customDuelId: duel.id,
+        markets,
+        duels: [{
+          id: duel.id,
+          startsAt: duel.startsAt,
+          bookingCloseAt: duel.bookingCloseAt,
+          status: duel.status,
+          left: {
+            carId: duel.leftCar.id,
+            carName: duel.leftCar.name,
+            driverName: duel.leftCar.driver.name,
+            category: duel.leftCar.category,
+          },
+          right: {
+            carId: duel.rightCar.id,
+            carName: duel.rightCar.name,
+            driverName: duel.rightCar.driver.name,
+            category: duel.rightCar.category,
+          },
+        }],
+      };
+    });
+
+    const payload = [
+      ...fromEvent,
+      ...fromCategory,
+      ...fromArmageddon,
+      ...fromCustomDuels,
+    ].sort(
       (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
     );
 

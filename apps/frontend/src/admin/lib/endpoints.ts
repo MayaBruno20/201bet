@@ -167,6 +167,17 @@ export const ENDPOINTS = {
     cancel: (id: string) => `/admin/quick-duels/${id}/cancel`,
   },
 
+  CUSTOM_DUELS: {
+    list: '/admin/custom-duels',
+    create: '/admin/custom-duels',
+    update: (id: string) => `/admin/custom-duels/${id}`,
+    closeBooking: (id: string) => `/admin/custom-duels/${id}/close-booking`,
+    settle: (id: string) => `/admin/custom-duels/${id}/settle`,
+    cancel: (id: string) => `/admin/custom-duels/${id}/cancel`,
+    uploadBanner: (id: string) => `/admin/custom-duels/${id}/banner`,
+    deleteBanner: (id: string) => `/admin/custom-duels/${id}/banner`,
+  },
+
   WITHDRAWALS: {
     listPending: '/admin/withdrawals/pending',
     approve: (paymentId: string) => `/admin/withdrawals/${paymentId}/approve`,

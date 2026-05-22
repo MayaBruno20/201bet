@@ -17,3 +17,18 @@ export function getPublicWsUrl(): string {
   const base = raw.replace(/\/+$/, '');
   return base.endsWith('/realtime') ? base : `${base}/realtime`;
 }
+
+/**
+ * URL pública do site (sem trailing slash). Usada pra montar deep-links — ex.: o
+ * painel admin gera link compartilhável de embate personalizado: `${site}/apostas?duelId=...`.
+ *
+ * Lê `NEXT_PUBLIC_PUBLIC_SITE_URL` (recomendado quando admin e site são origens
+ * diferentes — `admin.201-bet.com` x `201-bet.com`). Fallback: `window.location.origin`,
+ * removendo subdomínio `admin.` se presente.
+ */
+export function getPublicSiteUrl(): string {
+  const raw = process.env.NEXT_PUBLIC_PUBLIC_SITE_URL?.trim();
+  if (raw) return raw.replace(/\/+$/, '');
+  if (typeof window === 'undefined') return 'http://localhost:3501';
+  return window.location.origin.replace(/\/\/admin\./, '//');
+}
