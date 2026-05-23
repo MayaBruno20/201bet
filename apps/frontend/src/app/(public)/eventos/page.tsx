@@ -146,7 +146,9 @@ export default function EventosPage() {
                   return (
                     <div className='border-t border-white/5 px-4 py-3 sm:px-6 flex flex-wrap items-center gap-2'>
                       <Link
-                        href={`/apostas?eventId=${encodeURIComponent(event.id)}`}
+                        href={event.customDuelId
+                          ? `/apostas?duelId=${encodeURIComponent(event.customDuelId)}`
+                          : `/apostas?eventId=${encodeURIComponent(event.id)}`}
                         className='inline-flex items-center gap-2 rounded-xl bg-[#d4a843] px-4 py-2.5 text-sm font-bold text-[#04111d] transition-all hover:bg-[#e0b84d]'
                       >
                         <svg className='h-4 w-4' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2.5}>

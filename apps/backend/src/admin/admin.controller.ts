@@ -20,12 +20,17 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import type { Request } from 'express';
 import { UserRole } from '@prisma/client';
-import { CARS_UPLOAD_DIR } from '../common/uploads';
+import { CARS_UPLOAD_DIR, BANNERS_UPLOAD_DIR } from '../common/uploads';
 import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { AdminService } from './admin.service';
 import { QuickDuelService, type CreateQuickDuelDto } from './quick-duel.service';
+import {
+  CustomDuelService,
+  type CreateCustomDuelDto,
+  type UpdateCustomDuelDto,
+} from './custom-duel.service';
 import { AnalyticsExportQueryDto } from './dto/analytics-query.dto';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { CreateCarDto } from './dto/create-car.dto';
@@ -49,6 +54,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly quickDuels: QuickDuelService,
+    private readonly customDuels: CustomDuelService,
   ) {}
 
   @Get('dashboard')
@@ -363,6 +369,84 @@ export class AdminController {
   @Post('quick-duels/:id/cancel')
   cancelQuickDuel(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
     return this.quickDuels.cancel(id, this.auditFromReq(req));
+  }
+
+  // ── Embates personalizados ──
+  // Duelos marcados entre dois carros específicos, banner próprio (link/upload),
+  // opcionalmente vinculados a um Event existente. Quando sem vínculo, vão para
+  // um Event curinga "✨ Embates Personalizados".
+
+  @Get('custom-duels')
+  listCustomDuels() {
+    return this.customDuels.list();
+  }
+
+  @Post('custom-duels')
+  createCustomDuel(@Body() dto: CreateCustomDuelDto, @Req() req: ReqUser) {
+    return this.customDuels.create(dto, this.auditFromReq(req));
+  }
+
+  @Patch('custom-duels/:id')
+  updateCustomDuel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCustomDuelDto,
+    @Req() req: ReqUser,
+  ) {
+    return this.customDuels.update(id, dto, this.auditFromReq(req));
+  }
+
+  @Post('custom-duels/:id/close-booking')
+  closeCustomDuelBooking(@Param('id', ParseUUIDPipe) id: string) {
+    return this.customDuels.closeBooking(id);
+  }
+
+  @Post('custom-duels/:id/settle')
+  settleCustomDuel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() payload: { winningSide: 'LEFT' | 'RIGHT' },
+    @Req() req: ReqUser,
+  ) {
+    return this.customDuels.settle(id, payload.winningSide, this.auditFromReq(req));
+  }
+
+  @Post('custom-duels/:id/cancel')
+  cancelCustomDuel(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
+    return this.customDuels.cancel(id, this.auditFromReq(req));
+  }
+
+  @Post('custom-duels/:id/banner')
+  @UseInterceptors(
+    FileInterceptor('banner', {
+      storage: diskStorage({
+        destination: BANNERS_UPLOAD_DIR,
+        filename: (_req, file, cb) => {
+          const ext = extname(file.originalname).toLowerCase().slice(0, 8);
+          const safeExt = /^\.(png|jpg|jpeg|webp|gif)$/.test(ext) ? ext : '.jpg';
+          cb(null, `${randomUUID()}${safeExt}`);
+        },
+      }),
+      limits: { fileSize: 20 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        if (!/^image\/(png|jpe?g|webp|gif)$/.test(file.mimetype)) {
+          cb(new BadRequestException('Formato inválido. Use PNG, JPG, WEBP ou GIF.'), false);
+          return;
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  uploadCustomDuelBanner(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    if (!file) throw new BadRequestException('Envie um arquivo no campo "banner".');
+    const bannerUrl = `/api/uploads/banners/${file.filename}`;
+    return this.customDuels.setBanner(id, bannerUrl);
+  }
+
+  @Delete('custom-duels/:id/banner')
+  removeCustomDuelBanner(@Param('id', ParseUUIDPipe) id: string) {
+    return this.customDuels.setBanner(id, null);
   }
 
   // ── Affiliates ──

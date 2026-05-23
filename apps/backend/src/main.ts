@@ -8,7 +8,7 @@ import Redis from 'ioredis';
 import { AppModule } from './app.module';
 import { PrismaService } from './database/prisma.service';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
-import { UPLOADS_ROOT, CARS_UPLOAD_DIR } from './common/uploads';
+import { UPLOADS_ROOT, CARS_UPLOAD_DIR, BANNERS_UPLOAD_DIR } from './common/uploads';
 
 function logRuntimeEnv() {
   const logger = new Logger('Env');
@@ -124,6 +124,7 @@ async function bootstrap() {
   // Serve uploads sob /api/uploads para passar pelo nginx (que só roteia /api/ → backend).
   // Garantimos que o diretório existe para o multer não estourar no primeiro upload.
   mkdirSync(CARS_UPLOAD_DIR, { recursive: true });
+  mkdirSync(BANNERS_UPLOAD_DIR, { recursive: true });
   app.useStaticAssets(UPLOADS_ROOT, {
     prefix: '/api/uploads/',
     setHeaders: (res) => {
