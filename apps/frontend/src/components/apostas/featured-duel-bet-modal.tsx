@@ -47,15 +47,16 @@ export const FeaturedDuelBetModal: React.FC<Props> = ({
   const rightPhoto = resolveAsset(duel.rightCar.photoUrl);
 
   // Snapshot ao vivo sobrescreve o payload inicial — odds/pool flutuam até o fechamento.
-  const leftOdd = snapshot?.duel.left.odd ?? duel.market?.odds[0]?.value ?? 1.0;
-  const rightOdd = snapshot?.duel.right.odd ?? duel.market?.odds[1]?.value ?? 1.0;
-  const leftPool = snapshot?.duel.left.pool ?? duel.pool?.left ?? 0;
-  const rightPool = snapshot?.duel.right.pool ?? duel.pool?.right ?? 0;
+  // Optional chaining em `duel?.left`/`right` protege contra payload parcial.
+  const leftOdd = snapshot?.duel?.left?.odd ?? duel.market?.odds[0]?.value ?? 1.0;
+  const rightOdd = snapshot?.duel?.right?.odd ?? duel.market?.odds[1]?.value ?? 1.0;
+  const leftPool = snapshot?.duel?.left?.pool ?? duel.pool?.left ?? 0;
+  const rightPool = snapshot?.duel?.right?.pool ?? duel.pool?.right ?? 0;
   const totalPool = snapshot?.totalPool ?? (leftPool + rightPool);
   const leftShare = totalPool > 0 ? Math.round((leftPool / totalPool) * 100) : 50;
   const rightShare = totalPool > 0 ? 100 - leftShare : 50;
   const tickets = snapshot
-    ? snapshot.duel.left.tickets + snapshot.duel.right.tickets
+    ? (snapshot.duel?.left?.tickets ?? 0) + (snapshot.duel?.right?.tickets ?? 0)
     : duel.pool?.tickets ?? 0;
 
   // Live status: snapshot vence sobre o payload inicial (booking pode fechar enquanto o modal está aberto).
