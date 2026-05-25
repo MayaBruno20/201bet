@@ -59,16 +59,19 @@ export const FeaturedDuelsBanner: React.FC<Props> = ({ duels, snapshots, onSelec
           const rightPhoto = resolveAsset(d.rightCar.photoUrl);
 
           // Snapshot ao vivo tem prioridade sobre o payload inicial do REST.
+          // Optional chaining adicional em `duel?.left`/`duel?.right` protege contra
+          // snapshots malformados (ex.: backend antigo, payload parcial) — sem isso,
+          // `snap?.duel.left.odd` joga TypeError se `duel` vier undefined.
           const snap = snapshots[d.id];
-          const leftOdd = snap?.duel.left.odd ?? d.market?.odds[0]?.value ?? 1.0;
-          const rightOdd = snap?.duel.right.odd ?? d.market?.odds[1]?.value ?? 1.0;
-          const leftPool = snap?.duel.left.pool ?? d.pool?.left ?? 0;
-          const rightPool = snap?.duel.right.pool ?? d.pool?.right ?? 0;
+          const leftOdd = snap?.duel?.left?.odd ?? d.market?.odds[0]?.value ?? 1.0;
+          const rightOdd = snap?.duel?.right?.odd ?? d.market?.odds[1]?.value ?? 1.0;
+          const leftPool = snap?.duel?.left?.pool ?? d.pool?.left ?? 0;
+          const rightPool = snap?.duel?.right?.pool ?? d.pool?.right ?? 0;
           const totalPool = snap?.totalPool ?? (leftPool + rightPool);
           const leftShare = totalPool > 0 ? Math.round((leftPool / totalPool) * 100) : 50;
           const rightShare = totalPool > 0 ? 100 - leftShare : 50;
           const tickets = snap
-            ? snap.duel.left.tickets + snap.duel.right.tickets
+            ? (snap.duel?.left?.tickets ?? 0) + (snap.duel?.right?.tickets ?? 0)
             : d.pool?.tickets ?? 0;
 
           return (

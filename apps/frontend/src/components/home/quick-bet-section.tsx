@@ -72,20 +72,20 @@ export function QuickBetSection({ className }: { className?: string }) {
     };
   }, []);
 
-  if (!snapshot) return null;
+  if (!snapshot || !snapshot.duel?.left || !snapshot.duel?.right) return null;
 
   const duel: QuickBetDuel = {
     id: snapshot.duelId,
     eventName: snapshot.eventName,
     leftDriver: {
       name: snapshot.duel.left.label,
-      odd: snapshot.duel.left.odd,
-      poolShare: snapshot.duel.left.poolShare,
+      odd: snapshot.duel.left.odd ?? 1.0,
+      poolShare: snapshot.duel.left.poolShare ?? 50,
     },
     rightDriver: {
       name: snapshot.duel.right.label,
-      odd: snapshot.duel.right.odd,
-      poolShare: snapshot.duel.right.poolShare,
+      odd: snapshot.duel.right.odd ?? 1.0,
+      poolShare: snapshot.duel.right.poolShare ?? 50,
     },
   };
 

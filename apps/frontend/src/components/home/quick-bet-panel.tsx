@@ -62,7 +62,8 @@ export function QuickBetPanel({
   const [submitting, setSubmitting] = React.useState(false);
 
   const chosenDriver = side === 'LEFT' ? duel.leftDriver : side === 'RIGHT' ? duel.rightDriver : null;
-  const potentialReturn = chosenDriver ? stake * chosenDriver.odd : 0;
+  const chosenOdd = chosenDriver?.odd ?? 0;
+  const potentialReturn = chosenDriver ? stake * chosenOdd : 0;
 
   const handleAddAmount = (amt: number) =>
     setStake((s) => Math.max(minBet, Math.min(99999, s + amt)));
@@ -207,7 +208,7 @@ export function QuickBetPanel({
                   <div className='text-right'>
                     <div className='text-[11px] uppercase tracking-wider text-[#767b8a]'>das apostas</div>
                     <div className='font-mono text-base text-[#f1f3f8] tabular-nums'>
-                      {chosenDriver?.poolShare.toFixed(0)}%
+                      {(chosenDriver?.poolShare ?? 0).toFixed(0)}%
                     </div>
                   </div>
                 </div>
@@ -316,7 +317,7 @@ function SideButton({ label, driver, side, selected, dimmed, onClick }: SideButt
       <div className='mt-3 flex items-end justify-between'>
         <span className='text-[10px] uppercase tracking-wider text-[#767b8a]'>das apostas</span>
         <span className={`font-mono text-2xl font-bold tabular-nums ${accent.text}`}>
-          {driver.poolShare.toFixed(0)}%
+          {(driver.poolShare ?? 0).toFixed(0)}%
         </span>
       </div>
     </button>
