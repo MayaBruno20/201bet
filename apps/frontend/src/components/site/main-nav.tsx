@@ -244,20 +244,25 @@ export function MainNav() {
         })}
 
         <header className='glass w-full transition-all duration-300'>
-        <div className='mx-auto max-w-7xl px-3 flex h-16 sm:h-20 items-center justify-between sm:px-6 lg:px-8'>
+        <div className='mx-auto max-w-7xl px-3 flex h-20 sm:h-24 items-center justify-between sm:px-6 lg:px-8 gap-2'>
 
-          <div className='flex items-center gap-3 md:gap-6 min-w-0'>
+          <div className='flex items-center gap-2 md:gap-6 min-w-0 flex-1'>
             <Link
               href='/'
               className='flex items-center transition-opacity hover:opacity-80 shrink-0'
+              aria-label='201bet — Início'
             >
+              {/* A imagem tem padding transparente interno significativo, então o
+                  container precisa ser bem maior que parece "razoável" pra arte
+                  visível ficar do tamanho certo. Header também cresceu pra acomodar. */}
               <Image
                 src='/images/logoSemFundo.png'
                 alt='201bet'
                 width={360}
                 height={104}
                 priority
-                className='h-20 sm:h-16 md:h-20 w-auto'
+                sizes='(max-width: 640px) 220px, (max-width: 1024px) 260px, 300px'
+                className='h-16 sm:h-20 md:h-20 w-auto'
               />
             </Link>
 
@@ -287,7 +292,7 @@ export function MainNav() {
             {!user ? (
               <Link
                 href='/login'
-                className='rounded-full bg-white/10 px-4 py-1.5 sm:px-5 sm:py-2 text-xs sm:text-sm font-semibold transition hover:bg-white/20'
+                className='rounded-full bg-white/10 px-3 py-1.5 sm:px-5 sm:py-2 text-[11px] sm:text-sm font-semibold transition hover:bg-white/20 whitespace-nowrap'
               >
                 Entrar
               </Link>
@@ -377,11 +382,11 @@ export function MainNav() {
             {/* Hamburger Button (Mobile) */}
             <button
               type='button'
-              className='flex h-10 w-10 items-center justify-center rounded-full bg-white/5 transition hover:bg-white/10 md:hidden'
+              className='flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-white/5 transition hover:bg-white/10 md:hidden shrink-0'
               onClick={() => setMobileMenuOpen(true)}
               aria-label='Abrir menu'
             >
-              <svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
+              <svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round' className='sm:w-5 sm:h-5'>
                 <line x1='3' y1='12' x2='21' y2='12'></line>
                 <line x1='3' y1='6' x2='21' y2='6'></line>
                 <line x1='3' y1='18' x2='21' y2='18'></line>

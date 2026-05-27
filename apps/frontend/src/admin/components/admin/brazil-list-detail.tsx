@@ -7,6 +7,7 @@ import { useToast } from '@admin/components/ui/toast';
 import { useConfirm } from '@admin/components/ui/confirm';
 import { DatePicker } from '@admin/components/ui/datepicker';
 import { ListEventDetail } from '@admin/components/admin/list-event-detail';
+import { FinishedEventDetail } from '@admin/components/admin/finished-event-detail';
 import { api, apiUpload } from '@admin/lib/api';
 import { ENDPOINTS } from '@admin/lib/endpoints';
 
@@ -87,11 +88,12 @@ export function BrazilListDetail({ listId, onChanged }: { listId: string; onChan
   const [detail, setDetail] = React.useState<ListDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState<string | null>(null);
-  const [tab, setTab] = React.useState<'roster' | 'events'>('roster');
+  const [tab, setTab] = React.useState<'roster' | 'events' | 'finished'>('roster');
   const [rosterModal, setRosterModal] = React.useState<RosterEntry | { newPosition: number } | null>(null);
   const [importModalOpen, setImportModalOpen] = React.useState(false);
   const [eventModal, setEventModal] = React.useState<ListEvent | { creating: true } | null>(null);
   const [eventDetailId, setEventDetailId] = React.useState<string | null>(null);
+  const [finishedDetailId, setFinishedDetailId] = React.useState<string | null>(null);
   const { push } = useToast();
   const confirm = useConfirm();
 
@@ -147,7 +149,12 @@ export function BrazilListDetail({ listId, onChanged }: { listId: string; onChan
   if (!detail) return null;
 
   const roster = detail.roster ?? [];
-  const events = detail.events ?? [];
+  const allEvents = detail.events ?? [];
+  // "Eventos" mostra apenas ativos (DRAFT/SCHEDULED/IN_PROGRESS). Finalizados/cancelados
+  // ficam na sub-aba dedicada — o usuário pediu separação explícita pra não confundir
+  // status atual com histórico.
+  const events = allEvents.filter((e) => e.status !== 'FINISHED' && e.status !== 'CANCELED');
+  const finishedEvents = allEvents.filter((e) => e.status === 'FINISHED');
   const maxRoster = detail.format === 'TOP_10' ? 10 : 20;
   const positionsUsed = new Set(roster.map((r) => r.position));
   const nextOpenPosition = (() => {
@@ -159,12 +166,15 @@ export function BrazilListDetail({ listId, onChanged }: { listId: string; onChan
     <div className="space-y-4">
       {/* Tabs */}
       <Card className="p-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setTab('roster')} className={`tab ${tab === 'roster' ? 'active' : ''}`}>
             Roster <span className="text-[color:var(--text-4)]">({roster.length}/{maxRoster})</span>
           </button>
           <button onClick={() => setTab('events')} className={`tab ${tab === 'events' ? 'active' : ''}`}>
             Eventos <span className="text-[color:var(--text-4)]">({events.length})</span>
+          </button>
+          <button onClick={() => setTab('finished')} className={`tab ${tab === 'finished' ? 'active' : ''}`}>
+            Eventos Finalizados <span className="text-[color:var(--text-4)]">({finishedEvents.length})</span>
           </button>
         </div>
       </Card>
@@ -292,6 +302,61 @@ export function BrazilListDetail({ listId, onChanged }: { listId: string; onChan
         </Card>
       )}
 
+      {tab === 'finished' && (
+        <Card className="p-5">
+          <SectionTitle
+            title="Eventos finalizados"
+            sub="Eventos encerrados desta lista. Clique em 'Resumo' para ver as passadas, ganhadores e a distribuição do pot."
+          />
+
+          {finishedEvents.length === 0 ? (
+            <div className="p-6 text-center text-[12.5px] text-[color:var(--text-3)]">
+              Nenhum evento finalizado ainda. Eventos com data de fim já passada são movidos para cá automaticamente.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {finishedEvents.map((ev) => (
+                <div key={ev.id} className="surface-2 p-3 flex items-center gap-3 flex-wrap" style={{ borderRadius: 12 }}>
+                  <div
+                    className="w-10 h-10 rounded-[10px] grid place-items-center shrink-0"
+                    style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }}
+                  >
+                    <I.Trophy size={16} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="font-semibold text-[13.5px]">{ev.name}</div>
+                      <StatusChip status="Encerrado" />
+                      <span className="chip" style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }}>
+                        {EVENT_TYPE_LABEL[ev.type]}
+                      </span>
+                      {ev.matchups.length > 0 && (
+                        <span className="text-[11px] text-[color:var(--text-3)]">
+                          {ev.matchups.length} passadas · {ev.matchups.filter((m) => m.winnerSide).length} auditadas
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-[color:var(--text-3)] mt-0.5">
+                      {new Date(ev.scheduledAt).toLocaleString('pt-BR')}
+                      {ev.endsAt && ` — ${new Date(ev.endsAt).toLocaleString('pt-BR')}`}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setFinishedDetailId(ev.id)}
+                      title="Ver passadas e distribuição do pot"
+                    >
+                      <I.Eye size={13} /> Resumo
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
       {rosterModal && (
         <RosterModal
           listId={listId}
@@ -327,6 +392,13 @@ export function BrazilListDetail({ listId, onChanged }: { listId: string; onChan
           eventId={eventDetailId}
           onClose={() => setEventDetailId(null)}
           onChanged={() => { void load(); onChanged?.(); }}
+        />
+      )}
+
+      {finishedDetailId && (
+        <FinishedEventDetail
+          eventId={finishedDetailId}
+          onClose={() => setFinishedDetailId(null)}
         />
       )}
     </div>
