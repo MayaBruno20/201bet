@@ -22,10 +22,10 @@ export default function EventosPage() {
         if (!r.ok) throw new Error(`Falha ao carregar eventos (${r.status})`);
         return (await r.json()) as ApiEvent[];
       })
-      // Filtro defensivo: backend já filtra CANCELED, mas se algum evento órfão
-      // (linkado a um ListEvent/CategoryEvent cancelado mas sem propagar pro Event)
-      // restar no banco, escondemos do público aqui também.
-      .then((eventsData) => setEvents(eventsData.filter((e) => e.status !== 'CANCELED')))
+      // Filtro defensivo: backend já filtra CANCELED + FINISHED. Mantemos a barreira
+      // aqui pra evitar que qualquer evento órfão (com Event.status não propagado)
+      // vaze pra UI. Eventos finalizados têm página dedicada em /eventos/finalizados.
+      .then((eventsData) => setEvents(eventsData.filter((e) => e.status !== 'CANCELED' && e.status !== 'FINISHED')))
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -55,7 +55,7 @@ export default function EventosPage() {
         <section className='mt-2 rounded-2xl border border-white/10 bg-[#101525] p-5 sm:p-4 sm:p-6'>
           <h1 className='text-2xl font-semibold sm:text-3xl'>Eventos e Embates</h1>
           <p className='mt-2 text-sm text-white/50'>Veja todos os eventos cadastrados, mercados ativos e embates programados.</p>
-          <div className='mt-4 flex items-center gap-3'>
+          <div className='mt-4 flex items-center gap-3 flex-wrap'>
             <span className='inline-flex items-center gap-2 rounded-full bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-medium text-white/60'>
               <svg className='h-3.5 w-3.5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
                 <rect x='3' y='4' width='18' height='18' rx='2' ry='2' />
@@ -64,6 +64,16 @@ export default function EventosPage() {
               </svg>
               {events.length} evento{events.length !== 1 ? 's' : ''}
             </span>
+            <Link
+              href='/eventos/finalizados'
+              className='inline-flex items-center gap-2 rounded-full bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-medium text-white/70 hover:bg-white/10 hover:text-white transition-colors'
+            >
+              <svg className='h-3.5 w-3.5' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={2}>
+                <path strokeLinecap='round' strokeLinejoin='round' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' />
+              </svg>
+              Eventos finalizados
+              <span className='ml-1 transition-transform group-hover:translate-x-0.5'>&rarr;</span>
+            </Link>
           </div>
         </section>
 

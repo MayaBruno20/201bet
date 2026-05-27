@@ -14,4 +14,9 @@ export class EventsController {
   listFeatured() {
     return this.eventsService.listFeatured();
   }
+
+  @Get('finished')
+  listFinished() {
+    return this.eventsService.listFinishedEvents();
+  }
 }

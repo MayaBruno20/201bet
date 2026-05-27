@@ -58,8 +58,9 @@ export class EventsService {
   ) {}
 
   async listEvents() {
-    // v3: passa a incluir embates personalizados avulsos como eventos sintéticos.
-    const cacheKey = 'events:public:v3';
+    // v4: filtra FINISHED do /events público — eventos encerrados vão para a página
+    // dedicada /eventos/finalizados (GET /events/finished).
+    const cacheKey = 'events:public:v4';
     const cached = await this.cache.get<unknown>(cacheKey);
     if (cached) {
       return cached as PublicEvent[];
@@ -67,7 +68,7 @@ export class EventsService {
 
     const [events, categoryEvents, armageddonEvents] = await Promise.all([
       this.prisma.event.findMany({
-        where: { status: { not: EventStatus.CANCELED } },
+        where: { status: { notIn: [EventStatus.CANCELED, EventStatus.FINISHED] } },
         orderBy: { startAt: 'asc' },
         include: {
           markets: {
@@ -88,14 +89,14 @@ export class EventsService {
       }),
       this.prisma.categoryEvent.findMany({
         where: {
-          status: { not: CategoryEventStatus.CANCELED },
+          status: { notIn: [CategoryEventStatus.CANCELED, CategoryEventStatus.FINISHED] },
           eventId: null,
         },
         orderBy: { scheduledAt: 'asc' },
       }),
       this.prisma.armageddonEvent.findMany({
         where: {
-          status: { not: ArmageddonStatus.CANCELED },
+          status: { notIn: [ArmageddonStatus.CANCELED, ArmageddonStatus.FINISHED] },
           eventId: null,
         },
         orderBy: { scheduledAt: 'asc' },
@@ -319,6 +320,86 @@ export class EventsService {
 
     await this.cache.set(cacheKey, payload, 15);
     return payload;
+  }
+
+  /**
+   * Eventos encerrados (FINISHED) com resumo público:
+   *   - Lista de passadas (matchups) com vencedores
+   *   - % do pool para cada lado e pool total (em reais)
+   * Usado em /eventos/finalizados (página pública dedicada).
+   */
+  async listFinishedEvents() {
+    const cacheKey = 'events:finished:public:v1';
+    const cached = await this.cache.get<unknown>(cacheKey);
+    if (cached) return cached;
+
+    const events = await this.prisma.event.findMany({
+      where: { status: EventStatus.FINISHED },
+      orderBy: { startAt: 'desc' },
+      take: 50,
+      include: {
+        duels: {
+          orderBy: { startsAt: 'asc' },
+          include: {
+            leftCar: { include: { driver: true } },
+            rightCar: { include: { driver: true } },
+            poolState: true,
+            markets: { select: { winnerOddId: true, odds: true } },
+          },
+        },
+      },
+    });
+
+    const filtered = events
+      .map((event) => {
+        const duels = event.duels
+          .filter((d) => d.status !== 'CANCELED')
+          .map((d) => {
+            const leftPool = Number(d.poolState?.leftPool ?? 0);
+            const rightPool = Number(d.poolState?.rightPool ?? 0);
+            const totalPool = leftPool + rightPool;
+            let winnerSide: 'LEFT' | 'RIGHT' | null = null;
+            const settledMarket = d.markets.find((m) => m.winnerOddId);
+            if (settledMarket && settledMarket.winnerOddId) {
+              const winnerIdx = settledMarket.odds.findIndex(
+                (o) => o.id === settledMarket.winnerOddId,
+              );
+              if (winnerIdx === 0) winnerSide = 'LEFT';
+              else if (winnerIdx === 1) winnerSide = 'RIGHT';
+            }
+            return {
+              id: d.id,
+              startsAt: d.startsAt,
+              status: d.status,
+              left: { driverName: d.leftCar.driver.name, carName: d.leftCar.name },
+              right: { driverName: d.rightCar.driver.name, carName: d.rightCar.name },
+              winnerSide,
+              leftPool,
+              rightPool,
+              totalPool,
+              leftPercent: totalPool > 0 ? (leftPool / totalPool) * 100 : 0,
+              rightPercent: totalPool > 0 ? (rightPool / totalPool) * 100 : 0,
+            };
+          });
+        const eventTotalPool = duels.reduce((s, d) => s + d.totalPool, 0);
+        return {
+          id: event.id,
+          sport: event.sport,
+          name: event.name,
+          description: event.description,
+          bannerUrl: event.bannerUrl,
+          startAt: event.startAt,
+          status: event.status,
+          totalPool: eventTotalPool,
+          duelsCount: duels.length,
+          settledDuels: duels.filter((d) => d.winnerSide !== null).length,
+          duels,
+        };
+      })
+      .filter((e) => e.duelsCount > 0);
+
+    await this.cache.set(cacheKey, filtered, 60);
+    return filtered;
   }
 
   /** Eventos em destaque + proximos (para hero da home) */

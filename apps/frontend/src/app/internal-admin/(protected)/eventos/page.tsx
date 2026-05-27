@@ -42,6 +42,9 @@ export default function EventosPage() {
   const [busy, setBusy] = React.useState(false);
   const [selected, setSelected] = React.useState<CategoryEvent | null>(null);
   const [createOpen, setCreateOpen] = React.useState(false);
+  // Aba global do painel: separar eventos vivos/agendados dos finalizados — o
+  // usuário pediu pra não confundir histórico com operação corrente.
+  const [tab, setTab] = React.useState<'active' | 'finished'>('active');
   const { push } = useToast();
   const confirm = useConfirm();
 
@@ -65,6 +68,25 @@ export default function EventosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   React.useEffect(() => { void load(); }, [load]);
+
+  // Filtra lista lateral conforme a aba ativa. Quando o usuário troca pra
+  // "Finalizados", a seleção do painel direito atualiza automaticamente para
+  // o 1º evento da nova lista — evitando "estado fantasma" mostrando um
+  // evento agendado no painel "Finalizados".
+  const activeEvents = events.filter((e) => e.status !== 'FINISHED' && e.status !== 'CANCELED');
+  const finishedEvents = events.filter((e) => e.status === 'FINISHED');
+  const visibleEvents = tab === 'active' ? activeEvents : finishedEvents;
+
+  React.useEffect(() => {
+    if (visibleEvents.length === 0) {
+      if (selected) setSelected(null);
+      return;
+    }
+    if (!selected || !visibleEvents.some((e) => e.id === selected.id)) {
+      setSelected(visibleEvents[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, events]);
 
   const create = async () => {
     if (!form.name.trim() || !form.scheduledAt) {
@@ -127,14 +149,44 @@ export default function EventosPage() {
       <div className="grid grid-cols-12 gap-5">
         <div className="col-span-12 lg:col-span-4">
           <Card className="p-0 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
-              <div className="text-[12px] font-semibold">Eventos <span className="text-[color:var(--text-3)]">({events.length})</span></div>
-              <button className="btn-icon focusable" onClick={load} title="Atualizar"><I.Activity size={15}/></button>
+            <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+              <div className="flex items-center gap-1 surface-2 rounded-[10px] p-1 mb-2" style={{ background: 'var(--surface-2)' }}>
+                <button
+                  onClick={() => setTab('active')}
+                  className="flex-1 px-3 py-1.5 text-[11.5px] font-semibold rounded-[8px]"
+                  style={{
+                    background: tab === 'active' ? 'var(--surface-3)' : 'transparent',
+                    color: tab === 'active' ? 'var(--text)' : 'var(--text-3)',
+                  }}
+                >
+                  Ativos ({activeEvents.length})
+                </button>
+                <button
+                  onClick={() => setTab('finished')}
+                  className="flex-1 px-3 py-1.5 text-[11.5px] font-semibold rounded-[8px]"
+                  style={{
+                    background: tab === 'finished' ? 'var(--surface-3)' : 'transparent',
+                    color: tab === 'finished' ? 'var(--text)' : 'var(--text-3)',
+                  }}
+                >
+                  Finalizados ({finishedEvents.length})
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] text-[color:var(--text-3)]">
+                  {tab === 'active' ? 'Em operação e agendados' : 'Histórico de eventos encerrados'}
+                </div>
+                <button className="btn-icon focusable" onClick={load} title="Atualizar"><I.Activity size={15}/></button>
+              </div>
             </div>
             {loading && <div className="p-6 text-center text-[12.5px] text-[color:var(--text-3)]">Carregando…</div>}
-            {!loading && events.length === 0 && <div className="p-6 text-center text-[12.5px] text-[color:var(--text-3)]">Nenhum evento. Clique em "Novo evento".</div>}
+            {!loading && visibleEvents.length === 0 && (
+              <div className="p-6 text-center text-[12.5px] text-[color:var(--text-3)]">
+                {tab === 'finished' ? 'Nenhum evento finalizado ainda.' : 'Nenhum evento. Clique em "Novo evento".'}
+              </div>
+            )}
             <div className="p-2 space-y-1 max-h-[600px] overflow-auto">
-              {events.map((e) => (
+              {visibleEvents.map((e) => (
                 <button key={e.id} onClick={() => setSelected(e)}
                   className="w-full text-left px-3 py-2.5 rounded-[12px] flex flex-col gap-0.5"
                   style={{

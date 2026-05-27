@@ -15,6 +15,16 @@ export class BrazilListsController {
     return this.service.listLiveEvents();
   }
 
+  @Get('finished-events')
+  finishedEvents() {
+    return this.service.listPublicFinishedListEvents();
+  }
+
+  @Get('events/:eventId/finished')
+  finishedEventDetail(@Param('eventId') eventId: string) {
+    return this.service.getPublicFinishedListEvent(eventId);
+  }
+
   @Get(':areaCode')
   getByArea(@Param('areaCode', ParseIntPipe) areaCode: number) {
     return this.service.getPublicByArea(areaCode);

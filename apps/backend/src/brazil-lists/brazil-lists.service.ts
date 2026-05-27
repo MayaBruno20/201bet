@@ -137,7 +137,13 @@ export class BrazilListsService {
         },
         events: {
           // Público NÃO vê eventos CANCELED — eles existem só pra trilha de auditoria.
-          where: { status: { not: ListEventStatus.CANCELED } },
+          // FINISHED também sai do feed principal — usuário acessa via /eventos/finalizados
+          // (página dedicada com resumo de pot + vencedores).
+          where: {
+            status: {
+              notIn: [ListEventStatus.CANCELED, ListEventStatus.FINISHED],
+            },
+          },
           orderBy: { scheduledAt: 'desc' },
           take: 5,
           include: {
@@ -155,6 +161,138 @@ export class BrazilListsService {
 
     if (!list) throw new NotFoundException('Lista não encontrada');
     return this.serializeList(list, { includeEvents: true });
+  }
+
+  /**
+   * Resumo público de um ListEvent encerrado. Devolve passadas (matchups) com
+   * ganhador + dados do pool (leftPool, rightPool, %), além do pot total
+   * agregado do evento. Usado na página /eventos/finalizados/[id].
+   */
+  async getPublicFinishedListEvent(eventId: string) {
+    const event = await this.prisma.listEvent.findUnique({
+      where: { id: eventId },
+      include: {
+        list: true,
+        matchups: {
+          orderBy: [{ roundNumber: 'asc' }, { order: 'asc' }],
+          include: {
+            leftDriver: true,
+            rightDriver: true,
+          },
+        },
+      },
+    });
+    if (!event) throw new NotFoundException('Evento de lista não encontrado');
+    if (event.status === ListEventStatus.CANCELED) {
+      throw new NotFoundException('Evento cancelado');
+    }
+
+    // Carrega pool data para os duelos vinculados aos matchups
+    const duelIds = event.matchups
+      .map((m) => m.duelId)
+      .filter((id): id is string => !!id);
+    const poolStates = duelIds.length
+      ? await this.prisma.duelPoolState.findMany({
+          where: { duelId: { in: duelIds } },
+        })
+      : [];
+    const poolByDuel = new Map(poolStates.map((p) => [p.duelId, p]));
+
+    let totalPool = 0;
+    const matchups = event.matchups.map((m) => {
+      const pool = m.duelId ? poolByDuel.get(m.duelId) : undefined;
+      const leftPool = Number(pool?.leftPool ?? 0);
+      const rightPool = Number(pool?.rightPool ?? 0);
+      const passPool = leftPool + rightPool;
+      totalPool += passPool;
+      return {
+        id: m.id,
+        roundNumber: m.roundNumber,
+        roundType: m.roundType,
+        order: m.order,
+        leftPosition: m.leftPosition,
+        rightPosition: m.rightPosition,
+        leftDriverName: m.leftDriver?.name ?? null,
+        rightDriverName: m.rightDriver?.name ?? null,
+        winnerSide: m.winnerSide,
+        settledAt: m.settledAt,
+        leftPool,
+        rightPool,
+        totalPool: passPool,
+        leftPercent: passPool > 0 ? (leftPool / passPool) * 100 : 0,
+        rightPercent: passPool > 0 ? (rightPool / passPool) * 100 : 0,
+      };
+    });
+
+    return {
+      id: event.id,
+      name: event.name,
+      scheduledAt: event.scheduledAt,
+      endsAt: event.endsAt,
+      status: event.status,
+      type: event.type,
+      bannerUrl: event.bannerUrl,
+      list: {
+        id: event.list.id,
+        areaCode: event.list.areaCode,
+        name: event.list.name,
+        format: event.list.format,
+      },
+      totalPool,
+      matchups,
+      settledCount: matchups.filter((m) => m.winnerSide).length,
+      totalCount: matchups.length,
+    };
+  }
+
+  /** Lista pública de eventos de Lista finalizados (para /eventos/finalizados). */
+  async listPublicFinishedListEvents() {
+    const events = await this.prisma.listEvent.findMany({
+      where: { status: ListEventStatus.FINISHED, list: { active: true } },
+      orderBy: { scheduledAt: 'desc' },
+      take: 50,
+      include: {
+        list: true,
+        matchups: {
+          select: { id: true, duelId: true, winnerSide: true },
+        },
+      },
+    });
+
+    const duelIds = events.flatMap((e) =>
+      e.matchups.map((m) => m.duelId).filter((id): id is string => !!id),
+    );
+    const poolStates = duelIds.length
+      ? await this.prisma.duelPoolState.findMany({
+          where: { duelId: { in: duelIds } },
+        })
+      : [];
+    const poolByDuel = new Map(
+      poolStates.map((p) => [p.duelId, Number(p.leftPool) + Number(p.rightPool)]),
+    );
+
+    return events.map((event) => {
+      const totalPool = event.matchups.reduce(
+        (s, m) => s + (m.duelId ? poolByDuel.get(m.duelId) ?? 0 : 0),
+        0,
+      );
+      const settled = event.matchups.filter((m) => m.winnerSide).length;
+      return {
+        id: event.id,
+        name: event.name,
+        scheduledAt: event.scheduledAt,
+        endsAt: event.endsAt,
+        bannerUrl: event.bannerUrl,
+        list: {
+          areaCode: event.list.areaCode,
+          name: event.list.name,
+          format: event.list.format,
+        },
+        totalPool,
+        passadasCount: event.matchups.length,
+        settledCount: settled,
+      };
+    });
   }
 
   // ── Admin: lists ───────────────────────────────────────
@@ -693,7 +831,43 @@ export class BrazilListsService {
       },
     });
     if (!event) throw new NotFoundException('Evento de lista não encontrado');
-    return event;
+
+    // Anexa dados de pool por matchup (vencedor + % por lado + total do duelo)
+    // para alimentar o painel de evento finalizado sem fazer N+1 no frontend.
+    const duelIds = event.matchups
+      .map((m) => m.duelId)
+      .filter((id): id is string => !!id);
+    const poolStates = duelIds.length
+      ? await this.prisma.duelPoolState.findMany({ where: { duelId: { in: duelIds } } })
+      : [];
+    const poolByDuel = new Map(poolStates.map((p) => [p.duelId, p]));
+
+    let totalPool = 0;
+    const matchupsWithPool = event.matchups.map((m) => {
+      const pool = m.duelId ? poolByDuel.get(m.duelId) : undefined;
+      const leftPool = Number(pool?.leftPool ?? 0);
+      const rightPool = Number(pool?.rightPool ?? 0);
+      const total = leftPool + rightPool;
+      totalPool += total;
+      return {
+        ...m,
+        pool: {
+          leftPool,
+          rightPool,
+          totalPool: total,
+          leftPercent: total > 0 ? (leftPool / total) * 100 : 0,
+          rightPercent: total > 0 ? (rightPool / total) * 100 : 0,
+          leftTickets: pool?.leftTickets ?? 0,
+          rightTickets: pool?.rightTickets ?? 0,
+        },
+      };
+    });
+
+    return {
+      ...event,
+      matchups: matchupsWithPool,
+      totalPool,
+    };
   }
 
   // ── Admin: matchup bracketing ──────────────────────────
