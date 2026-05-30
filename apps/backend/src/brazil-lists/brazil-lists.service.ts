@@ -36,6 +36,7 @@ import {
 } from './dto/shark-tank.dto';
 import { SettlementService } from '../settlement.service';
 import { ParsedRosterEntry, RosterParserService } from './roster-parser.service';
+import { applyChallengerWinSwap, shouldSwapOnSettle } from './roster-swap.util';
 
 type AuditContext = {
   actorUserId?: string;
@@ -427,10 +428,42 @@ export class BrazilListsService {
         where: { listId_driverId: { listId, driverId } },
       });
 
+      // Piloto JÁ está na lista e está sendo MOVIDO para outra posição.
       if (existingDriverOnList && existingDriverOnList.position !== dto.position) {
+        const fromPosition = existingDriverOnList.position;
+
         if (existingAtPosition) {
-          throw new ConflictException('Piloto já está em outra posição desta lista');
+          // SWAP manual automático: em vez de recusar com "posição já ocupada",
+          // troca os dois — o ocupante do destino assume a posição de origem.
+          // 3 passos para não colidir no unique([listId, position]).
+          await tx.listRoster.update({
+            where: { id: existingDriverOnList.id },
+            data: { position: -1 },
+          });
+          await tx.listRoster.update({
+            where: { id: existingAtPosition.id },
+            data: { position: fromPosition, isKing: fromPosition === 1 },
+          });
+          const roster = await tx.listRoster.update({
+            where: { id: existingDriverOnList.id },
+            data: {
+              position: dto.position,
+              isKing: dto.position === 1,
+              notes: dto.notes ?? existingDriverOnList.notes,
+            },
+            include: { driver: true },
+          });
+
+          await this.logAudit(tx, 'BRAZIL_ROSTER_SWAP_MANUAL', 'BrazilList', listId, {
+            driverId,
+            from: fromPosition,
+            to: dto.position,
+            swappedWithDriverId: existingAtPosition.driverId,
+          }, audit);
+          return roster;
         }
+
+        // Destino livre: remove a entrada antiga; o create abaixo a recria na nova posição.
         await tx.listRoster.delete({ where: { id: existingDriverOnList.id } });
       }
 
@@ -1156,36 +1189,18 @@ export class BrazilListsService {
         },
       });
 
-      // Swap roster positions if challenger won (regulamento PAR/IMPAR)
-      // Convencao: leftPosition e sempre a posicao desafiante (numero maior = rank pior)
-      // Se LEFT (desafiante) vence -> swap. Se RIGHT (defensor) vence -> sem mudanca
-      if (
-        dto.winnerSide === 'LEFT' &&
-        matchup.leftPosition && matchup.rightPosition &&
-        matchup.leftDriverId && matchup.rightDriverId &&
-        matchup.roundType !== 'SHARK_TANK'
-      ) {
-        const challengerPos = matchup.leftPosition;  // pior rank (numero maior)
-        const defenderPos = matchup.rightPosition;   // melhor rank (numero menor)
-        const challengerDriverId = matchup.leftDriverId;
-        const defenderDriverId = matchup.rightDriverId;
+      // Swap roster positions if challenger won (regulamento PAR/IMPAR).
+      // Logica compartilhada com SettlementService.settleMarket via roster-swap.util,
+      // para que a Lista reordene independente do caminho de liquidacao.
+      if (shouldSwapOnSettle(matchup, dto.winnerSide)) {
+        const challengerPos = matchup.leftPosition!;  // pior rank (numero maior)
+        const defenderPos = matchup.rightPosition!;   // melhor rank (numero menor)
+        const challengerDriverId = matchup.leftDriverId!;
+        const defenderDriverId = matchup.rightDriverId!;
         const listId = matchup.listEvent.listId;
 
-        // Swap em 3 passos para evitar colisao no unique([listId, position]):
-        // 1) parquear defensor em -1 (posicao temp inexistente, sem colisao)
-        await tx.listRoster.updateMany({
-          where: { listId, driverId: defenderDriverId },
-          data: { position: -1 },
-        });
-        // 2) mover challenger para a posicao do defensor (agora livre)
-        await tx.listRoster.updateMany({
-          where: { listId, driverId: challengerDriverId },
-          data: { position: defenderPos, isKing: defenderPos === 1 },
-        });
-        // 3) mover defensor de -1 para a posicao do challenger (agora livre)
-        await tx.listRoster.updateMany({
-          where: { listId, driverId: defenderDriverId },
-          data: { position: challengerPos, isKing: false },
+        await applyChallengerWinSwap(tx, {
+          listId, challengerPos, defenderPos, challengerDriverId, defenderDriverId,
         });
 
         await this.logAudit(tx, 'BRAZIL_ROSTER_SWAP', 'BrazilList', listId, {
