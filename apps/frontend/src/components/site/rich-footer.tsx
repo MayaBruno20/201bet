@@ -3,27 +3,7 @@
 import * as React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Music2, ChevronDown, ShieldAlert, Phone, Mail, MessageCircle } from 'lucide-react';
-
-// Marcas não disponíveis no lucide-react 1.7.0 — SVG inline.
-function InstagramIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth={2} strokeLinecap='round' strokeLinejoin='round' {...props}>
-      <rect x='2' y='2' width='20' height='20' rx='5' ry='5' />
-      <path d='M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z' />
-      <line x1='17.5' y1='6.5' x2='17.51' y2='6.5' />
-    </svg>
-  );
-}
-
-function YoutubeIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth={2} strokeLinecap='round' strokeLinejoin='round' {...props}>
-      <path d='M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z' />
-      <polygon points='9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02' />
-    </svg>
-  );
-}
+import { ChevronDown, ShieldAlert, Phone, Mail, MessageCircle } from 'lucide-react';
 
 /**
  * 201bet — RichFooter
@@ -185,17 +165,6 @@ export function RichFooter({
             </p>
           </div>
 
-          <div className='flex items-center gap-2'>
-            <SocialButton href='https://instagram.com/201bet' label='Instagram'>
-              <InstagramIcon className='h-4 w-4' />
-            </SocialButton>
-            <SocialButton href='https://youtube.com/@201bet' label='YouTube'>
-              <YoutubeIcon className='h-4 w-4' />
-            </SocialButton>
-            <SocialButton href='https://tiktok.com/@201bet' label='TikTok'>
-              <Music2 className='h-4 w-4' />
-            </SocialButton>
-          </div>
         </div>
 
         <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-8'>
@@ -233,30 +202,6 @@ export function RichFooter({
         </div>
       </div>
     </footer>
-  );
-}
-
-function SocialButton({
-  href,
-  label,
-  children,
-}: {
-  href: string;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <a
-      href={href}
-      aria-label={label}
-      className='inline-flex h-10 w-10 items-center justify-center rounded-xl
-                 bg-white/[0.03] border border-white/10 text-[#b8bcc9]
-                 hover:bg-[rgba(255,176,40,0.12)] hover:border-[rgba(255,176,40,0.35)]
-                 hover:text-[#ffb028] hover:-translate-y-0.5
-                 transition-all duration-200'
-    >
-      {children}
-    </a>
   );
 }
 
