@@ -3,6 +3,7 @@ import { BetStatus, MarketStatus, OddStatus, Prisma, WalletTransactionType } fro
 import { PrismaService } from './database/prisma.service';
 import { MarketGateway } from './market.gateway';
 import { HOUSE_MARGIN_PERCENT } from './market.service';
+import { applyChallengerWinSwap, shouldSwapOnSettle } from './brazil-lists/roster-swap.util';
 
 type AuditContext = {
   actorUserId?: string;
@@ -144,6 +145,17 @@ export class SettlementService {
 
         if (derivedSide) {
           const settledNow = new Date();
+
+          // Lista Brasil: buscamos ANTES do update os matchups ainda não auditados
+          // (winnerSide:null) para, além de gravar o vencedor, aplicar a troca de
+          // posições do roster — a MESMA regra do botão "Auditar" (adminSettleMatchup).
+          // Sem isto, liquidar pelo mercado/duelo gravava o vencedor mas NÃO reordenava
+          // a Lista (e a rodada seguinte saía com pareamentos errados).
+          const listMatchups = await tx.listMatchup.findMany({
+            where: { duelId: market.duelId, winnerSide: null },
+            include: { listEvent: { select: { listId: true } } },
+          });
+
           await tx.listMatchup.updateMany({
             where: { duelId: market.duelId, winnerSide: null },
             data: { winnerSide: derivedSide, settledAt: settledNow },
@@ -152,6 +164,34 @@ export class SettlementService {
             where: { duelId: market.duelId, winnerSide: null },
             data: { winnerSide: derivedSide, settledAt: settledNow },
           });
+
+          for (const m of listMatchups) {
+            if (!shouldSwapOnSettle(m, derivedSide)) continue;
+            const listId = m.listEvent.listId;
+            await applyChallengerWinSwap(tx, {
+              listId,
+              challengerPos: m.leftPosition!,
+              defenderPos: m.rightPosition!,
+              challengerDriverId: m.leftDriverId!,
+              defenderDriverId: m.rightDriverId!,
+            });
+            await tx.auditLog.create({
+              data: {
+                actorUserId: audit.actorUserId,
+                action: 'BRAZIL_ROSTER_SWAP',
+                entity: 'BrazilList',
+                entityId: listId,
+                payload: {
+                  matchupId: m.id,
+                  challengerPos: m.leftPosition,
+                  defenderPos: m.rightPosition,
+                  challengerDriverId: m.leftDriverId,
+                  defenderDriverId: m.rightDriverId,
+                  source: 'settleMarket',
+                } as Prisma.InputJsonValue,
+              },
+            });
+          }
         }
       }
 
