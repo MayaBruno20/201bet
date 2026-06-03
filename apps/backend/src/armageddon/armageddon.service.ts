@@ -1,24 +1,35 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import {
+  ArmageddonBracketType,
+  ArmageddonStage,
   ArmageddonStatus,
   DuelStatus,
   EventStatus,
   ListFormat,
   ListRoundType,
   MarketStatus,
+  MatchupSide,
   OddStatus,
   Prisma,
   UserRole,
 } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { SettlementService } from '../settlement.service';
+import { CacheService } from '../cache/cache.service';
 import { buildBracketPairs } from '../brazil-lists/brazil-lists.service';
+import {
+  buildArmageddonFirstDraw,
+  buildArmageddonSecondDraw,
+  bracketSize,
+  FIRST_DRAW_KEYS,
+  MatchupSpec,
+} from './armageddon-bracket.util';
 import {
   CreateArmageddonEventDto,
   UpdateArmageddonEventDto,
@@ -29,6 +40,7 @@ import {
 } from './dto/armageddon-roster.dto';
 import {
   GenerateArmageddonMatchupsDto,
+  SaveSecondDrawLayoutDto,
   SettleArmageddonMatchupDto,
 } from './dto/armageddon-matchup.dto';
 
@@ -46,6 +58,7 @@ export class ArmageddonService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly settlementService: SettlementService,
+    private readonly cache: CacheService,
   ) {}
 
   // ── Public ────────────────────────────────────────────
@@ -144,6 +157,8 @@ export class ArmageddonService {
           bannerUrl: dto.bannerUrl,
           featured: dto.featured ?? false,
           format: dto.format ?? ListFormat.TOP_20,
+          bracketType: dto.bracketType ?? ArmageddonBracketType.LADDER,
+          streamUrl: dto.streamUrl,
           scheduledAt: startDate,
           endsAt: endDate,
           notes: dto.notes,
@@ -175,6 +190,7 @@ export class ArmageddonService {
           bannerUrl: dto.bannerUrl,
           featured: dto.featured,
           format: dto.format,
+          streamUrl: dto.streamUrl,
           scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
           endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
           status: dto.status,
@@ -372,9 +388,26 @@ export class ArmageddonService {
     const event = await this.prisma.armageddonEvent.findUnique({ where: { id: eventId } });
     if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
 
-    const maxPositions = event.format === ListFormat.TOP_10 ? 10 : 20;
-    if (dto.position > maxPositions) {
-      throw new BadRequestException(`Posição máxima para este evento é ${maxPositions}`);
+    const isElim = event.bracketType === ArmageddonBracketType.ELIMINATION_144;
+    let bracketKey: string | null = null;
+    let maxPositions: number;
+
+    if (isElim) {
+      // Eliminação: piloto entra numa chave A-E, posição limitada ao tamanho da chave.
+      bracketKey = (dto.bracketKey ?? '').toUpperCase();
+      const size = bracketKey ? bracketSize(bracketKey) : null;
+      if (!size) {
+        throw new BadRequestException('Informe a chave (A, B, C, D ou E) para este piloto');
+      }
+      maxPositions = size;
+    } else {
+      maxPositions = event.format === ListFormat.TOP_10 ? 10 : 20;
+    }
+
+    if (dto.position < 1 || dto.position > maxPositions) {
+      throw new BadRequestException(
+        `Posição inválida. ${isElim ? `Chave ${bracketKey}` : 'Este evento'} aceita posições 1–${maxPositions}.`,
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -387,16 +420,38 @@ export class ArmageddonService {
         driverId = driver.id;
       }
 
-      const existingAtPosition = await tx.armageddonRoster.findUnique({
-        where: { eventId_position: { eventId, position: dto.position } },
+      // findFirst (não findUnique) porque a unicidade agora é (eventId, bracketKey, position)
+      // e Prisma não casa findUnique com componente nulo em LADDER.
+      const existingAtPosition = await tx.armageddonRoster.findFirst({
+        where: { eventId, bracketKey, position: dto.position },
       });
       const existingDriver = await tx.armageddonRoster.findUnique({
         where: { eventId_driverId: { eventId, driverId } },
       });
 
-      if (existingDriver && existingDriver.position !== dto.position) {
-        if (existingAtPosition) {
-          throw new ConflictException('Piloto já está em outra posição deste evento');
+      // Piloto já está no evento e foi movido (de outra chave/posição).
+      if (existingDriver && (existingDriver.position !== dto.position || existingDriver.bracketKey !== bracketKey)) {
+        if (existingAtPosition && existingAtPosition.id !== existingDriver.id) {
+          // SWAP automático: ocupante do destino assume a origem do piloto movido.
+          await tx.armageddonRoster.update({ where: { id: existingDriver.id }, data: { position: -1, bracketKey: null } });
+          await tx.armageddonRoster.update({
+            where: { id: existingAtPosition.id },
+            data: { position: existingDriver.position, bracketKey: existingDriver.bracketKey, isKing: false },
+          });
+          const moved = await tx.armageddonRoster.update({
+            where: { id: existingDriver.id },
+            data: {
+              position: dto.position,
+              bracketKey,
+              isKing: dto.isKing ?? false,
+              notes: dto.notes ?? existingDriver.notes,
+            },
+            include: { driver: true },
+          });
+          await this.logAudit(tx, 'ARMAGEDDON_ROSTER_SWAP_MANUAL', 'ArmageddonEvent', eventId, {
+            driverId, to: { bracketKey, position: dto.position }, swappedWithDriverId: existingAtPosition.driverId,
+          }, audit);
+          return moved;
         }
         await tx.armageddonRoster.delete({ where: { id: existingDriver.id } });
       }
@@ -404,6 +459,7 @@ export class ArmageddonService {
       const data = {
         eventId,
         driverId,
+        bracketKey,
         position: dto.position,
         isKing: dto.isKing ?? false,
         fromListId: dto.fromListId,
@@ -523,6 +579,453 @@ export class ArmageddonService {
 
       return { roundNumber, roundType: dto.roundType, count: created.length };
     });
+  }
+
+  /**
+   * Busca pilotos já cadastrados por nome/sobrenome (case-insensitive) e devolve,
+   * para cada um, a(s) lista(s) Brasil a que pertence (DDD + posição). Usado no
+   * cadastro do Armageddon: ao digitar o nome, já puxa a lista do piloto.
+   */
+  async adminSearchDrivers(q: string) {
+    const query = (q ?? '').trim();
+    if (query.length < 2) return [];
+    const drivers = await this.prisma.driver.findMany({
+      where: { name: { contains: query, mode: 'insensitive' }, active: true },
+      take: 12,
+      orderBy: { name: 'asc' },
+      include: {
+        rosters: {
+          include: { list: { select: { id: true, areaCode: true, name: true } } },
+          orderBy: { position: 'asc' },
+        },
+      },
+    });
+    return drivers.map((d) => ({
+      driverId: d.id,
+      name: d.name,
+      team: d.team ?? null,
+      lists: d.rosters.map((r) => ({
+        listId: r.listId,
+        areaCode: r.list.areaCode,
+        listName: r.list.name,
+        position: r.position,
+      })),
+    }));
+  }
+
+  // ── Admin: ELIMINATION_144 (5 chaves → Top 32 → campeão + 3º lugar) ──
+
+  /**
+   * Persiste uma árvore de eliminação numa única createMany. Os ids são gerados
+   * na app (randomUUID) para que os ponteiros de avanço (next/loser) já saiam
+   * resolvidos — sem 2º passo de update e sem 100+ round-trips no Neon.
+   */
+  private async persistBracket(
+    tx: Prisma.TransactionClient,
+    eventId: string,
+    specs: MatchupSpec[],
+    driverAt: (bracketKey: string | null, position: number) => string | undefined,
+  ) {
+    const idByKey = new Map<string, string>();
+    for (const s of specs) idByKey.set(s.key, randomUUID());
+
+    const data = specs.map((s) => ({
+      id: idByKey.get(s.key)!,
+      eventId,
+      stage: s.stage as ArmageddonStage,
+      bracketKey: s.bracketKey,
+      roundNumber: s.roundNumber,
+      order: s.order,
+      leftPosition: s.leftPosition,
+      rightPosition: s.rightPosition,
+      leftDriverId: s.leftPosition != null ? driverAt(s.bracketKey, s.leftPosition) ?? null : null,
+      rightDriverId: s.rightPosition != null ? driverAt(s.bracketKey, s.rightPosition) ?? null : null,
+      nextMatchupId: s.nextKey ? idByKey.get(s.nextKey) ?? null : null,
+      nextSlotSide: s.nextSlotSide as MatchupSide | null,
+      loserToMatchupId: s.loserKey ? idByKey.get(s.loserKey) ?? null : null,
+      loserToSlotSide: s.loserSlotSide as MatchupSide | null,
+      isThirdPlace: s.isThirdPlace,
+      isFinal: s.isFinal,
+    }));
+
+    await tx.armageddonMatchup.createMany({ data });
+    return idByKey;
+  }
+
+  private requireElimination(event: { bracketType: ArmageddonBracketType }) {
+    if (event.bracketType !== ArmageddonBracketType.ELIMINATION_144) {
+      throw new BadRequestException('Disponível apenas para eventos de eliminação (144 pilotos)');
+    }
+  }
+
+  /** Driver vencedor de um embate terminal (classificado do 1º sorteio). */
+  private winnerDriverId(m: { winnerSide: MatchupSide | null; leftDriverId: string | null; rightDriverId: string | null }) {
+    if (!m.winnerSide) return null;
+    return m.winnerSide === 'LEFT' ? m.leftDriverId : m.rightDriverId;
+  }
+
+  /** Gera as 5 chaves do 1º sorteio a partir do roster (chave A-E + posição). */
+  async adminGenerateFirstDraw(eventId: string, audit: AuditContext) {
+    const event = await this.prisma.armageddonEvent.findUnique({
+      where: { id: eventId },
+      include: { roster: true },
+    });
+    if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
+    this.requireElimination(event);
+
+    const settled = await this.prisma.armageddonMatchup.count({
+      where: { eventId, stage: ArmageddonStage.FIRST_DRAW, winnerSide: { not: null } },
+    });
+    if (settled > 0) {
+      throw new BadRequestException('Já há embates auditados no 1º sorteio — não é possível regerar.');
+    }
+
+    const driverAt = (bk: string | null, pos: number) =>
+      event.roster.find((r) => r.bracketKey === bk && r.position === pos)?.driverId;
+
+    const specs = buildArmageddonFirstDraw();
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.armageddonMatchup.deleteMany({ where: { eventId, stage: ArmageddonStage.FIRST_DRAW } });
+      await this.persistBracket(tx, eventId, specs, driverAt);
+
+      if (event.status === ArmageddonStatus.DRAFT || event.status === ArmageddonStatus.ROSTER_OPEN) {
+        await tx.armageddonEvent.update({ where: { id: eventId }, data: { status: ArmageddonStatus.IN_PROGRESS } });
+      }
+      const filled = event.roster.length;
+      await this.logAudit(tx, 'ARMAGEDDON_FIRST_DRAW_GENERATE', 'ArmageddonEvent', eventId, {
+        count: specs.length, rosterFilled: filled,
+      }, audit);
+      return { stage: 'FIRST_DRAW', matchups: specs.length, rosterFilled: filled };
+    }, { timeout: 30000, maxWait: 10000 });
+  }
+
+  /**
+   * "Refazer chaves": zera os matchups do evento para regerar o sorteio.
+   * Operação ESTRUTURAL pura — NÃO mexe em dinheiro. Por isso recusa se houver
+   * embate auditado ou mercado aberto/criado (esses casos vão para "Reiniciar evento",
+   * que estorna). Assim nenhum Duel/Market/Bet fica órfão.
+   */
+  async adminClearKeys(eventId: string, audit: AuditContext) {
+    const event = await this.prisma.armageddonEvent.findUnique({ where: { id: eventId } });
+    if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
+    this.requireElimination(event);
+
+    const settled = await this.prisma.armageddonMatchup.count({
+      where: { eventId, winnerSide: { not: null } },
+    });
+    if (settled > 0) {
+      throw new BadRequestException(
+        'Há embates auditados neste evento. Use "Reiniciar evento" para estornar as apostas e recomeçar.',
+      );
+    }
+    const withMarket = await this.prisma.armageddonMatchup.count({
+      where: { eventId, OR: [{ marketOpen: true }, { duelId: { not: null } }] },
+    });
+    if (withMarket > 0) {
+      throw new BadRequestException(
+        'Há mercados abertos/criados. Feche os mercados (ou use "Reiniciar evento") antes de refazer as chaves.',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const removed = await tx.armageddonMatchup.deleteMany({ where: { eventId } });
+      await tx.armageddonEvent.update({
+        where: { id: eventId },
+        data: { status: ArmageddonStatus.ROSTER_OPEN },
+      });
+      await this.logAudit(tx, 'ARMAGEDDON_KEYS_CLEARED', 'ArmageddonEvent', eventId, {
+        removed: removed.count,
+      }, audit);
+      return { success: true, removed: removed.count };
+    }, { timeout: 30000, maxWait: 10000 });
+  }
+
+  /**
+   * "Reiniciar evento": estorna TODAS as apostas (mercados liquidados são
+   * reembolsados via refundSettledMarket; abertos via voidMarket) e regenera o
+   * 1º sorteio (a chave volta à original a partir do roster intacto). Move dinheiro
+   * — exige confirmação dupla no front.
+   */
+  async adminResetEvent(eventId: string, audit: AuditContext) {
+    const event = await this.prisma.armageddonEvent.findUnique({
+      where: { id: eventId },
+      include: { roster: true, matchups: { select: { id: true, duelId: true } } },
+    });
+    if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
+    this.requireElimination(event);
+
+    // 1) Reembolsa/anula mercado a mercado (fora da tx estrutural, isolando falhas).
+    const duelIds = event.matchups.map((m) => m.duelId).filter((id): id is string => !!id);
+    let refunded = 0;
+    let voided = 0;
+    const failures: Array<{ marketId: string; error: string }> = [];
+    if (duelIds.length) {
+      const markets = await this.prisma.market.findMany({
+        where: { duelId: { in: duelIds } },
+        select: { id: true, status: true },
+      });
+      for (const mk of markets) {
+        try {
+          if (mk.status === MarketStatus.SETTLED) {
+            await this.settlementService.refundSettledMarket(mk.id, audit);
+            refunded += 1;
+          } else if ([MarketStatus.OPEN, MarketStatus.SUSPENDED, MarketStatus.CLOSED].includes(mk.status)) {
+            await this.settlementService.voidMarket(mk.id, audit);
+            voided += 1;
+          }
+        } catch (e) {
+          failures.push({ marketId: mk.id, error: e instanceof Error ? e.message : String(e) });
+          this.logger.error(`Reset: falha ao estornar/anular mercado ${mk.id}: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+    }
+
+    // 2) Reset estrutural: cancela duelos, fecha mercados, apaga matchups e regenera o 1º sorteio.
+    const driverAt = (bk: string | null, pos: number) =>
+      event.roster.find((r) => r.bracketKey === bk && r.position === pos)?.driverId;
+    const specs = buildArmageddonFirstDraw();
+
+    await this.prisma.$transaction(async (tx) => {
+      if (event.eventId) {
+        await tx.duel.updateMany({
+          where: { eventId: event.eventId, status: { in: [DuelStatus.SCHEDULED, DuelStatus.BOOKING_OPEN, DuelStatus.BOOKING_CLOSED] } },
+          data: { status: DuelStatus.CANCELED },
+        });
+        await tx.market.updateMany({
+          where: { eventId: event.eventId, status: { not: MarketStatus.SETTLED } },
+          data: { status: MarketStatus.CLOSED },
+        });
+      }
+      await tx.armageddonMatchup.deleteMany({ where: { eventId } });
+      await this.persistBracket(tx, eventId, specs, driverAt);
+      await tx.armageddonEvent.update({ where: { id: eventId }, data: { status: ArmageddonStatus.IN_PROGRESS } });
+      await this.logAudit(tx, 'ARMAGEDDON_EVENT_RESET', 'ArmageddonEvent', eventId, {
+        refunded, voided, failures, matchups: specs.length,
+      }, audit);
+    }, { timeout: 60000, maxWait: 10000 });
+
+    // 3) Invalida o cache público (senão /eventos e destaque mostram estado velho).
+    await this.cache.del('events:public:v4').catch(() => undefined);
+    await this.cache.del('events:featured:v2').catch(() => undefined);
+
+    return { reset: true, refunded, voided, failures, matchups: specs.length };
+  }
+
+  /** Gera a chave única do 2º sorteio (Top 32 → final + 3º lugar), slots vazios para o DnD. */
+  async adminGenerateSecondDraw(eventId: string, audit: AuditContext) {
+    const event = await this.prisma.armageddonEvent.findUnique({
+      where: { id: eventId },
+      include: { matchups: { include: { leftDriver: true, rightDriver: true } } },
+    });
+    if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
+    this.requireElimination(event);
+
+    const firstDraw = event.matchups.filter((m) => m.stage === ArmageddonStage.FIRST_DRAW);
+    const terminals = firstDraw.filter((m) => m.nextMatchupId === null);
+    const decided = terminals.filter((m) => m.winnerSide);
+    if (terminals.length === 0) {
+      throw new BadRequestException('Gere o 1º sorteio antes do 2º.');
+    }
+    if (decided.length < terminals.length) {
+      throw new BadRequestException(
+        `1º sorteio incompleto: ${decided.length}/${terminals.length} classificados decididos.`,
+      );
+    }
+
+    const qualifiers = terminals
+      .map((m) => {
+        const driverId = this.winnerDriverId(m);
+        const driver = m.winnerSide === 'LEFT' ? m.leftDriver : m.rightDriver;
+        return driverId ? { driverId, driverName: driver?.name ?? null, bracketKey: m.bracketKey } : null;
+      })
+      .filter((q): q is { driverId: string; driverName: string | null; bracketKey: string | null } => !!q);
+
+    const specs = buildArmageddonSecondDraw();
+
+    return this.prisma.$transaction(async (tx) => {
+      const settled2 = await tx.armageddonMatchup.count({
+        where: { eventId, stage: ArmageddonStage.SECOND_DRAW, winnerSide: { not: null } },
+      });
+      if (settled2 > 0) throw new BadRequestException('2º sorteio já tem embates auditados — não é possível regerar.');
+
+      await tx.armageddonMatchup.deleteMany({ where: { eventId, stage: ArmageddonStage.SECOND_DRAW } });
+      await this.persistBracket(tx, eventId, specs, () => undefined); // slots vazios → DnD preenche
+
+      await this.logAudit(tx, 'ARMAGEDDON_SECOND_DRAW_GENERATE', 'ArmageddonEvent', eventId, {
+        count: specs.length, qualifiers: qualifiers.length,
+      }, audit);
+      return { stage: 'SECOND_DRAW', matchups: specs.length, qualifiers };
+    }, { timeout: 30000, maxWait: 10000 });
+  }
+
+  /** Salva o posicionamento (arrasta-e-solta) da 1ª rodada do 2º sorteio. */
+  async adminSaveSecondDrawLayout(eventId: string, dto: SaveSecondDrawLayoutDto, audit: AuditContext) {
+    const event = await this.prisma.armageddonEvent.findUnique({ where: { id: eventId } });
+    if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
+    this.requireElimination(event);
+
+    return this.prisma.$transaction(async (tx) => {
+      let saved = 0;
+      for (const slot of dto.slots) {
+        const m = await tx.armageddonMatchup.findFirst({
+          where: { id: slot.matchupId, eventId, stage: ArmageddonStage.SECOND_DRAW, roundNumber: 1 },
+        });
+        if (!m) continue;
+        if (m.winnerSide || m.marketOpen) {
+          throw new BadRequestException('Não é possível reposicionar um embate com mercado aberto ou já auditado.');
+        }
+        await tx.armageddonMatchup.update({
+          where: { id: m.id },
+          data: { leftDriverId: slot.leftDriverId ?? null, rightDriverId: slot.rightDriverId ?? null },
+        });
+        saved += 1;
+      }
+      await this.logAudit(tx, 'ARMAGEDDON_SECOND_DRAW_LAYOUT', 'ArmageddonEvent', eventId, { saved }, audit);
+      return { saved };
+    }, { timeout: 30000, maxWait: 10000 });
+  }
+
+  /**
+   * Abre o mercado de TODOS os embates prontos (ambos os pilotos definidos, sem
+   * mercado/auditoria). Filtrável por chave (`bracketKey`), rodada (`roundNumber`)
+   * e/ou fase (`stage`) — usado pelo "abrir todos da rodada".
+   */
+  async adminOpenAllReady(
+    eventId: string,
+    audit: AuditContext,
+    filter?: { bracketKey?: string; roundNumber?: number; stage?: ArmageddonStage },
+  ) {
+    const ready = await this.prisma.armageddonMatchup.findMany({
+      where: {
+        eventId,
+        winnerSide: null,
+        marketOpen: false,
+        leftDriverId: { not: null },
+        rightDriverId: { not: null },
+        ...(filter?.bracketKey ? { bracketKey: filter.bracketKey } : {}),
+        ...(filter?.roundNumber ? { roundNumber: filter.roundNumber } : {}),
+        ...(filter?.stage ? { stage: filter.stage } : {}),
+      },
+      orderBy: [{ stage: 'asc' }, { bracketKey: 'asc' }, { roundNumber: 'asc' }, { order: 'asc' }],
+      select: { id: true },
+    });
+
+    let opened = 0;
+    const failures: Array<{ id: string; error: string }> = [];
+    for (const m of ready) {
+      try {
+        await this.adminToggleMatchupMarket(m.id, true, audit);
+        opened += 1;
+      } catch (e) {
+        failures.push({ id: m.id, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    await this.logAudit(this.prisma as unknown as Prisma.TransactionClient, 'ARMAGEDDON_OPEN_ALL_READY', 'ArmageddonEvent', eventId, {
+      total: ready.length, opened, failures, filter,
+    }, audit);
+    return { total: ready.length, opened, failures };
+  }
+
+  /**
+   * Fecha o mercado de TODOS os embates abertos e ainda não auditados. Filtrável
+   * por chave (`bracketKey`), rodada (`roundNumber`) e/ou fase (`stage`).
+   */
+  async adminCloseAllOpen(
+    eventId: string,
+    audit: AuditContext,
+    filter?: { bracketKey?: string; roundNumber?: number; stage?: ArmageddonStage },
+  ) {
+    const open = await this.prisma.armageddonMatchup.findMany({
+      where: {
+        eventId,
+        marketOpen: true,
+        winnerSide: null,
+        ...(filter?.bracketKey ? { bracketKey: filter.bracketKey } : {}),
+        ...(filter?.roundNumber ? { roundNumber: filter.roundNumber } : {}),
+        ...(filter?.stage ? { stage: filter.stage } : {}),
+      },
+      orderBy: [{ stage: 'asc' }, { bracketKey: 'asc' }, { roundNumber: 'asc' }, { order: 'asc' }],
+      select: { id: true },
+    });
+
+    let closed = 0;
+    const failures: Array<{ id: string; error: string }> = [];
+    for (const m of open) {
+      try {
+        await this.adminToggleMatchupMarket(m.id, false, audit);
+        closed += 1;
+      } catch (e) {
+        failures.push({ id: m.id, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    await this.logAudit(this.prisma as unknown as Prisma.TransactionClient, 'ARMAGEDDON_CLOSE_ALL_OPEN', 'ArmageddonEvent', eventId, {
+      total: open.length, closed, failures, filter,
+    }, audit);
+    return { total: open.length, closed, failures };
+  }
+
+  /** Resumo financeiro do evento (pote total + por embate) para a sessão de auditoria. */
+  async adminGetFinancialSummary(eventId: string) {
+    const event = await this.prisma.armageddonEvent.findUnique({
+      where: { id: eventId },
+      include: {
+        matchups: {
+          orderBy: [{ stage: 'asc' }, { bracketKey: 'asc' }, { roundNumber: 'asc' }, { order: 'asc' }],
+          include: { leftDriver: true, rightDriver: true },
+        },
+      },
+    });
+    if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
+
+    const duelIds = event.matchups.map((m) => m.duelId).filter((id): id is string => !!id);
+    const poolStates = duelIds.length
+      ? await this.prisma.duelPoolState.findMany({ where: { duelId: { in: duelIds } } })
+      : [];
+    const poolByDuel = new Map(poolStates.map((p) => [p.duelId, p]));
+
+    let totalPool = 0;
+    let openMarkets = 0;
+    let settledCount = 0;
+    const matchups = event.matchups.map((m) => {
+      const p = m.duelId ? poolByDuel.get(m.duelId) : undefined;
+      const leftPool = Number(p?.leftPool ?? 0);
+      const rightPool = Number(p?.rightPool ?? 0);
+      const passPool = leftPool + rightPool;
+      totalPool += passPool;
+      if (m.marketOpen) openMarkets += 1;
+      if (m.winnerSide) settledCount += 1;
+      return {
+        id: m.id,
+        stage: m.stage,
+        bracketKey: m.bracketKey,
+        roundNumber: m.roundNumber,
+        order: m.order,
+        isThirdPlace: m.isThirdPlace,
+        isFinal: m.isFinal,
+        leftDriverName: m.leftDriver?.name ?? null,
+        rightDriverName: m.rightDriver?.name ?? null,
+        winnerSide: m.winnerSide,
+        marketOpen: m.marketOpen,
+        leftPool,
+        rightPool,
+        totalPool: passPool,
+        leftPercent: passPool > 0 ? (leftPool / passPool) * 100 : 0,
+        rightPercent: passPool > 0 ? (rightPool / passPool) * 100 : 0,
+      };
+    });
+
+    return {
+      eventId: event.id,
+      name: event.name,
+      status: event.status,
+      bracketType: event.bracketType,
+      totalPool,
+      openMarkets,
+      settledCount,
+      totalMatchups: event.matchups.length,
+      matchups,
+    };
   }
 
   async adminToggleMatchupMarket(matchupId: string, open: boolean, audit: AuditContext) {
@@ -701,8 +1204,43 @@ export class ArmageddonService {
         },
       });
 
-      // Swap roster positions WITHIN ArmageddonRoster only (standalone - nao toca ListRoster)
-      if (
+      if (matchup.event.bracketType === ArmageddonBracketType.ELIMINATION_144) {
+        // AVANÇO DE ÁRVORE: grava o vencedor no slot (next*) da próxima bateria.
+        // O perdedor da semi vai para o jogo de 3º lugar (loser*). O nome do
+        // piloto já aparece na bateria seguinte — sem swap de ladder.
+        const winnerDriverId = dto.winnerSide === 'LEFT' ? matchup.leftDriverId : matchup.rightDriverId;
+        const loserDriverId = dto.winnerSide === 'LEFT' ? matchup.rightDriverId : matchup.leftDriverId;
+
+        if (matchup.nextMatchupId && winnerDriverId) {
+          await tx.armageddonMatchup.update({
+            where: { id: matchup.nextMatchupId },
+            data: matchup.nextSlotSide === 'LEFT'
+              ? { leftDriverId: winnerDriverId }
+              : { rightDriverId: winnerDriverId },
+          });
+        }
+        if (matchup.loserToMatchupId && loserDriverId) {
+          await tx.armageddonMatchup.update({
+            where: { id: matchup.loserToMatchupId },
+            data: matchup.loserToSlotSide === 'LEFT'
+              ? { leftDriverId: loserDriverId }
+              : { rightDriverId: loserDriverId },
+          });
+        }
+
+        // Final auditada → evento encerrado.
+        if (matchup.isFinal) {
+          await tx.armageddonEvent.update({
+            where: { id: matchup.eventId },
+            data: { status: ArmageddonStatus.FINISHED },
+          });
+        }
+
+        await this.logAudit(tx, 'ARMAGEDDON_ADVANCE', 'ArmageddonMatchup', matchupId, {
+          winnerDriverId, nextMatchupId: matchup.nextMatchupId, loserToMatchupId: matchup.loserToMatchupId,
+        }, audit);
+      } else if (
+        // LADDER legado: swap de posições no roster quando o desafiante (LEFT) vence.
         dto.winnerSide === 'LEFT' &&
         matchup.leftPosition && matchup.rightPosition &&
         matchup.leftDriverId && matchup.rightDriverId &&
@@ -770,19 +1308,33 @@ export class ArmageddonService {
         }
       }
 
-      // Auto-abrir proximo confronto pendente
+      // Auto-abrir a(s) próxima(s) bateria(s)
       try {
-        const nextMatchup = await this.prisma.armageddonMatchup.findFirst({
-          where: {
-            eventId: matchup.eventId,
-            winnerSide: null,
-            marketOpen: false,
-            id: { not: matchupId },
-          },
-          orderBy: [{ roundNumber: 'asc' }, { order: 'asc' }],
-        });
-        if (nextMatchup && nextMatchup.leftDriverId && nextMatchup.rightDriverId) {
-          await this.adminToggleMatchupMarket(nextMatchup.id, true, audit);
+        if (matchup.event.bracketType === ArmageddonBracketType.ELIMINATION_144) {
+          // Eliminação: as baterias-alvo (vencedor e 3º lugar) que ficaram com os
+          // dois pilotos definidos agora abrem mercado automaticamente.
+          const targetIds = [matchup.nextMatchupId, matchup.loserToMatchupId].filter(
+            (id): id is string => !!id,
+          );
+          for (const id of targetIds) {
+            const target = await this.prisma.armageddonMatchup.findUnique({ where: { id } });
+            if (target && !target.winnerSide && !target.marketOpen && target.leftDriverId && target.rightDriverId) {
+              await this.adminToggleMatchupMarket(target.id, true, audit);
+            }
+          }
+        } else {
+          const nextMatchup = await this.prisma.armageddonMatchup.findFirst({
+            where: {
+              eventId: matchup.eventId,
+              winnerSide: null,
+              marketOpen: false,
+              id: { not: matchupId },
+            },
+            orderBy: [{ roundNumber: 'asc' }, { order: 'asc' }],
+          });
+          if (nextMatchup && nextMatchup.leftDriverId && nextMatchup.rightDriverId) {
+            await this.adminToggleMatchupMarket(nextMatchup.id, true, audit);
+          }
         }
       } catch (e) {
         this.logger.warn(`Falha ao abrir proximo confronto Armageddon: ${e instanceof Error ? e.message : e}`);
@@ -843,6 +1395,7 @@ export class ArmageddonService {
   private serializeEvent(event: any) {
     const roster = (event.roster ?? []).map((r: any) => ({
       id: r.id,
+      bracketKey: r.bracketKey,
       position: r.position,
       isKing: r.isKing,
       driverId: r.driverId,
@@ -862,8 +1415,10 @@ export class ArmageddonService {
       name: event.name,
       description: event.description,
       bannerUrl: event.bannerUrl,
+      streamUrl: event.streamUrl,
       featured: event.featured,
       format: event.format,
+      bracketType: event.bracketType,
       scheduledAt: event.scheduledAt,
       endsAt: event.endsAt,
       status: event.status,
@@ -877,6 +1432,14 @@ export class ArmageddonService {
         roundNumber: m.roundNumber,
         roundType: m.roundType,
         order: m.order,
+        stage: m.stage,
+        bracketKey: m.bracketKey,
+        nextMatchupId: m.nextMatchupId,
+        nextSlotSide: m.nextSlotSide,
+        loserToMatchupId: m.loserToMatchupId,
+        loserToSlotSide: m.loserToSlotSide,
+        isThirdPlace: m.isThirdPlace,
+        isFinal: m.isFinal,
         leftPosition: m.leftPosition,
         rightPosition: m.rightPosition,
         leftDriverId: m.leftDriverId,

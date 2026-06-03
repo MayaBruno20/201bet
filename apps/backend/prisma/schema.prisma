@@ -180,6 +180,21 @@ enum ArmageddonStatus {
   CANCELED
 }
 
+/// Discriminador do mecanismo de chaveamento do Armageddon.
+/// LADDER = comportamento legado (escada "rei do morro", igual Listas Brasil).
+/// ELIMINATION_144 = torneio de eliminação 144→Top 32→campeão + 3º lugar.
+enum ArmageddonBracketType {
+  LADDER
+  ELIMINATION_144
+}
+
+/// Fase do torneio de eliminação do Armageddon.
+/// FIRST_DRAW = 1º sorteio nas 5 chaves (A-E). SECOND_DRAW = chave única de 32.
+enum ArmageddonStage {
+  FIRST_DRAW
+  SECOND_DRAW
+}
+
 model User {
   id            String     @id @default(uuid())
   email         String     @unique
@@ -579,6 +594,9 @@ model AffiliateCommission {
   betId       String
   marketId    String
   amount      Decimal  @db.Decimal(20, 4)
+  // Marcada true quando o mercado é estornado (reset). Não mexe no saldo do
+  // afiliado — só preserva a auditoria e evita contar a comissão em relatórios.
+  reversed    Boolean  @default(false)
   createdAt   DateTime @default(now())
 
   affiliate Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
@@ -811,6 +829,9 @@ model ArmageddonEvent {
   bannerUrl   String?
   featured    Boolean          @default(false)
   format      ListFormat       @default(TOP_20)
+  bracketType ArmageddonBracketType @default(LADDER)
+  // Link da transmissão ao vivo (YouTube) exibido no hub público do Armageddon.
+  streamUrl   String?
   scheduledAt DateTime
   endsAt      DateTime?
   status      ArmageddonStatus @default(DRAFT)
@@ -832,6 +853,8 @@ model ArmageddonRoster {
   id           String   @id @default(uuid())
   eventId      String
   driverId     String
+  // Chave do 1º sorteio na eliminação ("A".."E"). Null nos eventos LADDER legados.
+  bracketKey   String?
   position     Int
   isKing       Boolean  @default(false)
   // Snapshot de origem - apenas referencia historica, sem alterar a lista de origem
@@ -845,9 +868,11 @@ model ArmageddonRoster {
   event  ArmageddonEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
   driver Driver          @relation(fields: [driverId], references: [id], onDelete: Restrict)
 
-  @@unique([eventId, position])
+  // Posição é única DENTRO da chave (cada chave A-E tem suas posições 1..32/28).
+  @@unique([eventId, bracketKey, position])
   @@unique([eventId, driverId])
   @@index([eventId])
+  @@index([eventId, bracketKey])
   @@index([driverId])
 }
 
@@ -855,13 +880,25 @@ model ArmageddonMatchup {
   id               String        @id @default(uuid())
   eventId          String
   roundNumber      Int
-  roundType        ListRoundType
+  // Opcional: só usado nos eventos LADDER legados (ODD/EVEN). Null na eliminação.
+  roundType        ListRoundType?
   order            Int
+  // Eliminação: fase (1º/2º sorteio) e chave (A-E no 1º sorteio; null no 2º).
+  stage            ArmageddonStage?
+  bracketKey       String?
   leftPosition     Int?
   rightPosition    Int?
   leftDriverId     String?
   rightDriverId    String?
   winnerSide       MatchupSide?
+  // Avanço de árvore: o vencedor é gravado no slot (next*) da próxima bateria.
+  // O perdedor da SEMI vai para o jogo de 3º lugar via loser*.
+  nextMatchupId    String?
+  nextSlotSide     MatchupSide?
+  loserToMatchupId String?
+  loserToSlotSide  MatchupSide?
+  isThirdPlace     Boolean       @default(false)
+  isFinal          Boolean       @default(false)
   isManualOverride Boolean       @default(false)
   marketOpen       Boolean       @default(false)
   duelId           String?       @unique
@@ -875,6 +912,7 @@ model ArmageddonMatchup {
   rightDriver Driver?         @relation("armageddonMatchupRight", fields: [rightDriverId], references: [id], onDelete: SetNull)
 
   @@index([eventId, roundNumber, order])
+  @@index([eventId, stage, bracketKey, roundNumber, order])
   @@index([marketOpen])
 }
 
@@ -892,4 +930,16 @@ model SiteDisclaimer {
   updatedAt DateTime @updatedAt
 
   @@index([active, priority])
+}
+
+// ─── Uploads de imagem persistidos no banco ───────────────
+// Guarda os bytes da imagem no Postgres (em vez de disco) para o upload ser
+// permanente independente do servidor. Servido por GET /api/images/:id com
+// cache imutável; referenciado por bannerUrl = "/api/images/:id".
+model UploadedImage {
+  id        String   @id @default(uuid())
+  mimeType  String
+  data      Bytes
+  sizeBytes Int
+  createdAt DateTime @default(now())
 }

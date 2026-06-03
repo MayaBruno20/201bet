@@ -3,6 +3,7 @@ import {
   ConnectedSocket,
   MessageBody,
   OnGatewayConnection,
+  OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -10,6 +11,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import { MarketService } from './market.service';
 import { MultiRunnerMarketService } from './multi-runner-market.service';
+import { ActivityService } from './common/activity.service';
 
 @WebSocketGateway({
   namespace: '/realtime',
@@ -24,7 +26,7 @@ import { MultiRunnerMarketService } from './multi-runner-market.service';
     credentials: true,
   },
 })
-export class MarketGateway implements OnGatewayConnection, OnModuleInit {
+export class MarketGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
   @WebSocketServer()
   server: Server;
 
@@ -33,6 +35,7 @@ export class MarketGateway implements OnGatewayConnection, OnModuleInit {
   constructor(
     private readonly marketService: MarketService,
     private readonly multiRunnerService: MultiRunnerMarketService,
+    private readonly activity: ActivityService,
   ) {}
 
   onModuleInit() {
@@ -52,6 +55,9 @@ export class MarketGateway implements OnGatewayConnection, OnModuleInit {
   }
 
   handleConnection(client: Socket) {
+    // Cliente WS conectado → plataforma "ativa" (reativa os tickers de fundo).
+    this.activity.wsConnected();
+
     // Send duel snapshots
     const duelSnapshots = this.marketService.getAllSnapshots();
     for (const snapshot of duelSnapshots) {
@@ -63,6 +69,10 @@ export class MarketGateway implements OnGatewayConnection, OnModuleInit {
     for (const snapshot of mrSnapshots) {
       client.emit('market:multi-runner:update', snapshot);
     }
+  }
+
+  handleDisconnect() {
+    this.activity.wsDisconnected();
   }
 
   @SubscribeMessage('market:sync')

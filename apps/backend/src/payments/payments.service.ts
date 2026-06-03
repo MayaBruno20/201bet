@@ -21,6 +21,12 @@ import { normalizeBrazilPixPhoneKey } from './pix-phone-key';
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
   private reconciliationTicker?: NodeJS.Timeout;
+  // Guard de idle do reconcile: só consulta o banco quando PODE haver pagamento
+  // pendente. Começa true (checa 1x no boot pra pegar pendências pré-existentes);
+  // qualquer depósito/saque criado marca true; quando uma checagem não acha nada
+  // pendente, volta a false e o ticker para de acordar a Neon.
+  // NUNCA abandona um pagamento: enquanto houver pendência, segue ativo.
+  private mayHavePending = true;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -48,6 +54,9 @@ export class PaymentsService {
    * Wallet is NOT credited yet — only when webhook confirms payment.
    */
   async createDeposit(userId: string, payload: CreateDepositDto) {
+    // Vai gerar um pagamento PENDING → reativa o reconcile (rede de segurança do
+    // crédito) mesmo que a Neon estivesse hibernando.
+    this.mayHavePending = true;
     this.logger.log(
       `createDeposit start userId=${userId} amount=${payload.amount}`,
     );
@@ -252,6 +261,8 @@ export class PaymentsService {
    * Create a withdrawal: deducts wallet and sends PIX cashout via Valut.
    */
   async createWithdraw(userId: string, payload: CreateWithdrawDto) {
+    // Saque vira PENDING/UNKNOWN → reativa o reconcile (aprovação/reembolso).
+    this.mayHavePending = true;
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
     if (!wallet) throw new NotFoundException('Carteira não encontrada');
 
@@ -804,6 +815,9 @@ export class PaymentsService {
   // ── Reconciliação ───────────────────────────────────────────────
 
   private async safeReconcile() {
+    // Sem pendência conhecida → não acorda a Neon. Reativado por createDeposit/
+    // createWithdraw e pelo seed do boot. Enquanto houver pendência, segue rodando.
+    if (!this.mayHavePending) return;
     try {
       await this.reconcileOnce();
     } catch (e) {
@@ -868,6 +882,10 @@ export class PaymentsService {
         // ignore and retry
       }
     }
+
+    // Só dorme quando a checagem confirmou ZERO pendências (deposito e saque).
+    // Se ainda há algo pendente, mantém ativo para tentar de novo no próximo tick.
+    this.mayHavePending = pendingDeposits.length > 0 || pendingWithdrawals.length > 0;
   }
 
   private async refundFailedWithdraw(paymentId: string, reason: string) {

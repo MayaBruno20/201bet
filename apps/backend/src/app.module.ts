@@ -6,8 +6,10 @@ import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { CacheModule } from './cache/cache.module';
 import { AppConfigModule } from './config/config.module';
+import { ActivityModule } from './common/activity.module';
 import { PrismaModule } from './database/prisma.module';
 import { ArmageddonModule } from './armageddon/armageddon.module';
+import { ImagesModule } from './images/images.module';
 import { BrazilListsModule } from './brazil-lists/brazil-lists.module';
 import { CategoryEventsModule } from './category-events/category-events.module';
 import { EventsModule } from './events/events.module';
@@ -24,6 +26,7 @@ import { SettlementService } from './settlement.service';
 @Module({
   imports: [
     AppConfigModule,
+    ActivityModule,
     PrismaModule,
     CacheModule,
     QueueModule,
@@ -34,6 +37,7 @@ import { SettlementService } from './settlement.service';
     BrazilListsModule,
     CategoryEventsModule,
     ArmageddonModule,
+    ImagesModule,
     AdminModule,
     PaymentsModule,
     SiteDisclaimersModule,

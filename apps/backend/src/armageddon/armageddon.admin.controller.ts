@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -25,6 +26,7 @@ import {
 } from './dto/armageddon-roster.dto';
 import {
   GenerateArmageddonMatchupsDto,
+  SaveSecondDrawLayoutDto,
   SettleArmageddonMatchupDto,
 } from './dto/armageddon-matchup.dto';
 
@@ -39,6 +41,12 @@ export class ArmageddonAdminController {
   @Get()
   listAll() {
     return this.service.adminListAll();
+  }
+
+  // Antes de :id para a rota estática não ser capturada pelo param.
+  @Get('drivers/search')
+  searchDrivers(@Query('q') q: string) {
+    return this.service.adminSearchDrivers(q ?? '');
   }
 
   @Get(':id')
@@ -102,6 +110,71 @@ export class ArmageddonAdminController {
     @Req() req: ReqUser,
   ) {
     return this.service.adminGenerateMatchups(id, dto, this.audit(req));
+  }
+
+  // ── Eliminação 144 (5 chaves → Top 32 → campeão + 3º lugar) ──
+  @Post(':id/generate-first-draw')
+  generateFirstDraw(@Param('id') id: string, @Req() req: ReqUser) {
+    return this.service.adminGenerateFirstDraw(id, this.audit(req));
+  }
+
+  @Post(':id/generate-second-draw')
+  generateSecondDraw(@Param('id') id: string, @Req() req: ReqUser) {
+    return this.service.adminGenerateSecondDraw(id, this.audit(req));
+  }
+
+  @Post(':id/clear-keys')
+  clearKeys(@Param('id') id: string, @Req() req: ReqUser) {
+    return this.service.adminClearKeys(id, this.audit(req));
+  }
+
+  @Post(':id/reset')
+  resetEvent(@Param('id') id: string, @Req() req: ReqUser) {
+    return this.service.adminResetEvent(id, this.audit(req));
+  }
+
+  @Post(':id/second-draw-layout')
+  saveSecondDrawLayout(
+    @Param('id') id: string,
+    @Body() dto: SaveSecondDrawLayoutDto,
+    @Req() req: ReqUser,
+  ) {
+    return this.service.adminSaveSecondDrawLayout(id, dto, this.audit(req));
+  }
+
+  @Post(':id/open-all-ready')
+  openAllReady(
+    @Param('id') id: string,
+    @Query('bracketKey') bracketKey: string | undefined,
+    @Query('roundNumber') roundNumber: string | undefined,
+    @Query('stage') stage: string | undefined,
+    @Req() req: ReqUser,
+  ) {
+    return this.service.adminOpenAllReady(id, this.audit(req), {
+      bracketKey: bracketKey || undefined,
+      roundNumber: roundNumber ? Number(roundNumber) : undefined,
+      stage: (stage as 'FIRST_DRAW' | 'SECOND_DRAW') || undefined,
+    });
+  }
+
+  @Post(':id/close-all-open')
+  closeAllOpen(
+    @Param('id') id: string,
+    @Query('bracketKey') bracketKey: string | undefined,
+    @Query('roundNumber') roundNumber: string | undefined,
+    @Query('stage') stage: string | undefined,
+    @Req() req: ReqUser,
+  ) {
+    return this.service.adminCloseAllOpen(id, this.audit(req), {
+      bracketKey: bracketKey || undefined,
+      roundNumber: roundNumber ? Number(roundNumber) : undefined,
+      stage: (stage as 'FIRST_DRAW' | 'SECOND_DRAW') || undefined,
+    });
+  }
+
+  @Get(':id/financial-summary')
+  financialSummary(@Param('id') id: string) {
+    return this.service.adminGetFinancialSummary(id);
   }
 
   @Patch('matchups/:matchupId/market')

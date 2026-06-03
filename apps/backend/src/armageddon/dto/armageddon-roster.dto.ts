@@ -46,9 +46,15 @@ export class UpsertArmageddonRosterDto {
   @MaxLength(200)
   driverName?: string;
 
+  // Chave do 1º sorteio na eliminação ("A".."E"). Null/ausente em eventos LADDER.
+  @IsOptional()
+  @IsString()
+  @MaxLength(1)
+  bracketKey?: string;
+
   @IsInt()
   @Min(1)
-  @Max(20)
+  @Max(32)
   position: number;
 
   @IsOptional()

@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import Redis from 'ioredis';
 import { AppModule } from './app.module';
+import { ActivityService } from './common/activity.service';
 import { PrismaService } from './database/prisma.service';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { UPLOADS_ROOT, CARS_UPLOAD_DIR, BANNERS_UPLOAD_DIR } from './common/uploads';
@@ -111,6 +112,17 @@ function assertCorsForRuntime(): string[] {
 async function bootstrap() {
   assertJwtSecretForRuntime();
   logRuntimeEnv();
+
+  // Rede de segurança: uma rejeição assíncrona não-tratada (ex.: tick de engine
+  // que falhou por timeout de pool do Neon) NÃO pode derrubar o backend de apostas.
+  // Loga e segue. Bugs reais continuam visíveis no log; o servidor fica de pé.
+  const safetyLogger = new Logger('Process');
+  process.on('unhandledRejection', (reason) => {
+    safetyLogger.error(
+      `unhandledRejection (ignorado, servidor segue): ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`,
+    );
+  });
+
   await probeRedisConnection();
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -118,6 +130,15 @@ async function bootstrap() {
   const corsOrigins = assertCorsForRuntime();
 
   app.setGlobalPrefix('api');
+
+  // Marca atividade em cada request HTTP — alimenta o guard de idle que pausa os
+  // tickers de fundo quando ninguém usa a plataforma (deixa a Neon hibernar).
+  const activityService = app.get(ActivityService);
+  app.use((_req, _res, next) => {
+    activityService.touch();
+    next();
+  });
+
   app.use(cookieParser());
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
