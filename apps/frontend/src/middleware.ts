@@ -1,13 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import {
+  getAdminPublicOrigin,
   getSiteKindForHost,
   internalAdminPathFromUrlPath,
   isPublicMarketingHost,
-  PUBLIC_DOMAIN,
   INTERNAL_ADMIN_PREFIX,
 } from '@/lib/domain-config';
-
-const ADMIN_DOMAIN = `admin.${PUBLIC_DOMAIN}`;
 
 function isAsset(pathname: string) {
   return (
@@ -38,7 +36,7 @@ export function middleware(req: NextRequest) {
   }
 
   if (isPublicMarketingHost(host) && pathname.startsWith('/admin')) {
-    const target = new URL(`https://${ADMIN_DOMAIN}${pathname}${req.nextUrl.search}`);
+    const target = new URL(`${getAdminPublicOrigin()}${pathname}${req.nextUrl.search}`);
     return NextResponse.redirect(target, 301);
   }
 

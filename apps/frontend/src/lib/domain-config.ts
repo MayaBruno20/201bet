@@ -1,41 +1,62 @@
+import { getConfiguredAdminSiteHost, getConfiguredSiteHost } from '@/lib/env-public';
+
 /**
  * Um único deploy Next: o host HTTP decide se servimos o site público ou o painel.
  * O painel vive em rotas internas prefixadas com `INTERNAL_ADMIN_PREFIX`; o middleware
- * faz rewrite do host admin para esse prefixo (URLs limpas no browser). O segmento não
- * usa `_` inicial para o Next App Router incluir as rotas no build.
+ * faz rewrite do host admin para esse prefixo (URLs limpas no browser).
+ *
+ * Produção: defina no `.env` da raiz (ou Vercel):
+ *   NEXT_PUBLIC_SITE_HOST=palpite201.com
+ *   NEXT_PUBLIC_ADMIN_SITE_HOST=admin.palpite201.com
  */
-export const PUBLIC_DOMAIN = '201-bet.com';
-
-/** Prefixo interno das rotas do admin (não expor no domínio público). */
 export const INTERNAL_ADMIN_PREFIX = '/internal-admin';
 
-const ADMIN_SUBDOMAIN = `admin.${PUBLIC_DOMAIN}`;
-
 export type SiteKind = 'public' | 'admin';
+
+export function getSiteHost(): string | null {
+  return getConfiguredSiteHost();
+}
+
+export function getAdminSiteHost(): string | null {
+  return getConfiguredAdminSiteHost();
+}
 
 export function normalizeHost(host: string): string {
   return host.split(':')[0]?.toLowerCase() ?? '';
 }
 
+function hostMatchesConfigured(host: string, configured: string | null): boolean {
+  if (!configured) return false;
+  return host === configured || host === `www.${configured}`;
+}
+
 export function getSiteKindForHost(hostHeader: string | null): SiteKind {
   const host = normalizeHost(hostHeader ?? '');
   if (!host) return 'public';
-  if (host === ADMIN_SUBDOMAIN) return 'admin';
-  if (host === `www.${ADMIN_SUBDOMAIN}`) return 'admin';
+
+  if (hostMatchesConfigured(host, getAdminSiteHost())) return 'admin';
+
   /**
-   * Dev no mesmo deploy:
+   * Dev no mesmo deploy (sem env de produção):
    * - Safari costuma falhar em `admin.localhost` sem DNS. Corrija com:
    *     sudo sh -c 'echo "127.0.0.1 admin.localhost" >> /etc/hosts'
-   * - Sem editar hosts (precisa de DNS na rede): use nip.io → 127.0.0.1
+   * - Sem editar hosts: use nip.io → 127.0.0.1
    */
   if (host === 'admin.localhost' || host === 'admin.local') return 'admin';
   if (host === 'admin.127.0.0.1.nip.io') return 'admin';
+
   return 'public';
 }
 
 export function isPublicMarketingHost(hostHeader: string | null): boolean {
-  const host = normalizeHost(hostHeader ?? '');
-  return host === PUBLIC_DOMAIN || host === `www.${PUBLIC_DOMAIN}`;
+  return hostMatchesConfigured(normalizeHost(hostHeader ?? ''), getSiteHost());
+}
+
+/** Origem HTTPS do admin para redirects a partir do site público. */
+export function getAdminPublicOrigin(): string {
+  const adminHost = getAdminSiteHost();
+  if (!adminHost) return 'https://admin.localhost';
+  return `https://${adminHost}`;
 }
 
 /**
