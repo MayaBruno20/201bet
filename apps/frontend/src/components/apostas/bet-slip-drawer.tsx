@@ -115,9 +115,27 @@ export function BetSlipDrawer({
               </div>
             </div>
 
-            <span className='inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.04] border border-white/10 text-[#b8bcc9] shrink-0'>
+            <motion.span
+              className='inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.04] border-2 border-[#ffb028]/60 text-[#ffb028] shrink-0'
+              animate={
+                expanded
+                  ? { boxShadow: '0 0 0 0 rgba(255,176,40,0)' }
+                  : {
+                      boxShadow: [
+                        '0 0 0 0 rgba(255,176,40,0)',
+                        '0 0 0 5px rgba(255,176,40,0.30)',
+                        '0 0 0 0 rgba(255,176,40,0)',
+                      ],
+                    }
+              }
+              transition={
+                expanded
+                  ? { duration: 0.3 }
+                  : { duration: 2, repeat: Infinity, ease: 'easeInOut' }
+              }
+            >
               {expanded ? <ChevronDown className='h-4 w-4' /> : <ChevronUp className='h-4 w-4' />}
-            </span>
+            </motion.span>
           </button>
 
           {!expanded && (
