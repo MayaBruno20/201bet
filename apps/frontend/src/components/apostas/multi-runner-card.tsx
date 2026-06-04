@@ -268,7 +268,7 @@ export function MultiRunnerCard({
                 </span>
               </div>
               <p className='mt-2 text-[10.5px] leading-snug text-[#767b8a]'>
-                * Pari-mutuel: pote total dividido entre quem acertar. Valor final só é definido no fechamento —
+                * O pote total é dividido entre quem acertar. Valor final só é definido no fechamento —
                 pode subir conforme mais gente aposta nos outros pilotos, ou cair se mais gente aposta no seu.
               </p>
             </div>

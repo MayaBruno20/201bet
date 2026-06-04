@@ -229,7 +229,7 @@ export default function SaquePage() {
             </svg>
             <div className='text-xs text-amber-100/90 leading-relaxed space-y-1'>
               <p>
-                <strong className='font-semibold text-amber-200'>Liberação automática:</strong> chave PIX vinculada ao mesmo CPF da sua conta 201Bet e valor até <strong>R$ 2.000,00</strong>.
+                <strong className='font-semibold text-amber-200'>Liberação automática:</strong> chave PIX vinculada ao mesmo CPF da sua conta Palpite201 e valor até <strong>R$ 2.000,00</strong>.
               </p>
               <p>
                 <strong className='font-semibold text-amber-200'>Análise manual (até 1 dia útil):</strong> chave de outro CPF, ou saque acima de R$ 2.000,00.

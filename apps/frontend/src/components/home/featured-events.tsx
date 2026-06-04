@@ -42,6 +42,8 @@ export function FeaturedEvents() {
   if (events.length === 0) return null;
 
   const active = events[activeIdx];
+  // Armageddon → hub dedicado (apostas inline); demais → página de apostas.
+  const eventHref = active.id.startsWith('armageddon:') ? '/armageddon' : '/apostas';
 
   return (
     <section className='mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 mt-4'>
@@ -54,7 +56,7 @@ export function FeaturedEvents() {
 
       {/* Hero card grande */}
       <Link
-        href='/eventos'
+        href={eventHref}
         className='block group relative overflow-hidden rounded-2xl sm:rounded-3xl border border-white/10 bg-[#101525] aspect-[16/9] sm:aspect-[21/9] max-h-[500px]'
       >
         {/* Banner background (imagem ou vídeo Vimeo/YouTube) */}

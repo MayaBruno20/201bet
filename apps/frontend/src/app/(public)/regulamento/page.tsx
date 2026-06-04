@@ -1,7 +1,7 @@
 import { MainNav } from '@/components/site/main-nav';
 
 export const metadata = {
-  title: 'Regulamento Listas Brasil — 201bet',
+  title: 'Regulamento Listas Brasil — Palpite201',
   description: 'Regulamento oficial do Listas Brasil: TOP 10 e TOP 20, regra PAR/ÍMPAR, Rei, Shark Tank e homologação.',
 };
 
@@ -22,7 +22,7 @@ export default function RegulamentoPage() {
           <p className='mt-3 text-sm text-white/60 sm:text-base'>
             Este é o regulamento que rege a competição Listas Brasil — a disputa de titularidade das posições TOP 10 e
             TOP 20 das regiões (DDDs) em atividade. O conteúdo aqui reproduz, de forma resumida e orientativa, as
-            regras vigentes que também guiam a geração de chaves e a operação de apostas do 201bet.
+            regras vigentes que também guiam a geração de chaves e a operação de apostas do Palpite201.
           </p>
         </section>
 
@@ -145,15 +145,15 @@ export default function RegulamentoPage() {
               isto garante que o público e o piloto foram previamente homologados antes do início do booking.
             </p>
             <p>
-              Odds, limites e regras específicas seguem as condições padrão da 201bet para corridas de arrancada:
+              Odds, limites e regras específicas seguem as condições padrão da Palpite201 para corridas de arrancada:
               consulte o FAQ de apostas para detalhes.
             </p>
 
             <div className='rounded-xl border border-white/10 bg-white/[0.03] p-4'>
-              <p className='text-sm font-semibold text-white/90'>Como a cotação é calculada — pari-mutuel</p>
+              <p className='text-sm font-semibold text-white/90'>Como a cotação é calculada — pote dividido</p>
               <p className='mt-2 text-sm text-white/70'>
-                A 201bet opera no modelo <strong>pari-mutuel</strong>: o pote total de um embate é a soma das
-                apostas dos dois lados, descontada a margem da casa. A cotação de cada lado é dinâmica —
+                A Palpite201 opera em <strong>pote dividido com cotação dinâmica</strong>: o pote total de um embate é a soma das
+                apostas dos dois lados, descontada a margem da casa, e é rateado entre os bilhetes vencedores. A cotação de cada lado é dinâmica —
                 quanto mais gente apostar num piloto, menor a sua cotação; quanto menos, maior. O retorno final
                 de um bilhete vencedor depende da composição do pote no fechamento do mercado.
               </p>
@@ -165,7 +165,7 @@ export default function RegulamentoPage() {
               </p>
               <p className='mt-2 text-xs text-white/50'>
                 A cotação efetiva do seu bilhete é a do momento do fechamento do mercado, não a do momento da
-                aposta — característica do pari-mutuel.
+                aposta — característica do modelo de pote dividido.
               </p>
             </div>
           </Section>
@@ -182,14 +182,14 @@ export default function RegulamentoPage() {
           <Section title='8. Disposições gerais'>
             <ul className='list-disc space-y-2 pl-5 text-sm text-white/70'>
               <li>A lista oficial de titulares é mantida por cada conselho/administrador regional.</li>
-              <li>Alterações de titularidade são refletidas no sistema 201bet e ficam gravadas em auditoria.</li>
-              <li>Qualquer divergência entre o regulamento da região e esta publicação deve ser comunicada ao suporte da 201bet.</li>
+              <li>Alterações de titularidade são refletidas no sistema Palpite201 e ficam gravadas em auditoria.</li>
+              <li>Qualquer divergência entre o regulamento da região e esta publicação deve ser comunicada ao suporte da Palpite201.</li>
             </ul>
           </Section>
         </article>
 
         <div className='mt-8 rounded-2xl border border-white/10 bg-[#101525] p-5 text-xs text-white/40'>
-          Este regulamento reproduz o conjunto de regras oficiais utilizadas pelo sistema de homologação da 201bet.
+          Este regulamento reproduz o conjunto de regras oficiais utilizadas pelo sistema de homologação da Palpite201.
           Para consultar a versão integral em PDF, solicite ao suporte ou ao administrador da sua região.
         </div>
       </div>

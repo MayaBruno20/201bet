@@ -77,7 +77,7 @@ export default function LoginPage() {
         <div className="relative z-10 max-w-md">
           <div className="flex items-center gap-4 mb-8">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/images/logopalpite.png" alt="201bet" className="h-20 w-auto"/>
+            <img src="/images/logopalpite.png" alt="Palpite201" className="h-20 w-auto"/>
             <div>
               <div className="text-[11px] tracking-[0.16em] uppercase text-[color:var(--text-3)] font-semibold">Admin Console</div>
             </div>
@@ -95,7 +95,7 @@ export default function LoginPage() {
         <div className="w-full max-w-[400px]">
           <div className="lg:hidden flex items-center gap-2 mb-8">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/images/logopalpite.png" alt="201bet" className="h-14 w-auto"/>
+            <img src="/images/logopalpite.png" alt="Palpite201" className="h-14 w-auto"/>
           </div>
 
           {step === 'creds' && (

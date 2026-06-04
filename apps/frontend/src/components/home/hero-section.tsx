@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence, useMotionValue } from 'framer-motion';
 import { AnimatedContent } from '@/components/animations/AnimatedContent';
 import { ShinyText } from '@/components/animations/ShinyText';
+import { useActiveBetHref } from '@/lib/use-active-bet-href';
 
 const heroImages = [
   '/images/hero/armageddon-track.jpg',
@@ -37,6 +38,7 @@ const kenBurnsPresets = [
 ];
 
 export function HeroSection() {
+  const betHref = useActiveBetHref();
   const [currentIndex, setCurrentIndex] = useState(0);
   const sectionRef = useRef<HTMLElement>(null);
 
@@ -191,7 +193,7 @@ export function HeroSection() {
           <AnimatedContent distance={20} delay={0.7}>
             <div className='mt-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full sm:w-auto'>
               <Link
-                href='/apostas'
+                href={betHref}
                 className='group relative inline-flex items-center justify-center gap-3 overflow-hidden rounded-2xl bg-white px-8 py-4 text-base font-bold text-black transition-all hover:scale-[1.03] active:scale-[0.97]'
               >
                 <div className='absolute inset-0 bg-gradient-to-r from-transparent via-black/5 to-transparent -translate-x-full group-hover:animate-shimmer' />
@@ -202,12 +204,6 @@ export function HeroSection() {
                 >
                   <path strokeLinecap='round' strokeLinejoin='round' d='M13 7l5 5m0 0l-5 5m5-5H6' />
                 </svg>
-              </Link>
-              <Link
-                href='#eventos'
-                className='inline-flex items-center justify-center rounded-2xl border border-white/15 bg-white/5 px-8 py-4 text-base font-semibold text-white/70 backdrop-blur-xl transition-all hover:bg-white/10 hover:text-white hover:border-white/30 active:scale-[0.97]'
-              >
-                Explorar Eventos
               </Link>
             </div>
           </AnimatedContent>

@@ -1,8 +1,8 @@
 import { MainNav } from '@/components/site/main-nav';
 
 export const metadata = {
-  title: 'Política de Cookies — 201bet',
-  description: 'Como a 201bet usa cookies e tecnologias similares para operar a plataforma com segurança e melhorar sua experiência.',
+  title: 'Política de Cookies — Palpite201',
+  description: 'Como a Palpite201 usa cookies e tecnologias similares para operar a plataforma com segurança e melhorar sua experiência.',
 };
 
 export default function CookiesPage() {
@@ -20,7 +20,7 @@ export default function CookiesPage() {
           </div>
           <h1 className='text-3xl font-bold tracking-tight sm:text-4xl'>Política de Cookies</h1>
           <p className='mt-3 text-sm text-white/60 sm:text-base'>
-            Esta política explica o que são cookies, como a 201bet os utiliza e como você pode gerenciá-los. Para
+            Esta política explica o que são cookies, como a Palpite201 os utiliza e como você pode gerenciá-los. Para
             entender o tratamento mais amplo dos seus dados pessoais, consulte também a{' '}
             <a className='text-[#d4a843] hover:underline' href='/privacidade'>Política de Privacidade</a>.
           </p>
@@ -97,7 +97,7 @@ export default function CookiesPage() {
               <li><strong>Hospedagem em nuvem</strong> — cookies de balanceamento e cache.</li>
             </ul>
             <p>
-              A 201bet contrata terceiros que aderem à LGPD e mantêm cláusulas contratuais de proteção de dados.
+              A Palpite201 contrata terceiros que aderem à LGPD e mantêm cláusulas contratuais de proteção de dados.
               Consulte a política de cada parceiro para detalhes do tratamento.
             </p>
           </Section>

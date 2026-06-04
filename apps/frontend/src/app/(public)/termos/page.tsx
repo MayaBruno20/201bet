@@ -1,8 +1,8 @@
 import { MainNav } from '@/components/site/main-nav';
 
 export const metadata = {
-  title: 'Termos de Uso — 201bet',
-  description: 'Termos de uso da plataforma 201bet: elegibilidade, conta, apostas, pagamentos, responsabilidades e foro.',
+  title: 'Termos de Uso — Palpite201',
+  description: 'Termos de uso da plataforma Palpite201: elegibilidade, conta, apostas, pagamentos, responsabilidades e foro.',
 };
 
 export default function TermosPage() {
@@ -20,7 +20,7 @@ export default function TermosPage() {
           </div>
           <h1 className='text-3xl font-bold tracking-tight sm:text-4xl'>Termos de Uso</h1>
           <p className='mt-3 text-sm text-white/60 sm:text-base'>
-            Estes Termos regulam o acesso e o uso da plataforma 201bet, operada por <strong>201bet Brasil LTDA</strong>.
+            Estes Termos regulam o acesso e o uso da plataforma Palpite201, operada por <strong>Palpite201 Brasil LTDA</strong>.
             Ao se cadastrar, depositar ou apostar, você declara que leu, entendeu e aceita integralmente o disposto abaixo.
           </p>
         </section>
@@ -28,14 +28,14 @@ export default function TermosPage() {
         <article className='mt-6 space-y-6'>
           <Section title='1. Aceitação dos Termos'>
             <p>
-              O cadastro na 201bet implica aceite expresso destes Termos, da{' '}
+              O cadastro na Palpite201 implica aceite expresso destes Termos, da{' '}
               <a className='text-[#d4a843] hover:underline' href='/privacidade'>Política de Privacidade</a>, da{' '}
               <a className='text-[#d4a843] hover:underline' href='/cookies'>Política de Cookies</a>, da{' '}
               <a className='text-[#d4a843] hover:underline' href='/kyc'>Política de KYC</a> e da{' '}
               <a className='text-[#d4a843] hover:underline' href='/antifraude'>Política Antifraude</a>.
             </p>
             <p>
-              A 201bet pode modificar estes Termos a qualquer momento mediante aviso na plataforma. O uso continuado
+              A Palpite201 pode modificar estes Termos a qualquer momento mediante aviso na plataforma. O uso continuado
               após a atualização caracteriza concordância com a nova versão.
             </p>
           </Section>
@@ -46,17 +46,17 @@ export default function TermosPage() {
               <li>Possuir CPF válido, em situação regular junto à Receita Federal.</li>
               <li>Ser residente no Brasil e fornecer endereço, telefone e e-mail verificáveis.</li>
               <li>Não ser servidor público vedado pela legislação de apostas (Lei nº 14.790/2023).</li>
-              <li>Não constar em lista de autoexclusão da própria 201bet ou de órgão público competente.</li>
+              <li>Não constar em lista de autoexclusão da própria Palpite201 ou de órgão público competente.</li>
             </ul>
             <p>
-              A 201bet pode, a qualquer tempo, solicitar documentação adicional para confirmar a elegibilidade.
+              A Palpite201 pode, a qualquer tempo, solicitar documentação adicional para confirmar a elegibilidade.
               A recusa em apresentar os documentos resulta em suspensão da conta.
             </p>
           </Section>
 
           <Section title='3. Conta de usuário'>
             <p>
-              Cada CPF pode manter <strong>uma única conta</strong> ativa na 201bet. Duplicidade resulta em encerramento
+              Cada CPF pode manter <strong>uma única conta</strong> ativa na Palpite201. Duplicidade resulta em encerramento
               de todas as contas vinculadas e retenção de saldo até averiguação.
             </p>
             <p>
@@ -65,15 +65,18 @@ export default function TermosPage() {
               o suporte e altere a senha.
             </p>
             <p>
-              A 201bet recomenda o uso de autenticação em dois fatores (2FA) e o cadastro de chave PIX vinculada ao CPF
+              A Palpite201 recomenda o uso de autenticação em dois fatores (2FA) e o cadastro de chave PIX vinculada ao CPF
               do titular para depósitos e saques.
             </p>
           </Section>
 
           <Section title='4. Apostas, mercados e liquidação'>
             <p>
-              As apostas operam em modelo <strong>pari-mutuel</strong>: o retorno depende da composição do pote no
-              fechamento do mercado. A cotação exibida antes do fechamento é estimativa e pode variar. Consulte o{' '}
+              As apostas operam em <strong>pote dividido com cotação dinâmica</strong>: todas as apostas de um
+              embate formam um pote comum que, descontada a margem da casa, é rateado entre os bilhetes vencedores.
+              O retorno depende da composição do pote no fechamento do mercado: a cotação exibida antes do fechamento
+              é estimativa e pode variar, e a cotação efetiva do bilhete é a apurada no fechamento, não a do momento
+              da aposta. Consulte o{' '}
               <a className='text-[#d4a843] hover:underline' href='/regulamento'>Regulamento</a> para detalhes técnicos
               do cálculo de odds e para regras específicas do Listas Brasil e do Armageddon.
             </p>
@@ -83,7 +86,7 @@ export default function TermosPage() {
               das stakes.
             </p>
             <p>
-              A 201bet pode <strong>recusar, limitar ou cancelar</strong> apostas em casos de evidência de erro de
+              A Palpite201 pode <strong>recusar, limitar ou cancelar</strong> apostas em casos de evidência de erro de
               cotação, falha técnica, suspeita de combinação ou violação destes Termos.
             </p>
           </Section>
@@ -114,7 +117,7 @@ export default function TermosPage() {
 
           <Section title='7. Suspensão e encerramento'>
             <p>
-              A 201bet pode suspender ou encerrar a conta unilateralmente em casos de violação destes Termos, fraude,
+              A Palpite201 pode suspender ou encerrar a conta unilateralmente em casos de violação destes Termos, fraude,
               inadimplência, ordem judicial, autoexclusão ou inatividade prolongada (acima de 24 meses).
             </p>
             <p>
@@ -125,7 +128,7 @@ export default function TermosPage() {
 
           <Section title='8. Limitação de responsabilidade'>
             <p>
-              A 201bet não se responsabiliza por:
+              A Palpite201 não se responsabiliza por:
             </p>
             <ul className='list-disc space-y-2 pl-5'>
               <li>Falhas de conectividade do usuário ou de provedores terceiros (banco, gateway PIX).</li>
@@ -133,7 +136,7 @@ export default function TermosPage() {
               <li>Eventos de força maior (caso fortuito, indisponibilidade de infraestrutura, ordem governamental).</li>
             </ul>
             <p>
-              A responsabilidade total da 201bet, em qualquer hipótese, limita-se ao saldo disponível na conta do
+              A responsabilidade total da Palpite201, em qualquer hipótese, limita-se ao saldo disponível na conta do
               usuário no momento do evento que originou a disputa.
             </p>
           </Section>
@@ -141,13 +144,13 @@ export default function TermosPage() {
           <Section title='9. Propriedade intelectual'>
             <p>
               Todo o conteúdo da plataforma (marcas, layout, software, regulamentos, banners) é de propriedade da
-              201bet ou de seus licenciantes. É proibida a reprodução, cópia ou distribuição sem autorização expressa.
+              Palpite201 ou de seus licenciantes. É proibida a reprodução, cópia ou distribuição sem autorização expressa.
             </p>
           </Section>
 
           <Section title='10. Jogo responsável'>
             <p>
-              A 201bet oferece ferramentas de autocontrole: limites de depósito, limites de aposta, pausa temporária e
+              A Palpite201 oferece ferramentas de autocontrole: limites de depósito, limites de aposta, pausa temporária e
               autoexclusão. Apostas devem ser entretenimento, não fonte de renda. Em caso de sinais de ludopatia, busque
               ajuda — <strong>CVV: 188</strong> (24h, gratuito).
             </p>
@@ -159,7 +162,7 @@ export default function TermosPage() {
               14.790/2023 e pelas normativas da Secretaria de Prêmios e Apostas (SPA/SECAP) do Ministério da Fazenda.
             </p>
             <p>
-              Fica eleito o foro da Comarca da sede da 201bet Brasil LTDA para dirimir quaisquer controvérsias
+              Fica eleito o foro da Comarca da sede da Palpite201 Brasil LTDA para dirimir quaisquer controvérsias
               decorrentes destes Termos, salvo direito de o consumidor optar pelo seu domicílio.
             </p>
           </Section>
@@ -173,7 +176,7 @@ export default function TermosPage() {
         </article>
 
         <div className='mt-8 rounded-2xl border border-white/10 bg-[#101525] p-5 text-xs text-white/40'>
-          Documento mantido pela 201bet Brasil LTDA. Em caso de divergência entre versões em diferentes idiomas, a
+          Documento mantido pela Palpite201 Brasil LTDA. Em caso de divergência entre versões em diferentes idiomas, a
           versão em português prevalece.
         </div>
       </div>

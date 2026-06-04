@@ -59,7 +59,13 @@ export function QuickBetPanel({
 }: QuickBetPanelProps) {
   const [side, setSide] = React.useState<QuickBetSide | null>(null);
   const [stake, setStake] = React.useState<number>(minBet);
+  // Texto cru do input: deixa digitar centavos sem o número normalizar de volta.
+  const [stakeText, setStakeText] = React.useState<string>(String(minBet));
   const [submitting, setSubmitting] = React.useState(false);
+
+  React.useEffect(() => {
+    setStakeText((cur) => (parseFloat(cur.replace(',', '.')) === stake ? cur : stake > 0 ? String(stake) : ''));
+  }, [stake]);
 
   const chosenDriver = side === 'LEFT' ? duel.leftDriver : side === 'RIGHT' ? duel.rightDriver : null;
   const chosenOdd = chosenDriver?.odd ?? 0;
@@ -154,22 +160,23 @@ export function QuickBetPanel({
                       R$
                     </span>
                     <input
-                      type='number'
-                      min={minBet}
-                      step={1}
-                      value={Number.isFinite(stake) ? stake : ''}
+                      type='text'
+                      inputMode='decimal'
+                      value={stakeText}
+                      placeholder='0'
+                      onFocus={(e) => e.currentTarget.select()}
                       onChange={(e) => {
-                        const v = parseFloat(e.target.value);
+                        const clean = e.target.value.replace(/[^\d.,]/g, '');
+                        setStakeText(clean);
+                        const v = parseFloat(clean.replace(',', '.'));
                         setStake(Number.isFinite(v) ? v : 0);
                       }}
                       onBlur={() => setStake((s) => Math.max(minBet, s || minBet))}
                       className='
                         w-full h-11 rounded-xl bg-[#0b0e18] border border-white/10
                         pl-10 pr-3 font-mono text-[#f1f3f8] tabular-nums text-lg
+                        placeholder:text-[#767b8a]/60
                         focus:outline-none focus:border-[#ffb028]/60 focus:ring-2 focus:ring-[rgba(255,176,40,0.18)]
-                        [appearance:textfield]
-                        [&::-webkit-outer-spin-button]:appearance-none
-                        [&::-webkit-inner-spin-button]:appearance-none
                       '
                       aria-label='Valor da aposta em reais'
                     />
@@ -241,7 +248,7 @@ export function QuickBetPanel({
                 </button>
 
                 <p className='mt-3 text-[11px] leading-relaxed text-[#767b8a]'>
-                  * Pari-mutuel: o pote total é dividido entre quem acertar. Valor final só sai no fechamento — pode
+                  * O pote total é dividido entre quem acertar. Valor final só sai no fechamento — pode
                   subir conforme o outro lado aposta. Use com critério. <span className='text-[#b8bcc9]'>+18</span>
                 </p>
               </div>

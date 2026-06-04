@@ -1,8 +1,8 @@
 import { MainNav } from '@/components/site/main-nav';
 
 export const metadata = {
-  title: 'Política de Privacidade — 201bet',
-  description: 'Como a 201bet coleta, usa, armazena e protege seus dados pessoais nos termos da LGPD (Lei 13.709/2018).',
+  title: 'Política de Privacidade — Palpite201',
+  description: 'Como a Palpite201 coleta, usa, armazena e protege seus dados pessoais nos termos da LGPD (Lei 13.709/2018).',
 };
 
 export default function PrivacidadePage() {
@@ -20,7 +20,7 @@ export default function PrivacidadePage() {
           </div>
           <h1 className='text-3xl font-bold tracking-tight sm:text-4xl'>Política de Privacidade</h1>
           <p className='mt-3 text-sm text-white/60 sm:text-base'>
-            A 201bet trata seus dados pessoais com transparência e segurança, em conformidade com a{' '}
+            A Palpite201 trata seus dados pessoais com transparência e segurança, em conformidade com a{' '}
             <strong>Lei Geral de Proteção de Dados Pessoais (LGPD — Lei nº 13.709/2018)</strong>. Esta política descreve
             quais dados coletamos, por que coletamos, como protegemos e quais são os seus direitos como titular.
           </p>
@@ -29,7 +29,7 @@ export default function PrivacidadePage() {
         <article className='mt-6 space-y-6'>
           <Section title='1. Quem é o controlador'>
             <p>
-              <strong>201bet Brasil LTDA</strong> é a controladora dos dados pessoais
+              <strong>Palpite201 Brasil LTDA</strong> é a controladora dos dados pessoais
               tratados nesta plataforma. Você pode entrar em contato com o nosso Encarregado de Dados (DPO) pelo e-mail{' '}
               <a className='text-[#d4a843] hover:underline' href='mailto:dpo@201bet.com'>dpo@201bet.com</a>.
             </p>
@@ -140,7 +140,7 @@ export default function PrivacidadePage() {
 
           <Section title='10. Crianças e adolescentes'>
             <p>
-              A 201bet é uma plataforma <strong>exclusivamente para maiores de 18 anos</strong>. Não coletamos
+              A Palpite201 é uma plataforma <strong>exclusivamente para maiores de 18 anos</strong>. Não coletamos
               intencionalmente dados de menores. Caso identifiquemos um cadastro de menor, a conta é encerrada e os
               dados eliminados.
             </p>

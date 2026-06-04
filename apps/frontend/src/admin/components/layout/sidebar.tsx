@@ -24,7 +24,7 @@ export const Sidebar: React.FC<Props> = ({ collapsed, setCollapsed, openCmdK }) 
         </div>
         {!collapsed && (
           <div className="flex-1 min-w-0">
-            <div className="font-display text-[15px] font-bold leading-tight">201<span className="accent-text">bet</span></div>
+            <div className="font-display text-[15px] font-bold leading-tight">Palpite<span className="accent-text">201</span></div>
             <div className="text-[10.5px] tracking-[0.14em] uppercase text-[color:var(--text-3)] font-semibold">Admin Console</div>
           </div>
         )}

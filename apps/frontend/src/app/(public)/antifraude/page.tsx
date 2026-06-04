@@ -1,8 +1,8 @@
 import { MainNav } from '@/components/site/main-nav';
 
 export const metadata = {
-  title: 'Política Antifraude — 201bet',
-  description: 'Como a 201bet detecta, previne e age sobre fraudes, lavagem de dinheiro, combinação de resultados e abuso de plataforma.',
+  title: 'Política Antifraude — Palpite201',
+  description: 'Como a Palpite201 detecta, previne e age sobre fraudes, lavagem de dinheiro, combinação de resultados e abuso de plataforma.',
 };
 
 export default function AntifraudePage() {
@@ -20,7 +20,7 @@ export default function AntifraudePage() {
           </div>
           <h1 className='text-3xl font-bold tracking-tight sm:text-4xl'>Política Antifraude</h1>
           <p className='mt-3 text-sm text-white/60 sm:text-base'>
-            A 201bet adota uma postura de <strong>tolerância zero</strong> com fraude, manipulação de resultados,
+            A Palpite201 adota uma postura de <strong>tolerância zero</strong> com fraude, manipulação de resultados,
             lavagem de dinheiro e qualquer comportamento que comprometa a integridade da plataforma ou prejudique
             outros apostadores. Esta política descreve o que monitoramos, como agimos e o que esperamos do
             usuário.
@@ -38,7 +38,7 @@ export default function AntifraudePage() {
               <li><strong>Bots e automação:</strong> uso de scripts para apostar, capturar odds ou explorar latência.</li>
               <li><strong>Lavagem de dinheiro:</strong> depósitos seguidos de saques sem padrão real de aposta (smurfing, layering).</li>
               <li><strong>Chargeback fraudulento:</strong> disputar depósito legítimo após uso do saldo.</li>
-              <li><strong>Phishing/engenharia social</strong> contra outros usuários ou contra a equipe da 201bet.</li>
+              <li><strong>Phishing/engenharia social</strong> contra outros usuários ou contra a equipe da Palpite201.</li>
               <li><strong>Abuso de bônus</strong> ou de campanhas promocionais.</li>
             </ul>
           </Section>
@@ -83,7 +83,7 @@ export default function AntifraudePage() {
 
           <Section title='4. Estorno e retenção de saldo'>
             <p>
-              Quando fraude é confirmada, a 201bet pode reter o saldo da conta para apuração e, conforme o caso,
+              Quando fraude é confirmada, a Palpite201 pode reter o saldo da conta para apuração e, conforme o caso,
               estornar apostas, bloquear saques e aplicar as medidas previstas nos{' '}
               <a className='text-[#d4a843] hover:underline' href='/termos'>Termos de Uso</a>.
             </p>
@@ -95,7 +95,7 @@ export default function AntifraudePage() {
 
           <Section title='5. Comunicação obrigatória às autoridades'>
             <p>
-              A 201bet é obrigada por lei a comunicar operações suspeitas ao <strong>COAF</strong> (Conselho de
+              A Palpite201 é obrigada por lei a comunicar operações suspeitas ao <strong>COAF</strong> (Conselho de
               Controle de Atividades Financeiras), à <strong>SPA/SECAP</strong> (Secretaria de Prêmios e Apostas
               do Ministério da Fazenda) e a outras autoridades quando exigido — inclusive sem aviso prévio ao
               titular, nos termos da legislação.
@@ -107,7 +107,7 @@ export default function AntifraudePage() {
 
           <Section title='6. Combinação de resultados (match-fixing)'>
             <p>
-              A 201bet trabalha em parceria com organizadores de corridas, conselhos regionais e administradores de
+              A Palpite201 trabalha em parceria com organizadores de corridas, conselhos regionais e administradores de
               Listas Brasil para identificar tentativas de manipulação. Apostas suspeitas em embates de baixa
               liquidez são sinalizadas em tempo real e podem ser <strong>suspensas, anuladas e estornadas</strong>{' '}
               antes da liquidação.
@@ -121,7 +121,7 @@ export default function AntifraudePage() {
 
           <Section title='7. Bônus e promoções'>
             <p>
-              Bônus oferecidos pela 201bet têm regras de rollover e elegibilidade descritas no momento da
+              Bônus oferecidos pela Palpite201 têm regras de rollover e elegibilidade descritas no momento da
               concessão. É proibido:
             </p>
             <ul className='list-disc space-y-2 pl-5'>
@@ -147,7 +147,7 @@ export default function AntifraudePage() {
               </li>
             </ul>
             <p>
-              Denúncias são tratadas com confidencialidade e podem ser feitas anonimamente. A 201bet não retalia
+              Denúncias são tratadas com confidencialidade e podem ser feitas anonimamente. A Palpite201 não retalia
               denunciantes de boa-fé.
             </p>
           </Section>
@@ -157,9 +157,9 @@ export default function AntifraudePage() {
               <li>Use uma senha forte e única, ative o 2FA.</li>
               <li>Não compartilhe credenciais nem deixe a conta logada em dispositivos públicos.</li>
               <li>Cadastre a chave PIX no seu próprio CPF.</li>
-              <li>Desconfie de mensagens pedindo seus dados de login ou códigos 2FA — a 201bet nunca solicita esses dados por e-mail, WhatsApp ou telefone.</li>
+              <li>Desconfie de mensagens pedindo seus dados de login ou códigos 2FA — a Palpite201 nunca solicita esses dados por e-mail, WhatsApp ou telefone.</li>
               <li>Acesse a plataforma apenas pelos domínios oficiais.</li>
-              <li>Em caso de e-mail estranho de "suporte 201bet", confirme em{' '}
+              <li>Em caso de e-mail estranho de "suporte Palpite201", confirme em{' '}
                 <a className='text-[#d4a843] hover:underline' href='mailto:suporte@201bet.com'>suporte@201bet.com</a>{' '}
                 antes de agir.
               </li>
