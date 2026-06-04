@@ -282,16 +282,13 @@ export function MainNav() {
               className='flex items-center transition-opacity hover:opacity-80 shrink-0'
               aria-label='201bet — Início'
             >
-              {/* A imagem tem padding transparente interno significativo, então o
-                  container precisa ser bem maior que parece "razoável" pra arte
-                  visível ficar do tamanho certo. Header também cresceu pra acomodar. */}
               <Image
-                src='/images/logoSemFundo.png'
+                src='/images/logopalpite.png'
                 alt='201bet'
-                width={360}
+                width={154}
                 height={104}
                 priority
-                sizes='(max-width: 640px) 220px, (max-width: 1024px) 260px, 300px'
+                sizes='120px'
                 className='h-16 sm:h-20 md:h-20 w-auto'
               />
             </Link>

@@ -164,7 +164,7 @@ export class MailProcessor extends WorkerHost {
     const base = this.config
       .get('FRONTEND_URL', { infer: true })
       .replace(/\/$/, '');
-    return `${base}/images/logo.png`;
+    return `${base}/images/logopalpite.png`;
   }
 
   private formatDateTime(iso: string): string {

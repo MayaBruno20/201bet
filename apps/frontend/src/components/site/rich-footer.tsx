@@ -152,9 +152,9 @@ export function RichFooter({
           <div>
             <Link href='/' className='inline-flex items-center mb-3 transition-opacity hover:opacity-80'>
               <Image
-                src='/images/logoSemFundo.png'
+                src='/images/logopalpite.png'
                 alt='201bet'
-                width={240}
+                width={100}
                 height={68}
                 className='h-14 sm:h-16 w-auto'
               />
