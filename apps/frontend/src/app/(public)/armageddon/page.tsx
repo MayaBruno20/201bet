@@ -1,0 +1,269 @@
+'use client';
+
+/**
+ * Hub público do Armageddon (Fase 1).
+ * - Live do YouTube embeddada (event.streamUrl).
+ * - Hero cinematográfico + broadcast bar ao vivo.
+ * - Chaveamento que mostra SÓ os embates já formados (ambos os pilotos definidos)
+ *   ou já auditados — sem slots vazios das rodadas futuras. As baterias seguintes
+ *   aparecem conforme as anteriores vão sendo auditadas.
+ * A aposta reaproveita o fluxo existente via deep-link (/apostas?duelId=).
+ */
+
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
+import { MainNav } from '@/components/site/main-nav';
+import { BettingExperience } from '@/components/apostas/betting-board';
+import { getPublicApiUrl } from '@/lib/env-public';
+
+const apiUrl = getPublicApiUrl();
+
+/** Resolve banner relativo (/api/images/:id) para URL absoluta do backend. */
+function resolveBanner(url?: string | null): string | undefined {
+  if (!url) return undefined;
+  if (/^(https?:)?\/\//.test(url) || url.startsWith('data:')) return url;
+  const origin = apiUrl.replace(/\/api\/?$/, '');
+  return url.startsWith('/') ? `${origin}${url}` : `${origin}/${url}`;
+}
+
+type ArmaMatchup = {
+  id: string;
+  roundNumber: number;
+  order: number;
+  stage: 'FIRST_DRAW' | 'SECOND_DRAW' | null;
+  bracketKey: string | null;
+  isThirdPlace?: boolean;
+  isFinal?: boolean;
+  leftDriverName: string | null;
+  rightDriverName: string | null;
+  winnerSide: 'LEFT' | 'RIGHT' | null;
+  marketOpen: boolean;
+  duelId: string | null;
+};
+type ArmaEvent = {
+  id: string;
+  name: string;
+  status: string;
+  bracketType?: string;
+  bannerUrl?: string | null;
+  streamUrl?: string | null;
+  eventId?: string | null;
+  scheduledAt: string;
+  endsAt?: string | null;
+  matchups: ArmaMatchup[];
+};
+
+/** Só embates já formados (2 pilotos) ou já decididos entram na visão pública. */
+const hasContent = (m: ArmaMatchup) => (!!m.leftDriverName && !!m.rightDriverName) || !!m.winnerSide;
+
+function roundLabel(m: ArmaMatchup): string {
+  if (m.isThirdPlace) return 'Disputa de 3º lugar';
+  if (m.isFinal) return 'Grande Final';
+  if (m.stage === 'SECOND_DRAW') {
+    const map: Record<number, string> = { 1: 'Top 32', 2: 'Top 16', 3: 'Quartas', 4: 'Semifinal', 5: 'Final' };
+    return map[m.roundNumber] ?? `Rodada ${m.roundNumber}`;
+  }
+  return `Rodada ${m.roundNumber}`;
+}
+
+/** Converte um link do YouTube (watch / youtu.be / live / embed) para URL de embed. */
+function youtubeEmbed(url?: string | null): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url.trim());
+    let id = '';
+    if (u.hostname.includes('youtu.be')) id = u.pathname.slice(1);
+    else if (u.pathname.startsWith('/live/')) id = u.pathname.split('/live/')[1] ?? '';
+    else if (u.pathname.startsWith('/embed/')) id = u.pathname.split('/embed/')[1] ?? '';
+    else id = u.searchParams.get('v') ?? '';
+    id = (id || '').split('/')[0].split('?')[0];
+    if (!id) return null;
+    return `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&rel=0&playsinline=1`;
+  } catch {
+    return null;
+  }
+}
+
+export default function ArmageddonHubPage() {
+  const [event, setEvent] = useState<ArmaEvent | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      fetch(`${apiUrl}/armageddon`, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((data: ArmaEvent[]) => {
+          if (!alive) return;
+          setEvent(Array.isArray(data) ? data.find((e) => e.status === 'IN_PROGRESS') ?? null : null);
+          setLoading(false);
+        })
+        .catch(() => { if (alive) setLoading(false); });
+    };
+    load();
+    const id = setInterval(load, 20_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  const live = useMemo(
+    () => (event?.matchups ?? []).filter((m) => m.marketOpen && !m.winnerSide && hasContent(m)),
+    [event],
+  );
+  const settledCount = useMemo(() => (event?.matchups ?? []).filter((m) => m.winnerSide).length, [event]);
+  const embed = youtubeEmbed(event?.streamUrl);
+
+  // Chaveamento: agrupa por chave/fase → rodada, mas SÓ embates com conteúdo.
+  const groups = useMemo(() => {
+    const byKey = new Map<string, ArmaMatchup[]>();
+    for (const m of event?.matchups ?? []) {
+      if (!hasContent(m)) continue; // esconde slots vazios das rodadas futuras
+      const key = m.stage === 'SECOND_DRAW' ? '2º Sorteio · Top 32' : m.bracketKey ? `Chave ${m.bracketKey}` : 'Embates';
+      (byKey.get(key) ?? byKey.set(key, []).get(key)!).push(m);
+    }
+    return Array.from(byKey.entries()).map(([label, ms]) => {
+      const byRound = new Map<number, ArmaMatchup[]>();
+      for (const m of ms) (byRound.get(m.roundNumber) ?? byRound.set(m.roundNumber, []).get(m.roundNumber)!).push(m);
+      const rounds = Array.from(byRound.entries())
+        .map(([rn, list]) => ({ rn, label: roundLabel(list[0]), list: list.sort((a, b) => a.order - b.order) }))
+        .sort((a, b) => a.rn - b.rn);
+      return { label, rounds };
+    });
+  }, [event]);
+
+  return (
+    <main className="min-h-screen bg-[#090b11] text-white">
+      <MainNav />
+
+      {loading ? (
+        <div className="mx-auto max-w-7xl px-4 py-24 text-center text-white/40">Carregando…</div>
+      ) : !event ? (
+        <NoEventState />
+      ) : (
+        <>
+          {/* ── BROADCAST BAR ── */}
+          <div className="sticky top-0 z-30 border-b border-white/10 bg-[#0b0e18]/90 backdrop-blur-md">
+            <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8 py-2 text-[12px]">
+              <span className="inline-flex items-center gap-1.5 font-bold uppercase tracking-[0.16em] text-red-300">
+                <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" /><span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" /></span>
+                Ao vivo
+              </span>
+              <span className="font-semibold truncate">{event.name}</span>
+              <span className="ml-auto flex items-center gap-4 text-white/55 whitespace-nowrap">
+                <span><b className="text-red-400">{live.length}</b> ao vivo</span>
+                <span className="hidden sm:inline"><b className="text-white">{settledCount}</b> auditados</span>
+              </span>
+            </div>
+          </div>
+
+          {/* ── HERO ── */}
+          <section className="relative overflow-hidden border-b border-white/5">
+            {event.bannerUrl && (
+              <div className="absolute inset-0 -z-10 bg-cover bg-center opacity-25" style={{ backgroundImage: `url(${resolveBanner(event.bannerUrl)})` }} />
+            )}
+            <div className="absolute inset-0 -z-10 bg-gradient-to-b from-[#090b11]/70 via-[#090b11]/85 to-[#090b11]" />
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
+              <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight">
+                <span className="bg-gradient-to-br from-[#ffd479] via-[#ffb028] to-[#ff8a2a] bg-clip-text text-transparent">{event.name}</span>
+              </h1>
+              <p className="mt-3 max-w-xl text-sm sm:text-base text-white/55">
+                O maior evento de arrancada do mundo. Assista à transmissão e aposte em tempo real — tudo num lugar só.
+              </p>
+            </div>
+          </section>
+
+          {/* ── LIVE STREAM (YouTube) ── */}
+          {embed && (
+            <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-8">
+              <div className="overflow-hidden rounded-3xl border border-white/10 bg-black shadow-[0_0_60px_-15px_rgba(255,176,40,0.25)]">
+                <div className="relative w-full" style={{ aspectRatio: '16 / 9' }}>
+                  <iframe
+                    src={embed}
+                    title="Transmissão ao vivo do Armageddon"
+                    className="absolute inset-0 h-full w-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* ── APOSTAS AO VIVO (inline, mesma máquina do /apostas) ── */}
+          <section id="ao-vivo" className="pt-4">
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+              <h2 className="text-lg font-bold">Apostas ao vivo</h2>
+              <p className="text-[13px] text-white/45">Aposte direto aqui — escolha os pilotos e monte seu bilhete (multi-aposta). Cotação pari-mutuel.</p>
+            </div>
+            <BettingExperience lockedEventId={event.eventId ?? undefined} hideHeader hideFeatured />
+          </section>
+
+          {/* ── CHAVEAMENTO (só o que já foi formado/auditado) ── */}
+          <section id="chaveamento" className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pb-16">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">Chaveamento</h2>
+              <span className="text-[12px] text-white/40">As próximas baterias aparecem conforme são auditadas</span>
+            </div>
+            {groups.length === 0 ? (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center text-white/45 text-sm">
+                O chaveamento começa assim que os primeiros embates forem definidos.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {groups.map((g) => (
+                  <div key={g.label} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                    <div className="font-display text-sm font-bold text-white/80 mb-3">{g.label}</div>
+                    <div className="space-y-3">
+                      {g.rounds.map((r) => (
+                        <div key={r.rn}>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35 mb-1.5">
+                            {r.label} <span className="text-white/20">· {r.list.filter((m) => m.winnerSide).length}/{r.list.length}</span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {r.list.map((m) => <MatchupRow key={m.id} m={m} />)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+    </main>
+  );
+}
+
+function MatchupRow({ m }: { m: ArmaMatchup }) {
+  const settled = !!m.winnerSide;
+  return (
+    <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[12.5px]"
+      style={{ background: settled ? 'rgba(16,185,129,0.06)' : m.marketOpen ? 'rgba(255,176,40,0.06)' : 'transparent' }}>
+      <span className={`flex-1 truncate ${m.winnerSide === 'LEFT' ? 'font-bold text-emerald-300' : ''}`}>
+        {m.winnerSide === 'LEFT' && '🏆 '}{m.leftDriverName ?? '—'}
+      </span>
+      <span className="text-white/25 text-[10px]">vs</span>
+      <span className={`flex-1 truncate text-right ${m.winnerSide === 'RIGHT' ? 'font-bold text-emerald-300' : ''}`}>
+        {m.rightDriverName ?? '—'}{m.winnerSide === 'RIGHT' && ' 🏆'}
+      </span>
+      {m.marketOpen && !settled && m.duelId && (
+        <Link href={`/apostas?duelId=${m.duelId}`} className="shrink-0 rounded-md bg-[#ffb028]/15 px-2 py-0.5 text-[10px] font-bold text-[#ffb028]">apostar</Link>
+      )}
+    </div>
+  );
+}
+
+function NoEventState() {
+  return (
+    <div className="mx-auto max-w-2xl px-4 py-24 text-center">
+      <div className="text-5xl mb-4">🏁</div>
+      <h1 className="text-2xl font-bold">Nenhum Armageddon ao vivo agora</h1>
+      <p className="mt-2 text-white/50">O maior evento de arrancada do mundo volta em breve. Enquanto isso, há outras corridas rolando.</p>
+      <div className="mt-6 flex justify-center gap-3">
+        <Link href="/apostas" className="rounded-2xl bg-white px-6 py-3 text-sm font-bold text-black transition hover:scale-[1.03]">Ver apostas</Link>
+        <Link href="/eventos" className="rounded-2xl border border-white/15 bg-white/5 px-6 py-3 text-sm font-semibold text-white/80 transition hover:bg-white/10">Próximos eventos</Link>
+      </div>
+    </div>
+  );
+}

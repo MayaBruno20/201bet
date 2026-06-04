@@ -456,4 +456,99 @@ export class SettlementService {
     return { marketId, status: 'VOIDED', refundedBets: market.odds.flatMap((o) => o.betItems).length };
   }
 
+  /**
+   * ESTORNO DE SETTLE (reset). Reverte um mercado JÁ LIQUIDADO (SETTLED):
+   *  - devolve o STAKE a todos (ganhadores e perdedores) — BET_REFUND;
+   *  - desfaz o PAYOUT dos ganhadores (pode deixar saldo negativo — política do dono);
+   *  - marca as comissões de afiliado como `reversed` (NÃO mexe no saldo do afiliado);
+   *  - "des-liquida" o mercado (volta a OPEN), reseta pool e reverte o vencedor no matchup.
+   *
+   * Idempotente pelo status sob lock: SETTLED→OPEN é atômico; um retry encontra
+   * OPEN e sai sem fazer nada. NÃO usar em mercado não-SETTLED (use voidMarket).
+   */
+  async refundSettledMarket(marketId: string, audit: AuditContext = {}) {
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+        SELECT id, status FROM "Market" WHERE id = ${marketId} FOR UPDATE
+      `.then((rows) => rows[0] ?? null);
+      if (!locked) throw new NotFoundException('Mercado não encontrado');
+      if (locked.status !== 'SETTLED') {
+        return { marketId, skipped: true as const }; // já estornado / não-liquidado
+      }
+
+      const market = await tx.market.findUnique({
+        where: { id: marketId },
+        include: {
+          odds: { include: { betItems: { include: { bet: { include: { user: { include: { wallet: true } } } } } } } },
+        },
+      });
+      if (!market) throw new NotFoundException('Mercado não encontrado');
+
+      // Bets liquidadas (WON/LOST) deste mercado, deduplicadas.
+      const seen = new Set<string>();
+      const bets: Array<{ betId: string; stake: number; potentialWin: number; won: boolean; walletId: string | null }> = [];
+      for (const odd of market.odds) {
+        for (const it of odd.betItems) {
+          const b = it.bet;
+          if (seen.has(b.id)) continue;
+          if (b.status !== BetStatus.WON && b.status !== BetStatus.LOST) continue;
+          seen.add(b.id);
+          bets.push({
+            betId: b.id,
+            stake: Number(b.stake),
+            potentialWin: Number(b.potentialWin),
+            won: b.status === BetStatus.WON,
+            walletId: b.user.wallet?.id ?? null,
+          });
+        }
+      }
+
+      let refundedStake = 0;
+      let reversedPayout = 0;
+      for (const b of bets) {
+        // 1) devolve o stake a todos
+        if (b.walletId) {
+          await tx.wallet.update({ where: { id: b.walletId }, data: { balance: { increment: new Prisma.Decimal(b.stake.toFixed(4)) } } });
+          await tx.walletTransaction.create({ data: { walletId: b.walletId, type: WalletTransactionType.BET_REFUND, amount: new Prisma.Decimal(b.stake.toFixed(4)), reference: b.betId } });
+        }
+        refundedStake += b.stake;
+        // 2) desfaz o payout dos ganhadores (saldo pode ficar negativo)
+        if (b.won && b.potentialWin > 0 && b.walletId) {
+          await tx.wallet.update({ where: { id: b.walletId }, data: { balance: { decrement: new Prisma.Decimal(b.potentialWin.toFixed(4)) } } });
+          await tx.walletTransaction.create({ data: { walletId: b.walletId, type: WalletTransactionType.ADJUSTMENT, amount: new Prisma.Decimal((-b.potentialWin).toFixed(4)), reference: `reversal-${b.betId}` } });
+          reversedPayout += b.potentialWin;
+        }
+        await tx.bet.update({ where: { id: b.betId }, data: { status: BetStatus.REFUNDED, potentialWin: new Prisma.Decimal('0') } });
+      }
+
+      // 3) comissões de afiliado: só marca revertidas (não mexe no saldo)
+      await tx.affiliateCommission.updateMany({ where: { marketId, reversed: false }, data: { reversed: true } });
+
+      // 4) des-liquida o mercado + reabre odds
+      await tx.market.update({ where: { id: marketId }, data: { status: MarketStatus.OPEN, winnerOddId: null, settledAt: null } });
+      await tx.odd.updateMany({ where: { marketId }, data: { status: OddStatus.ACTIVE } });
+
+      // 5) reseta pool e reverte a propagação do vencedor no matchup (lista/armageddon)
+      if (market.duelId) {
+        await tx.duelPoolState.updateMany({ where: { duelId: market.duelId }, data: { leftPool: 0, rightPool: 0, leftTickets: 0, rightTickets: 0 } });
+        await tx.armageddonMatchup.updateMany({ where: { duelId: market.duelId, winnerSide: { not: null } }, data: { winnerSide: null, settledAt: null } });
+        await tx.listMatchup.updateMany({ where: { duelId: market.duelId, winnerSide: { not: null } }, data: { winnerSide: null, settledAt: null } });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: audit.actorUserId,
+          action: 'REFUND_SETTLED_MARKET',
+          entity: 'Market',
+          entityId: marketId,
+          payload: { betsRefunded: bets.length, refundedStake, reversedPayout } as Prisma.InputJsonValue,
+          ipAddress: audit.ipAddress,
+          userAgent: audit.userAgent,
+        },
+      });
+
+      return { marketId, betsRefunded: bets.length, refundedStake, reversedPayout, skipped: false as const };
+    }, { timeout: 60_000, maxWait: 5_000 });
+  }
+
 }

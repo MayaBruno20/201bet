@@ -6,12 +6,17 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
-import { ArmageddonStatus, ListFormat } from '@prisma/client';
+import { ArmageddonBracketType, ArmageddonStatus, ListFormat } from '@prisma/client';
 
 export class CreateArmageddonEventDto {
   @IsString()
   @MaxLength(160)
   name: string;
+
+  // LADDER (legado) ou ELIMINATION_144 (torneio 144→Top32→campeão + 3º lugar).
+  @IsOptional()
+  @IsEnum(ArmageddonBracketType)
+  bracketType?: ArmageddonBracketType;
 
   @IsOptional()
   @IsString()
@@ -22,6 +27,12 @@ export class CreateArmageddonEventDto {
   @IsString()
   @MaxLength(500)
   bannerUrl?: string;
+
+  // Link da transmissão ao vivo (YouTube) — embeddado no hub público.
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  streamUrl?: string;
 
   @IsOptional()
   @IsBoolean()
@@ -59,6 +70,12 @@ export class UpdateArmageddonEventDto {
   @IsString()
   @MaxLength(500)
   bannerUrl?: string;
+
+  // Link da transmissão ao vivo (YouTube) — embeddado no hub público.
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  streamUrl?: string;
 
   @IsOptional()
   @IsBoolean()

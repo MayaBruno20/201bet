@@ -6,7 +6,22 @@
  *   await api.patch(ENDPOINTS.USERS.update(userId), { name: 'novo' });
  */
 
+/** Monta a querystring de abrir/fechar mercados do Armageddon (chave/rodada/fase). */
+function armaMarketQuery(opts?: { bracketKey?: string; roundNumber?: number; stage?: string }): string {
+  if (!opts) return '';
+  const qs = new URLSearchParams();
+  if (opts.bracketKey) qs.set('bracketKey', opts.bracketKey);
+  if (opts.roundNumber != null) qs.set('roundNumber', String(opts.roundNumber));
+  if (opts.stage) qs.set('stage', opts.stage);
+  const s = qs.toString();
+  return s ? `?${s}` : '';
+}
+
 export const ENDPOINTS = {
+  // Upload de imagem persistido no banco → devolve { id, url: "/api/images/:id" }.
+  IMAGES: {
+    upload: '/admin/images',
+  },
   AUTH: {
     login: '/admin/auth/login',
     login2fa: '/admin/auth/login/2fa',
@@ -145,12 +160,24 @@ export const ENDPOINTS = {
     detail: (id: string) => `/admin/armageddon/${id}`,
     update: (id: string) => `/admin/armageddon/${id}`,
     delete: (id: string) => `/admin/armageddon/${id}`,
+    financialSummary: (id: string) => `/admin/armageddon/${id}/financial-summary`,
+    driverSearch: (q: string) => `/admin/armageddon/drivers/search?q=${encodeURIComponent(q)}`,
     roster: {
       importFromLists: (eventId: string) => `/admin/armageddon/${eventId}/roster/import-from-lists`,
       upsert: (eventId: string) => `/admin/armageddon/${eventId}/roster`,
       clear: (eventId: string) => `/admin/armageddon/${eventId}/roster`,
       delete: (eventId: string, rosterId: string) => `/admin/armageddon/${eventId}/roster/${rosterId}`,
     },
+    // Eliminação 144 (5 chaves → Top 32 → campeão + 3º lugar)
+    generateFirstDraw: (eventId: string) => `/admin/armageddon/${eventId}/generate-first-draw`,
+    generateSecondDraw: (eventId: string) => `/admin/armageddon/${eventId}/generate-second-draw`,
+    clearKeys: (eventId: string) => `/admin/armageddon/${eventId}/clear-keys`,
+    resetEvent: (eventId: string) => `/admin/armageddon/${eventId}/reset`,
+    secondDrawLayout: (eventId: string) => `/admin/armageddon/${eventId}/second-draw-layout`,
+    openAllReady: (eventId: string, opts?: { bracketKey?: string; roundNumber?: number; stage?: string }) =>
+      `/admin/armageddon/${eventId}/open-all-ready${armaMarketQuery(opts)}`,
+    closeAllOpen: (eventId: string, opts?: { bracketKey?: string; roundNumber?: number; stage?: string }) =>
+      `/admin/armageddon/${eventId}/close-all-open${armaMarketQuery(opts)}`,
     matchups: {
       generate: (eventId: string) => `/admin/armageddon/${eventId}/generate-matchups`,
       toggleMarket: (matchupId: string) => `/admin/armageddon/matchups/${matchupId}/market`,

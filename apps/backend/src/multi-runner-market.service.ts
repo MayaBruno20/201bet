@@ -9,6 +9,7 @@ import {
 import { MarketStatus, MarketType, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from './database/prisma.service';
+import { ActivityService } from './common/activity.service';
 import { HOUSE_MARGIN_PERCENT } from './market.service';
 
 type RunnerState = {
@@ -75,7 +76,10 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
   private refreshTicker?: NodeJS.Timeout;
   private states = new Map<string, MultiRunnerEngineState>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activity: ActivityService,
+  ) {}
 
   async onModuleInit() {
     await this.safeRefreshStatesFromDatabase();
@@ -85,6 +89,9 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
     }, TICK_MS);
 
     this.refreshTicker = setInterval(() => {
+      // Guard de idle (igual MarketService): sem atividade e sem mercado aberto
+      // conhecido → pula o banco para a Neon hibernar.
+      if (!this.activity.isActive() && this.states.size === 0) return;
       void this.safeRefreshStatesFromDatabase();
     }, REFRESH_FROM_DB_MS);
   }
@@ -297,16 +304,31 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async safeRefreshStatesFromDatabase() {
+    // O refresh roda num setInterval (fire-and-forget). NENHUM erro aqui pode
+    // derrubar o processo — no pior caso pulamos este tick e tentamos no próximo.
     try {
       await this.refreshStatesFromDatabase();
     } catch (e) {
-      if (e instanceof PrismaClientKnownRequestError && e.code === 'P2021') {
-        this.logger.error(
-          `Tabela em falta no Postgres (${JSON.stringify((e as PrismaClientKnownRequestError).meta)}). Execute: npx prisma migrate deploy`,
-        );
-        return;
+      if (e instanceof PrismaClientKnownRequestError) {
+        if (e.code === 'P2021') {
+          this.logger.error(
+            `Tabela em falta no Postgres (${JSON.stringify(e.meta)}). Execute: npx prisma migrate deploy`,
+          );
+          return;
+        }
+        if (e.code === 'P2024') {
+          // Pool de conexões esgotado/lento (Neon sob carga). Transitório —
+          // mantém o estado atual em memória e tenta de novo no próximo tick.
+          this.logger.warn(
+            'Refresh do multi-runner pulou um tick: pool de conexões esgotado (P2024). Estado mantido em memória.',
+          );
+          return;
+        }
       }
-      throw e;
+      // Qualquer outra falha transitória de DB/rede: loga e segue (sem crashar).
+      this.logger.warn(
+        `Refresh do multi-runner falhou neste tick (ignorado): ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 

@@ -15,6 +15,7 @@ import {
 } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from './database/prisma.service';
+import { ActivityService } from './common/activity.service';
 
 type Side = 'LEFT' | 'RIGHT';
 
@@ -175,7 +176,10 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
   private refreshTicker?: NodeJS.Timeout;
   private states = new Map<string, EngineState>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activity: ActivityService,
+  ) {}
 
   async onModuleInit() {
     await this.safeRefreshStatesFromDatabase();
@@ -185,6 +189,10 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     }, TICK_MS);
 
     this.refreshTicker = setInterval(() => {
+      // Guard de idle: sem cliente WS, sem request HTTP recente E sem mercado
+      // aberto conhecido → pula o acesso ao banco para a Neon hibernar.
+      // Abrir um mercado é um request HTTP (reativa o ciclo no próximo tick).
+      if (!this.activity.isActive() && this.states.size === 0) return;
       void this.safeRefreshStatesFromDatabase();
     }, REFRESH_FROM_DB_MS);
   }
@@ -213,7 +221,9 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
 
   async getBettingBoard(): Promise<BettingBoard> {
     const events = await this.prisma.event.findMany({
-      where: { status: { not: 'CANCELED' } },
+      // Eventos encerrados (FINISHED) ou cancelados (CANCELED) somem do /apostas —
+      // independente de terem sido finalizados manualmente ou pelo lifecycle.
+      where: { status: { notIn: ['FINISHED', 'CANCELED'] } },
       orderBy: { startAt: 'asc' },
       include: {
         markets: { orderBy: { createdAt: 'asc' }, select: { name: true } },
@@ -254,7 +264,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         }),
         this.prisma.armageddonMatchup.findMany({
           where: { duelId: { in: allDuelIds } },
-          select: { duelId: true, roundNumber: true, roundType: true },
+          select: { duelId: true, roundNumber: true, roundType: true, stage: true, bracketKey: true },
         }),
         this.prisma.listMatchup.findMany({
           where: { duelId: { in: allDuelIds } },
@@ -275,10 +285,18 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       }
       for (const m of armaMatchups) {
         if (!m.duelId) continue;
+        // Eliminação 144 não usa roundType (ODD/EVEN) — rotula por chave/fase.
+        const label = m.roundType
+          ? LIST_ROUND_LABEL[m.roundType] ?? m.roundType
+          : m.bracketKey
+            ? `Chave ${m.bracketKey}`
+            : m.stage === 'SECOND_DRAW'
+              ? 'Fase final'
+              : 'Armageddon';
         meta.set(m.duelId, {
           roundNumber: m.roundNumber,
-          category: m.roundType,
-          categoryLabel: LIST_ROUND_LABEL[m.roundType] ?? m.roundType,
+          category: m.roundType ?? m.stage ?? null,
+          categoryLabel: label,
           isSuperFinal: false,
           matchupStatus: null,
         });
@@ -302,6 +320,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     // evento some do EventSelector. Histórico de bets segue visível pelo
     // componente "Minhas Apostas" (independente de qual evento).
     const visibleEvents = events.filter((e) =>
+      e.status !== 'FINISHED' &&
+      e.status !== 'CANCELED' &&
       e.duels.some(
         (d) =>
           d.status === 'BOOKING_OPEN' ||
@@ -386,6 +406,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           id: true,
           status: true,
           bookingCloseAt: true,
+          event: { select: { status: true } },
         },
       });
 
@@ -393,6 +414,13 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         throw new NotFoundException(
           'Não encontramos esta corrida para apostar',
         );
+      }
+
+      // Defesa: bloqueia aposta em evento já encerrado/cancelado mesmo que o duel
+      // tenha ficado órfão em BOOKING_OPEN (o lifecycle finaliza o Event mas pode
+      // não fechar o duel). Sem isto, daria pra apostar via duelId direto.
+      if (duel.event.status === 'FINISHED' || duel.event.status === 'CANCELED') {
+        throw new BadRequestException('Este evento já foi encerrado — apostas indisponíveis.');
       }
 
       await tx.duelPoolState.upsert({
@@ -682,20 +710,33 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     this.states = next;
   }
 
-  /** Evita crash loop em produção se `prisma migrate deploy` ainda não foi aplicado nesta base. */
+  /**
+   * Roda num setInterval (fire-and-forget) — NENHUM erro pode derrubar o processo.
+   * No pior caso pulamos este tick (mantendo o estado em memória) e tentamos no próximo.
+   */
   private async safeRefreshStatesFromDatabase() {
     try {
       await this.refreshStatesFromDatabase();
     } catch (e) {
-      if (e instanceof PrismaClientKnownRequestError && e.code === 'P2021') {
-        this.logger.error(
-          `Tabela em falta no Postgres (${JSON.stringify(
-            e.meta,
-          )}). Na mesma DATABASE_URL: na raiz do monorepo com .env, \`npm run db:migrate:deploy\`; ou em apps/backend: \`DATABASE_URL=... npx prisma migrate deploy\`.`,
-        );
-        return;
+      if (e instanceof PrismaClientKnownRequestError) {
+        if (e.code === 'P2021') {
+          this.logger.error(
+            `Tabela em falta no Postgres (${JSON.stringify(
+              e.meta,
+            )}). Na mesma DATABASE_URL: na raiz do monorepo com .env, \`npm run db:migrate:deploy\`; ou em apps/backend: \`DATABASE_URL=... npx prisma migrate deploy\`.`,
+          );
+          return;
+        }
+        if (e.code === 'P2024') {
+          this.logger.warn(
+            'Refresh do mercado pulou um tick: pool de conexões esgotado (P2024). Estado mantido em memória.',
+          );
+          return;
+        }
       }
-      throw e;
+      this.logger.warn(
+        `Refresh do mercado falhou neste tick (ignorado): ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 

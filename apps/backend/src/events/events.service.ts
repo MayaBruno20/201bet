@@ -95,13 +95,20 @@ export class EventsService {
         orderBy: { scheduledAt: 'asc' },
       }),
       this.prisma.armageddonEvent.findMany({
+        // Antes filtrava eventId:null — mas todo Armageddon nasce com um Event
+        // vinculado (eventId NOT NULL), então isso escondia 100% deles de /eventos.
         where: {
           status: { notIn: [ArmageddonStatus.CANCELED, ArmageddonStatus.FINISHED] },
-          eventId: null,
         },
         orderBy: { scheduledAt: 'asc' },
       }),
     ]);
+
+    // Ids dos Event vinculados a um Armageddon — excluídos dos cards de Event para
+    // não duplicar (o Armageddon já aparece como card próprio `armageddon:<id>`).
+    const armaLinkedEventIds = new Set(
+      armageddonEvents.map((a) => a.eventId).filter((id): id is string => !!id),
+    );
 
     // Margem da casa é FIXA — ver constante em market.service.
     const rake = HOUSE_MARGIN_PERCENT / 100;
@@ -119,6 +126,7 @@ export class EventsService {
     // exibido na /eventos com banner próprio e título customTitle.
     const eventsWithActiveDuels = events.filter((event) =>
       event.name !== '✨ Embates Personalizados' &&
+      !armaLinkedEventIds.has(event.id) && // o Armageddon aparece como card próprio
       event.duels.some((d) => d.status !== 'CANCELED'),
     );
 
@@ -445,16 +453,20 @@ export class EventsService {
         where: {
           featured: true,
           status: { not: ArmageddonStatus.CANCELED },
-          eventId: null,
           scheduledAt: { gte: featuredCutoff },
         },
         orderBy: { scheduledAt: 'asc' },
-        select: categorySelect,
+        select: { ...categorySelect, eventId: true },
       }),
     ]);
 
+    // Exclui os Event vinculados a Armageddon (evita card duplicado no destaque).
+    const armaFeatLinkedIds = new Set(
+      armageddonFeat.map((a) => a.eventId).filter((id): id is string => !!id),
+    );
+
     const featured: FeaturedEvent[] = [
-      ...eventFeat.map((e) => ({ ...e, featured: true })),
+      ...eventFeat.filter((e) => !armaFeatLinkedIds.has(e.id)).map((e) => ({ ...e, featured: true })),
       ...categoryFeat.map((e) => this.mapCategoryFeatured(e)),
       ...armageddonFeat.map((e) => this.mapArmageddonFeatured(e)),
     ]
@@ -493,17 +505,20 @@ export class EventsService {
         where: {
           featured: false,
           status: { not: ArmageddonStatus.CANCELED },
-          eventId: null,
           scheduledAt: { gte: now },
         },
         orderBy: { scheduledAt: 'asc' },
         take: 3,
-        select: categorySelect,
+        select: { ...categorySelect, eventId: true },
       }),
     ]);
 
+    const armaUpLinkedIds = new Set(
+      armageddonUp.map((a) => a.eventId).filter((id): id is string => !!id),
+    );
+
     const upcoming: FeaturedEvent[] = [
-      ...eventUp.map((e) => ({ ...e, featured: false })),
+      ...eventUp.filter((e) => !armaUpLinkedIds.has(e.id)).map((e) => ({ ...e, featured: false })),
       ...categoryUp.map((e) => this.mapCategoryFeatured(e)),
       ...armageddonUp.map((e) => this.mapArmageddonFeatured(e)),
     ].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());

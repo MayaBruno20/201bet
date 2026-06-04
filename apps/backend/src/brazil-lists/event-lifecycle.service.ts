@@ -6,6 +6,7 @@ import {
   ListEventStatus,
 } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
+import { ActivityService } from '../common/activity.service';
 
 /**
  * Cron de lifecycle dos eventos (ListEvent, CategoryEvent, ArmageddonEvent +
@@ -41,7 +42,10 @@ export class EventLifecycleService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EventLifecycleService.name);
   private ticker?: NodeJS.Timeout;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly activity: ActivityService,
+  ) {}
 
   async onModuleInit() {
     // Reversão one-shot ANTES do primeiro tick — evita race com finalize/sync.
@@ -57,6 +61,10 @@ export class EventLifecycleService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async runTick() {
+    // Guard de idle: sem cliente WS e sem request HTTP recente, ninguém está
+    // usando a plataforma — pula o tick para a Neon hibernar. Qualquer atividade
+    // reativa; o primeiro tick após reativar reconcilia o estado dos eventos.
+    if (!this.activity.isActive()) return;
     try {
       const now = new Date();
       await this.promoteListEvents(now);

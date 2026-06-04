@@ -4,8 +4,10 @@ import { ArmageddonAdminController } from './armageddon.admin.controller';
 import { ArmageddonService } from './armageddon.service';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { SettlementService } from '../settlement.service';
+import { CacheModule } from '../cache/cache.module';
 
 @Module({
+  imports: [CacheModule],
   controllers: [ArmageddonController, ArmageddonAdminController],
   providers: [ArmageddonService, RolesGuard, SettlementService],
   exports: [ArmageddonService],

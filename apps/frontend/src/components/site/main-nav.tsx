@@ -12,7 +12,7 @@ import { getPublicApiUrl } from '@/lib/env-public';
 
 const apiUrl = getPublicApiUrl();
 
-type NavLink = { href: string; label: string; requiresAuth?: boolean };
+type NavLink = { href: string; label: string; requiresAuth?: boolean; live?: boolean };
 
 const baseLinks: NavLink[] = [
   { href: '/', label: 'Início' },
@@ -110,16 +110,36 @@ export function MainNav() {
   const fixedShellRef = useRef<HTMLDivElement | null>(null);
   const [shellHeight, setShellHeight] = useState(64);
   const [disclaimers, setDisclaimers] = useState<Disclaimer[]>([]);
+  // Armageddon ativo → a aba "Apostas" some e vira "Armageddon" (tudo concentrado lá).
+  const [armaActive, setArmaActive] = useState(false);
 
   // Carrega os disclaimers públicos (já vêm filtrados por active=true e
   // ordenados por priority desc no backend). Sem polling — a barra é estática
   // por sessão; mudanças do admin chegam no próximo reload.
   useEffect(() => {
     let alive = true;
+
+    // Valor otimista do cache da sessão — evita o "flicker" da aba a cada
+    // navegação (a navbar remonta por página; sem isso ela pisca Apostas→Armageddon).
+    try {
+      const cached = sessionStorage.getItem('armaActive');
+      if (cached !== null) setArmaActive(cached === '1');
+    } catch { /* sessionStorage indisponível */ }
+
     fetch(`${apiUrl}/site-disclaimers`, { cache: 'no-store' })
       .then((r) => r.ok ? r.json() : [])
       .then((data: Disclaimer[]) => { if (alive) setDisclaimers(Array.isArray(data) ? data : []); })
       .catch(() => { /* silencioso — banner some se a API estiver fora */ });
+
+    // Detecta evento Armageddon ativo (IN_PROGRESS) e atualiza o cache.
+    fetch(`${apiUrl}/armageddon`, { cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: Array<{ status?: string }>) => {
+        const active = Array.isArray(data) && data.some((e) => e?.status === 'IN_PROGRESS');
+        if (alive) setArmaActive(active);
+        try { sessionStorage.setItem('armaActive', active ? '1' : '0'); } catch { /* ignore */ }
+      })
+      .catch(() => { /* silencioso — sem Armageddon, navbar fica padrão */ });
     return () => { alive = false; };
   }, []);
 
@@ -202,9 +222,19 @@ export function MainNav() {
   }, [mobileMenuOpen]);
 
   const links = useMemo(() => {
-    return baseLinks.filter((link) => !link.requiresAuth || !!user);
+    let out = baseLinks;
+    // Com Armageddon ativo, "Apostas" some e "Armageddon" entra no mesmo lugar.
+    if (armaActive) {
+      out = baseLinks.map((l) =>
+        l.href === '/apostas' ? { href: '/armageddon', label: 'Armageddon', live: true } : l,
+      );
+    }
+    return out.filter((link) => !link.requiresAuth || !!user);
     // Admin foi externalizado para admin.201-bet.com — não aparece mais aqui.
-  }, [user]);
+  }, [user, armaActive]);
+
+  // CTA "Apostar agora" leva para onde a ação está (Armageddon quando ativo).
+  const primaryBetHref = armaActive ? '/armageddon' : '/apostas';
 
   async function logout() {
     await logoutSession();
@@ -272,8 +302,9 @@ export function MainNav() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`transition-colors hover:text-white ${pathname === link.href ? 'text-white font-semibold' : ''}`}
+                  className={`relative inline-flex items-center gap-1.5 transition-colors hover:text-white ${pathname === link.href ? 'text-white font-semibold' : ''} ${link.live ? 'text-red-300 hover:text-red-200' : ''}`}
                 >
+                  {link.live && <span className='relative flex h-2 w-2'><span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75' /><span className='relative inline-flex h-2 w-2 rounded-full bg-red-500' /></span>}
                   {link.label}
                 </Link>
               ))}
@@ -283,7 +314,7 @@ export function MainNav() {
           <div className='flex items-center gap-1.5 sm:gap-2 shrink-0'>
             <PrimaryCTAButton
               asLink
-              href='/apostas'
+              href={primaryBetHref}
               variant='compact'
               className='hidden sm:inline-flex'
             >
@@ -458,8 +489,9 @@ export function MainNav() {
                 key={link.href}
                 href={link.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className={`rounded-xl px-4 py-3 text-base font-medium transition-all ${pathname === link.href ? 'bg-white/10 text-white border-l-2 border-white' : 'text-white/60 hover:text-white hover:bg-white/5 border-l-2 border-transparent'}`}
+                className={`flex items-center gap-2 rounded-xl px-4 py-3 text-base font-medium transition-all ${pathname === link.href ? 'bg-white/10 text-white border-l-2 border-white' : 'text-white/60 hover:text-white hover:bg-white/5 border-l-2 border-transparent'} ${link.live ? 'text-red-300' : ''}`}
               >
+                {link.live && <span className='relative flex h-2 w-2'><span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75' /><span className='relative inline-flex h-2 w-2 rounded-full bg-red-500' /></span>}
                 {link.label}
               </Link>
             ))}
