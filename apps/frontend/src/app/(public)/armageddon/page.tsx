@@ -120,14 +120,30 @@ export default function ArmageddonHubPage() {
       const key = m.stage === 'SECOND_DRAW' ? '2º Sorteio · Top 32' : m.bracketKey ? `Chave ${m.bracketKey}` : 'Embates';
       (byKey.get(key) ?? byKey.set(key, []).get(key)!).push(m);
     }
-    return Array.from(byKey.entries()).map(([label, ms]) => {
-      const byRound = new Map<number, ArmaMatchup[]>();
-      for (const m of ms) (byRound.get(m.roundNumber) ?? byRound.set(m.roundNumber, []).get(m.roundNumber)!).push(m);
-      const rounds = Array.from(byRound.entries())
-        .map(([rn, list]) => ({ rn, label: roundLabel(list[0]), list: list.sort((a, b) => a.order - b.order) }))
-        .sort((a, b) => a.rn - b.rn);
-      return { label, rounds };
-    });
+    // Ordena as chaves em ordem alfabética (Chave A, B, C…); o "2º Sorteio · Top 32"
+    // vem depois das chaves e qualquer outro grupo por último. Sem isto os grupos
+    // seguiam a ordem de inserção dos dados — no mobile (1 coluna) ficava fora de ordem.
+    const groupRank = (label: string) =>
+      label.startsWith('Chave ')
+        ? { tier: 0, key: label.slice(6) }
+        : label.startsWith('2º Sorteio')
+          ? { tier: 1, key: '' }
+          : { tier: 2, key: label };
+
+    return Array.from(byKey.entries())
+      .map(([label, ms]) => {
+        const byRound = new Map<number, ArmaMatchup[]>();
+        for (const m of ms) (byRound.get(m.roundNumber) ?? byRound.set(m.roundNumber, []).get(m.roundNumber)!).push(m);
+        const rounds = Array.from(byRound.entries())
+          .map(([rn, list]) => ({ rn, label: roundLabel(list[0]), list: list.sort((a, b) => a.order - b.order) }))
+          .sort((a, b) => a.rn - b.rn);
+        return { label, rounds };
+      })
+      .sort((a, b) => {
+        const ra = groupRank(a.label);
+        const rb = groupRank(b.label);
+        return ra.tier - rb.tier || ra.key.localeCompare(rb.key, 'pt-BR', { numeric: true });
+      });
   }, [event]);
 
   return (
@@ -166,7 +182,7 @@ export default function ArmageddonHubPage() {
                 <span className="bg-gradient-to-br from-[#ffd479] via-[#ffb028] to-[#ff8a2a] bg-clip-text text-transparent">{event.name}</span>
               </h1>
               <p className="mt-3 max-w-xl text-sm sm:text-base text-white/55">
-                O maior evento de arrancada do mundo. Assista à transmissão e aposte em tempo real — tudo num lugar só.
+                O maior evento de arrancada NoPrep da América Latina. Assista à transmissão e aposte em tempo real — tudo num lugar só.
               </p>
             </div>
           </section>
@@ -259,7 +275,7 @@ function NoEventState() {
     <div className="mx-auto max-w-2xl px-4 py-24 text-center">
       <div className="text-5xl mb-4">🏁</div>
       <h1 className="text-2xl font-bold">Nenhum Armageddon ao vivo agora</h1>
-      <p className="mt-2 text-white/50">O maior evento de arrancada do mundo volta em breve. Enquanto isso, há outras corridas rolando.</p>
+      <p className="mt-2 text-white/50">O maior evento de arrancada NoPrep da América Latina volta em breve. Enquanto isso, há outras corridas rolando.</p>
       <div className="mt-6 flex justify-center gap-3">
         <Link href="/apostas" className="rounded-2xl bg-white px-6 py-3 text-sm font-bold text-black transition hover:scale-[1.03]">Ver apostas</Link>
         <Link href="/eventos" className="rounded-2xl border border-white/15 bg-white/5 px-6 py-3 text-sm font-semibold text-white/80 transition hover:bg-white/10">Próximos eventos</Link>
