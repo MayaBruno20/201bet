@@ -28,6 +28,8 @@ type EngineState = {
   stageLabel: string;
   status: DuelStatus;
   bookingCloseAt: Date;
+  isCustom: boolean;
+  isFeatured: boolean;
   left: {
     carId: string;
     carName: string;
@@ -74,6 +76,8 @@ export type MarketSnapshot = {
   marketNames: string[];
   stageLabel: string;
   status: DuelStatus;
+  isCustom: boolean;
+  isFeatured: boolean;
   totalPool: number;
   closeInSeconds: number;
   marginPercent: number;
@@ -217,6 +221,16 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
 
   removeDuel(duelId: string) {
     this.states.delete(duelId);
+  }
+
+  /**
+   * Força um refresh imediato do estado em memória a partir do DB. Usado após ações
+   * admin que mudam o status de duelos (cancelar evento etc.) para o card "AO VIVO"
+   * e o /apostas refletirem a realidade em ~1 tick em vez de esperar o refresh de 30s.
+   * Fire-and-forget seguro: safeRefreshStatesFromDatabase engole qualquer erro.
+   */
+  async refreshNow(): Promise<void> {
+    await this.safeRefreshStatesFromDatabase();
   }
 
   async getBettingBoard(): Promise<BettingBoard> {
@@ -678,6 +692,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         stageLabel: stageByDuelId.get(duel.id) ?? 'Rodada 1',
         status: duel.status,
         bookingCloseAt: duel.bookingCloseAt,
+        isCustom: duel.isCustom,
+        isFeatured: duel.isFeatured,
         left: {
           carId: duel.leftCarId,
           carName: duel.leftCar.name,
@@ -771,6 +787,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       stageLabel: '',
       status,
       bookingCloseAt,
+      isCustom: false,
+      isFeatured: false,
       left: {
         carId: '',
         carName: '',
@@ -876,6 +894,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
       marketNames: state.marketNames,
       stageLabel: state.stageLabel,
       status: state.status,
+      isCustom: state.isCustom,
+      isFeatured: state.isFeatured,
       totalPool: Number(totalPool.toFixed(2)),
       closeInSeconds: Math.max(
         0,
@@ -919,12 +939,26 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
   }
 
   private pickDefaultState() {
-    const values = [...this.states.values()];
+    // Card "AO VIVO AGORA" (home) e pré-seleção do /apostas: SEMPRE e APENAS um
+    // embate que esteja ao vivo agora — ou seja, com a aposta aberta (BOOKING_OPEN).
+    // SCHEDULED (ainda vai abrir), BOOKING_CLOSED e FINISHED não entram aqui.
+    // "Ao vivo" = aposta aberta. Atenção: bookingCloseAt NÃO é enforced aqui — o
+    // embate segue BOOKING_OPEN e apostável mesmo depois do horário, até o admin
+    // fechar. Então NÃO filtramos por bookingCloseAt/closeInSeconds (senão o card
+    // some assim que o countdown zera, que é o caso de quase todos os embates).
+    const live = [...this.states.values()].filter(
+      (v) => v.status === DuelStatus.BOOKING_OPEN,
+    );
+    if (!live.length) return null;
+
+    // Prioridade dentro dos que estão ao vivo:
+    //   1) Embate personalizado em destaque (isCustom + isFeatured)
+    //   2) Qualquer embate ao vivo que já tenha pote (apostas registradas)
+    //   3) Qualquer embate ao vivo
     return (
-      values.find((v) => v.status === DuelStatus.BOOKING_OPEN) ||
-      values.find((v) => v.status === DuelStatus.SCHEDULED) ||
-      values[0] ||
-      null
+      live.find((v) => v.isCustom && v.isFeatured) ||
+      live.find((v) => v.left.pool + v.right.pool > 0) ||
+      live[0]
     );
   }
 

@@ -274,22 +274,22 @@ export function MainNav() {
         })}
 
         <header className='glass w-full transition-all duration-300'>
-        <div className='mx-auto max-w-7xl px-3 flex h-20 sm:h-24 items-center justify-between sm:px-6 lg:px-8 gap-2'>
+        <div className='mx-auto max-w-7xl px-4 flex h-16 sm:h-24 items-center justify-between sm:px-6 lg:px-8 gap-3'>
 
           <div className='flex items-center gap-2 md:gap-6 min-w-0 flex-1'>
             <Link
               href='/'
               className='flex items-center transition-opacity hover:opacity-80 shrink-0'
-              aria-label='201bet — Início'
+              aria-label='Palpite201 — Início'
             >
               <Image
                 src='/images/logopalpite.png'
-                alt='201bet'
+                alt='Palpite201'
                 width={154}
                 height={104}
                 priority
                 sizes='120px'
-                className='h-16 sm:h-20 md:h-20 w-auto'
+                className='h-11 sm:h-16 md:h-20 w-auto'
               />
             </Link>
 
@@ -308,12 +308,12 @@ export function MainNav() {
             </nav>
           </div>
 
-          <div className='flex items-center gap-1.5 sm:gap-2 shrink-0'>
+          <div className='flex items-center gap-2 sm:gap-2.5 shrink-0'>
             <PrimaryCTAButton
               asLink
               href={primaryBetHref}
               variant='compact'
-              className='hidden sm:inline-flex'
+              className='hidden sm:inline-flex sm:mr-1'
             >
               Apostar agora
             </PrimaryCTAButton>
@@ -430,7 +430,7 @@ export function MainNav() {
         className={`fixed inset-0 z-50 bg-[#090b11] transition-transform duration-300 ease-in-out md:hidden ${mobileMenuOpen ? 'translate-x-0' : 'translate-x-full'}`}
       >
         <div className='flex h-16 items-center justify-between border-b border-white/5 px-4 sm:px-6'>
-          <span className='text-lg font-bold tracking-wider text-white'>201BET</span>
+          <span className='text-lg font-bold tracking-wider text-white'>Palpite201</span>
           <button
             type='button'
             className='flex h-10 w-10 items-center justify-center rounded-full bg-white/5 transition hover:bg-white/10'

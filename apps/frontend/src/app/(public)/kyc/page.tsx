@@ -1,8 +1,8 @@
 import { MainNav } from '@/components/site/main-nav';
 
 export const metadata = {
-  title: 'Política de KYC — 201bet',
-  description: 'Como a 201bet verifica identidade (Know Your Customer) para cumprir a Lei 14.790/2023, prevenir lavagem de dinheiro e proteger sua conta.',
+  title: 'Política de KYC — Palpite201',
+  description: 'Como a Palpite201 verifica identidade (Know Your Customer) para cumprir a Lei 14.790/2023, prevenir lavagem de dinheiro e proteger sua conta.',
 };
 
 export default function KycPage() {
@@ -20,7 +20,7 @@ export default function KycPage() {
           </div>
           <h1 className='text-3xl font-bold tracking-tight sm:text-4xl'>Política de KYC</h1>
           <p className='mt-3 text-sm text-white/60 sm:text-base'>
-            A 201bet adota procedimentos de <strong>Know Your Customer (KYC)</strong> para identificar e verificar
+            A Palpite201 adota procedimentos de <strong>Know Your Customer (KYC)</strong> para identificar e verificar
             cada apostador antes de movimentar saldo. A política cumpre a <strong>Lei nº 14.790/2023</strong>
             (regulamentação das apostas de quota fixa), a <strong>Lei nº 9.613/1998</strong> (prevenção à lavagem
             de dinheiro) e as normativas da SPA/SECAP do Ministério da Fazenda e do COAF.
@@ -97,7 +97,7 @@ export default function KycPage() {
           </Section>
 
           <Section title='6. Recusa ou inconsistência'>
-            <p>Se a verificação retornar inconsistência, a 201bet pode:</p>
+            <p>Se a verificação retornar inconsistência, a Palpite201 pode:</p>
             <ul className='list-disc space-y-2 pl-5'>
               <li>Solicitar documentação adicional.</li>
               <li>Suspender temporariamente saques até a conclusão da análise.</li>
@@ -148,7 +148,7 @@ export default function KycPage() {
         </article>
 
         <div className='mt-8 rounded-2xl border border-white/10 bg-[#101525] p-5 text-xs text-white/40'>
-          Esta política se aplica a todos os apostadores da 201bet, em conformidade com a regulação brasileira de
+          Esta política se aplica a todos os apostadores da Palpite201, em conformidade com a regulação brasileira de
           apostas de quota fixa.
         </div>
       </div>

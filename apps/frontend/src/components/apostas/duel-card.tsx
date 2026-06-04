@@ -1,15 +1,15 @@
 'use client';
 
 import * as React from 'react';
-import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
-import { Check, Crown, Info, Trophy } from 'lucide-react';
+import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'framer-motion';
+import { Check, ChevronDown, Crown, Info, Trophy } from 'lucide-react';
 
 /**
  * 201bet · /apostas — DuelCard
  * Central betting unit: a 1×1 duel between two pilots.
  *
  * Display: mostra "% das apostas" por lado em vez de odd cravada.
- * Sistema é pari-mutuel (pote dividido entre vencedores), então a odd flutua
+ * Cotação dinâmica (pote dividido entre vencedores), então a odd flutua
  * até o fechamento — mostrar uma odd fixa criava expectativa de retorno X que
  * virava Y no pagamento. A % mostra a distribuição atual sem prometer payout.
  */
@@ -75,6 +75,7 @@ export function DuelCard({
   onSelect,
   className = '',
 }: DuelCardProps) {
+  const [infoOpen, setInfoOpen] = React.useState(false);
   const isSettled = duel.status === 'SETTLED' && !!duel.settlement;
   const isCanceled = duel.status === 'CANCELED';
   const isInteractive = duel.status === 'OPEN';
@@ -144,13 +145,35 @@ export function DuelCard({
       </div>
 
       {isInteractive && (
-        <div className='mt-3 flex items-start gap-1.5 text-[11px] text-[#767b8a] leading-snug'>
-          <Info className='h-3 w-3 mt-0.5 flex-shrink-0' />
-          <span>
-            % indica a distribuição atual das apostas. Sistema pari-mutuel: o pote total é dividido entre quem
-            acertar, proporcional à aposta. Quanto mais gente no lado oposto, maior seu retorno. O valor final
-            só é definido no fechamento.
-          </span>
+        <div className='mt-3'>
+          <button
+            type='button'
+            onClick={() => setInfoOpen((v) => !v)}
+            className='inline-flex items-center gap-1.5 text-[11px] text-[#767b8a] hover:text-[#b8bcc9] transition-colors focus:outline-none'
+            aria-expanded={infoOpen}
+            aria-label='Como funciona o retorno'
+          >
+            <Info className='h-3 w-3' />
+            Como funciona o retorno
+            <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${infoOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <AnimatePresence initial={false}>
+            {infoOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className='overflow-hidden'
+              >
+                <p className='mt-2 text-[11px] text-[#767b8a] leading-snug rounded-lg border border-white/[0.06] bg-[#0b0e18] px-3 py-2'>
+                  % indica a distribuição atual das apostas. O pote total é dividido entre quem acertar,
+                  proporcional à aposta. Quanto mais gente no lado oposto, maior seu retorno. O valor final
+                  só é definido no fechamento.
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 

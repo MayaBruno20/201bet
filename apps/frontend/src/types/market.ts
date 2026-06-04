@@ -6,6 +6,8 @@ export type MarketSnapshot = {
   marketNames: string[];
   stageLabel: string;
   status: string;
+  isCustom: boolean;
+  isFeatured: boolean;
   locked: boolean;
   lockedSide: 'LEFT' | 'RIGHT' | 'BOTH' | 'NONE';
   lockReason?: string;

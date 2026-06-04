@@ -64,17 +64,28 @@ export function BetSlipDrawer({
   if (count === 0) return null;
 
   return (
-    <div
-      className={`
-        fixed left-0 right-0 bottom-0 z-40
-        ${className}
-      `}
-      role='region'
-      aria-label='Bilhete de apostas'
-    >
-      <div className='h-px w-full bg-[linear-gradient(90deg,transparent,rgba(255,176,40,0.6),transparent)]' />
+    <>
+      {/* Backdrop: clicar fora minimiza o bilhete (além do chevron) */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className='fixed inset-0 z-30 bg-black/50'
+            onClick={() => setExpanded(false)}
+            aria-hidden
+          />
+        )}
+      </AnimatePresence>
 
-      <div className='relative bg-[#0b0f1c]/95 backdrop-blur-xl border-t border-white/10 shadow-[0_-30px_80px_-20px_rgba(0,0,0,0.85)]'>
+      <div
+        className={`fixed left-0 right-0 bottom-0 z-40 mx-auto max-w-3xl px-2 sm:px-4 ${className}`}
+        role='region'
+        aria-label='Bilhete de apostas'
+      >
+        <div className='relative rounded-t-2xl bg-[#0b0f1c]/97 backdrop-blur-xl border-2 border-b-0 border-[#ffb028]/45 shadow-[0_-24px_70px_-18px_rgba(255,138,42,0.30)]'>
         {/* Header bar: toggle (left) e SubmitButton (right) são botões IRMÃOS,
             nunca aninhados — HTML proíbe <button> dentro de <button>. */}
         <div className='w-full flex items-center gap-3 sm:gap-4 px-4 sm:px-6 h-14'>
@@ -147,7 +158,7 @@ export function BetSlipDrawer({
                   </button>
                 </div>
 
-                <ul className='space-y-2 max-h-[40vh] overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:thin]'>
+                <ul className='space-y-2 max-h-[30vh] overflow-y-auto pr-1 [-ms-overflow-style:none] [scrollbar-width:thin]'>
                   {items.map((item) => (
                     <BetSlipRow
                       key={item.duelId}
@@ -180,7 +191,7 @@ export function BetSlipDrawer({
                     onClick={() => onSubmit?.()}
                   />
                   <p className='mt-2.5 text-[11px] leading-relaxed text-[#767b8a]'>
-                    * O retorno final é definido só no fechamento das apostas — sistema pari-mutuel, o pote é dividido
+                    * O retorno final é definido só no fechamento das apostas — o pote é dividido
                     entre quem acertar. Quanto mais gente do lado oposto, maior seu retorno. Use com critério.{' '}
                     <Wallet className='inline h-3 w-3 align-[-2px]' /> saldo{' '}
                     <span className='font-mono text-[#b8bcc9] tabular-nums'>{formatBRL(balance)}</span>{' '}
@@ -191,8 +202,9 @@ export function BetSlipDrawer({
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -207,6 +219,11 @@ function BetSlipRow({ item, minBet, onStakeChange, onRemove }: BetSlipRowProps) 
   const isLeft = item.side === 'LEFT';
   const accent = isLeft ? { text: 'text-[#60a5fa]', label: 'Piloto A' } : { text: 'text-[#fb923c]', label: 'Piloto B' };
   const estimate = item.stake * item.odd;
+  // Texto cru do input: deixa digitar centavos ("10,50") sem o número normalizar de volta.
+  const [text, setText] = React.useState(item.stake > 0 ? String(item.stake) : '');
+  React.useEffect(() => {
+    setText((cur) => (parseFloat(cur.replace(',', '.')) === item.stake ? cur : item.stake > 0 ? String(item.stake) : ''));
+  }, [item.stake]);
   return (
     <li className='rounded-xl border border-white/10 bg-[#101525] p-3'>
       <div className='flex items-start justify-between gap-3 mb-2'>
@@ -234,15 +251,18 @@ function BetSlipRow({ item, minBet, onStakeChange, onRemove }: BetSlipRowProps) 
         <div className='relative flex-1'>
           <span className='absolute left-2.5 top-1/2 -translate-y-1/2 text-[#767b8a] font-mono text-xs'>R$</span>
           <input
-            type='number'
-            min={minBet}
-            step={1}
-            value={Number.isFinite(item.stake) ? item.stake : ''}
+            type='text'
+            inputMode='decimal'
+            value={text}
+            placeholder='0'
+            onFocus={(e) => e.currentTarget.select()}
             onChange={(e) => {
-              const v = parseFloat(e.target.value);
+              const clean = e.target.value.replace(/[^\d.,]/g, '');
+              setText(clean);
+              const v = parseFloat(clean.replace(',', '.'));
               onStakeChange(Number.isFinite(v) ? v : 0);
             }}
-            className='w-full h-9 rounded-lg bg-[#0b0e18] border border-white/10 pl-8 pr-2 font-mono text-[#f1f3f8] tabular-nums text-[14px] focus:outline-none focus:border-[#ffb028]/60 focus:ring-2 focus:ring-[rgba(255,176,40,0.18)] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+            className='w-full h-10 rounded-lg bg-[#0b0e18] border border-white/10 pl-8 pr-2 font-mono text-[#f1f3f8] tabular-nums text-[16px] placeholder:text-[#767b8a]/60 focus:outline-none focus:border-[#ffb028]/60 focus:ring-2 focus:ring-[rgba(255,176,40,0.18)]'
             aria-label={`Valor para ${item.label}`}
           />
         </div>

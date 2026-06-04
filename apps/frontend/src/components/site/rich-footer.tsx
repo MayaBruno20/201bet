@@ -125,7 +125,7 @@ function FooterColumnView({ col, openId, setOpenId }: {
 }
 
 export function RichFooter({
-  companyName = '201bet',
+  companyName = 'Palpite201',
   className = '',
 }: RichFooterProps) {
   const [openId, setOpenId] = React.useState<string | null>(null);
@@ -153,7 +153,7 @@ export function RichFooter({
             <Link href='/' className='inline-flex items-center mb-3 transition-opacity hover:opacity-80'>
               <Image
                 src='/images/logopalpite.png'
-                alt='201bet'
+                alt='Palpite201'
                 width={100}
                 height={68}
                 className='h-14 sm:h-16 w-auto'

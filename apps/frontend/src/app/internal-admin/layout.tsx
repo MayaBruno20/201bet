@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './admin-shell.css';
 
 export const metadata: Metadata = {
-  title: '201bet · Admin',
-  description: 'Painel administrativo 201bet',
+  title: 'Palpite201 · Admin',
+  description: 'Painel administrativo Palpite201',
 };
 
 export default function AdminRootLayout({ children }: { children: React.ReactNode }) {

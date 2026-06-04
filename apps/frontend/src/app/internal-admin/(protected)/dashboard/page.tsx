@@ -99,7 +99,7 @@ export default function DashboardPage() {
 
   return (
     <Page eyebrow="Painel administrativo" title="Visão geral"
-      sub="Gestão completa, segura e auditável da operação 201bet — apostas, eventos, pilotos e financeiro em tempo real."
+      sub="Gestão completa, segura e auditável da operação Palpite201 — apostas, eventos, pilotos e financeiro em tempo real."
       actions={<>
         <button className="btn btn-ghost focusable"><I.Download size={15}/> Exportar</button>
         <div ref={periodRef} className="relative">

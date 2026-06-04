@@ -1,5 +1,5 @@
 import { BadRequestException, forwardRef, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
-import { BetStatus, MarketStatus, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
+import { BetStatus, DuelStatus, MarketStatus, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
 import { PrismaService } from './database/prisma.service';
 import { MarketGateway } from './market.gateway';
 import { HOUSE_MARGIN_PERCENT } from './market.service';
@@ -131,6 +131,18 @@ export class SettlementService {
       // updateMany com winnerSide:null evita sobrescrever se o matchup já foi
       // auditado pelo seu próprio endpoint (idempotência).
       if (market.duelId) {
+        // Embate auditado → FECHADO (FINISHED). Sem isto o duelo seguia no status
+        // anterior (ex.: BOOKING_OPEN), era recarregado pelo refresh do engine e
+        // reaparecia como "ao vivo" no card da home / no /apostas.
+        // Só o mercado PRIMÁRIO do embate (type DUEL) fecha o duelo — um mercado
+        // secundário (multi-runner) ligado ao mesmo duelId não pode fechá-lo.
+        if (market.type === 'DUEL') {
+          await tx.duel.update({
+            where: { id: market.duelId },
+            data: { status: DuelStatus.FINISHED },
+          });
+        }
+
         const orderedOdds = await tx.odd.findMany({
           where: { marketId },
           orderBy: { createdAt: 'asc' },
@@ -530,6 +542,14 @@ export class SettlementService {
 
       // 5) reseta pool e reverte a propagação do vencedor no matchup (lista/armageddon)
       if (market.duelId) {
+        // Des-liquidar reabre o embate: espelho do fechamento feito no settleMarket.
+        // updateMany gated em FINISHED → só reabre o que estava de fato fechado por
+        // auditoria; nunca força um duelo de outro estado (SCHEDULED/BOOKING_CLOSED/
+        // CANCELED) a ficar "ao vivo".
+        await tx.duel.updateMany({
+          where: { id: market.duelId, status: DuelStatus.FINISHED },
+          data: { status: DuelStatus.BOOKING_OPEN },
+        });
         await tx.duelPoolState.updateMany({ where: { duelId: market.duelId }, data: { leftPool: 0, rightPool: 0, leftTickets: 0, rightTickets: 0 } });
         await tx.armageddonMatchup.updateMany({ where: { duelId: market.duelId, winnerSide: { not: null } }, data: { winnerSide: null, settledAt: null } });
         await tx.listMatchup.updateMany({ where: { duelId: market.duelId, winnerSide: { not: null } }, data: { winnerSide: null, settledAt: null } });

@@ -192,7 +192,7 @@ export default function ArmageddonHubPage() {
           <section id="ao-vivo" className="pt-4">
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
               <h2 className="text-lg font-bold">Apostas ao vivo</h2>
-              <p className="text-[13px] text-white/45">Aposte direto aqui — escolha os pilotos e monte seu bilhete (multi-aposta). Cotação pari-mutuel.</p>
+              <p className="text-[13px] text-white/45">Aposte direto aqui — escolha os pilotos e monte seu bilhete (multi-aposta). Cotação dinâmica.</p>
             </div>
             <BettingExperience lockedEventId={event.eventId ?? undefined} hideHeader hideFeatured />
           </section>

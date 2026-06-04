@@ -233,7 +233,7 @@ export const FeaturedDuelBetModal: React.FC<Props> = ({
             )}
           </div>
 
-          {/* Microcopy pari-mutuel */}
+          {/* Microcopy de cotação dinâmica */}
           <p className='mt-3 text-[11px] leading-relaxed text-white/40'>
             Cotação é dinâmica — o retorno final depende do rateio do pote no fechamento. Quem acerta nunca recebe menos que o valor apostado.
           </p>

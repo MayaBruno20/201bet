@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useRouter } from 'next/navigation';
 import { getPublicApiUrl, getPublicWsUrl } from '@/lib/env-public';
@@ -11,20 +11,34 @@ import type { MarketSnapshot } from '@/types/market';
 const apiUrl = getPublicApiUrl();
 const wsUrl = getPublicWsUrl();
 
+// Descarta snapshots que pararam de chegar no stream (≈3 ciclos de broadcast de 4s).
+const FRESH_MS = 12_000;
+
 /**
- * QuickBetPanel da home — agora plugado direto no MESMO snapshot/WebSocket que
- * a página /apostas usa. Garantia: a cotação aqui = cotação lá, sempre.
+ * Embate "ao vivo agora" = aposta aberta (BOOKING_OPEN). O bookingCloseAt/countdown
+ * NÃO é enforced neste sistema — o embate continua apostável depois de zerar, até o
+ * admin fechar — então NÃO usamos closeInSeconds como gate (senão o card sumiria
+ * assim que o countdown chegasse a 0, que é o caso da maioria dos embates).
+ */
+function isLive(s: MarketSnapshot): boolean {
+  return s.status === 'BOOKING_OPEN' && !!s.duel?.left && !!s.duel?.right;
+}
+
+/**
+ * QuickBetPanel da home — card "AO VIVO AGORA".
  *
- * Fluxo:
- *   1) GET /market/snapshot → pega o duelo destacado atual + odds reais
- *   2) Inscreve no socket `market:update` → atualiza odds em tempo real
- *   3) Click em apostar → joga pro /apostas com query params pré-selecionados
+ * O gateway transmite um `market:update` por embate a cada 4s (e na conexão), então
+ * selecionamos AQUI, direto do stream, o melhor embate que está AO VIVO agora:
+ *   1) personalizado em destaque (isCustom && isFeatured)
+ *   2) qualquer ao vivo com pote (totalPool > 0)
+ *   3) qualquer ao vivo
+ * Sem nenhum ao vivo → não mostra nada. Trocar pro destaque, derrubar um que fechou
+ * e preencher quando outro abre acontecem em ≤4s, sem polling.
  */
 export function QuickBetSection({ className }: { className?: string }) {
   const router = useRouter();
   const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
   const [userLoggedIn, setUserLoggedIn] = useState(false);
-  const duelIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     setUserLoggedIn(!!getStoredUser());
@@ -32,42 +46,59 @@ export function QuickBetSection({ className }: { className?: string }) {
 
   useEffect(() => {
     let alive = true;
+    // Último snapshot conhecido por embate + quando chegou (pra podar os que pararam
+    // de ser transmitidos, ex.: embate cancelado some do broadcast).
+    const known = new Map<string, { snap: MarketSnapshot; at: number }>();
 
-    // Snapshot inicial (mesmo endpoint do /apostas)
+    const pickBestLive = (): MarketSnapshot | null => {
+      const now = Date.now();
+      const live = [...known.values()]
+        .filter((e) => now - e.at < FRESH_MS && isLive(e.snap))
+        .map((e) => e.snap);
+      if (!live.length) return null;
+      return (
+        live.find((s) => s.isCustom && s.isFeatured) ||
+        live.find((s) => s.totalPool > 0) ||
+        live[0]
+      );
+    };
+
+    // setSnapshot com a MESMA referência quando nada muda → React faz bail-out (sem
+    // re-render). Referência nova (odds atualizadas / troca de embate / null) re-renderiza.
+    const recompute = () => {
+      if (alive) setSnapshot(pickBestLive());
+    };
+
+    const ingest = (snap: MarketSnapshot | null) => {
+      if (!alive || !snap?.duelId) return;
+      known.set(snap.duelId, { snap, at: Date.now() });
+      recompute();
+    };
+
+    // Primeira pintura rápida: o backend já devolve o melhor embate ao vivo (ou null).
     fetch(`${apiUrl}/market/snapshot`, { cache: 'no-store' })
-      .then(async (r) => (r.ok ? r.text() : ''))
+      .then((r) => (r.ok ? r.text() : ''))
       .then((text) => {
-        if (!alive || !text.trim()) return;
+        const trimmed = text.trim();
+        if (!trimmed || trimmed === 'null') return;
         try {
-          const snap = JSON.parse(text) as MarketSnapshot | null;
-          if (snap) {
-            duelIdRef.current = snap.duelId;
-            setSnapshot(snap);
-          }
+          ingest(JSON.parse(trimmed) as MarketSnapshot);
         } catch {
           /* ignora json malformado */
         }
       })
       .catch(() => undefined);
 
-    // WebSocket para odds ao vivo
+    // Stream ao vivo de TODOS os embates.
     const socket: Socket = io(wsUrl, { transports: ['websocket'] });
-    socket.on('market:update', (payload: MarketSnapshot) => {
-      if (!alive) return;
-      setSnapshot((prev) => {
-        // Se ainda não temos um duelo destaque, adota o primeiro que vier
-        if (!prev) {
-          duelIdRef.current = payload.duelId;
-          return payload;
-        }
-        // Só atualiza se for o duelo que está sendo exibido
-        if (prev.duelId === payload.duelId) return payload;
-        return prev;
-      });
-    });
+    socket.on('market:update', (payload: MarketSnapshot) => ingest(payload));
+
+    // Reavalia mesmo se o WS ficar quieto: poda embates expirados / que sumiram.
+    const sweep = setInterval(recompute, 4_000);
 
     return () => {
       alive = false;
+      clearInterval(sweep);
       socket.disconnect();
     };
   }, []);

@@ -559,7 +559,7 @@ export class AdminService {
       } catch { /* market may already be closed */ }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.event.update({
         where: { id },
         data: { status: EventStatus.CANCELED },
@@ -596,6 +596,10 @@ export class AdminService {
       );
       return { id, status: EventStatus.CANCELED };
     });
+
+    // Engine recarrega já: os duelos cancelados saem do card "AO VIVO" em ~1 tick.
+    void this.marketService.refreshNow();
+    return result;
   }
 
   async listDrivers() {
@@ -930,7 +934,7 @@ export class AdminService {
     const existing = await this.prisma.duel.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Embate não encontrado');
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.duel.update({
         where: { id },
         data: { status: DuelStatus.CANCELED },
@@ -945,6 +949,10 @@ export class AdminService {
       );
       return { id: updated.id, status: updated.status };
     });
+
+    // Tira o duelo cancelado do engine na hora (card "AO VIVO" / /apostas).
+    this.marketService.removeDuel(id);
+    return result;
   }
 
   async listSettings() {
