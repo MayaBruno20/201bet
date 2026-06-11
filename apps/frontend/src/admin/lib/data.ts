@@ -62,6 +62,7 @@ export const NAV: NavItem[] = [
   { id: 'usuarios', label: 'Usuários', icon: 'Users', group: 'Cadastros', href: '/usuarios' },
   { id: 'financeiro', label: 'Financeiro', icon: 'Wallet', group: 'Financeiro', href: '/financeiro' },
   { id: 'apostas', label: 'Apostas', icon: 'Receipt', group: 'Financeiro', href: '/apostas' },
+  { id: 'promocoes', label: 'Promoções', icon: 'Dollar', group: 'Financeiro', href: '/promocoes' },
   { id: 'analytics', label: 'Relatórios', icon: 'Chart', group: 'Análise', href: '/relatorios' },
   { id: 'auditoria', label: 'Auditoria', icon: 'Shield', group: 'Análise', href: '/auditoria' },
   { id: 'disclaimers', label: 'Disclaimers', icon: 'AlertTriangle', group: 'Sistema', href: '/disclaimers' },

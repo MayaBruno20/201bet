@@ -98,9 +98,10 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(payload.password, 12);
+    const promoCode = payload.promoCode?.trim().toLowerCase() || null;
 
     const user = await this.prisma.$transaction(async (tx) => {
-      return tx.user.create({
+      const created = await tx.user.create({
         data: {
           email,
           name: payload.name.trim(),
@@ -116,6 +117,23 @@ export class AuthService {
         },
         include: { wallet: true },
       });
+
+      // Inscrição na campanha promocional (QR do panfleto). Código inválido/expirado
+      // é ignorado em silêncio — nunca bloqueia o cadastro. O bônus só é creditado
+      // no primeiro depósito qualificado (ver PaymentsService.confirmDeposit).
+      if (promoCode) {
+        const campaign = await tx.promoCampaign.findFirst({
+          where: { code: promoCode, active: true },
+          select: { id: true },
+        });
+        if (campaign) {
+          await tx.promoEnrollment.create({
+            data: { campaignId: campaign.id, userId: created.id },
+          });
+        }
+      }
+
+      return created;
     });
 
     await this.dispatchVerificationEmail(user.id, user.email, user.name);

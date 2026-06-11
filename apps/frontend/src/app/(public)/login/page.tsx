@@ -46,6 +46,21 @@ export default function LoginPage() {
   const [birthDate, setBirthDate] = useState('');
   const [name, setName] = useState('');
   const [googleReady, setGoogleReady] = useState(false);
+  const [promoCode, setPromoCode] = useState<string | null>(null);
+
+  // Captura ?promo=<code> do QR do panfleto. Persiste em sessionStorage pra sobreviver
+  // a refresh/toggle de modo, e abre direto no cadastro.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const fromUrl = new URLSearchParams(window.location.search).get('promo');
+    const stored = window.sessionStorage.getItem('promoCode');
+    const code = (fromUrl || stored || '').trim();
+    if (code) {
+      setPromoCode(code);
+      try { window.sessionStorage.setItem('promoCode', code); } catch { /* ignore */ }
+      if (fromUrl) setMode('register');
+    }
+  }, []);
 
   function clearSensitiveFields() {
     setPassword('');
@@ -100,7 +115,9 @@ export default function LoginPage() {
           name: name.trim(),
           cpf: cpfDigits,
           birthDate,
+          promoCode: promoCode ?? undefined,
         });
+        try { window.sessionStorage.removeItem('promoCode'); } catch { /* ignore */ }
       }
     } catch (err) {
       if (mode === 'register') {
@@ -190,6 +207,15 @@ export default function LoginPage() {
               Cadastro
             </button>
           </div>
+
+          {mode === 'register' && promoCode ? (
+            <div className='mt-5 flex items-start gap-2.5 rounded-2xl border border-[#ffb028]/35 bg-[#ffb028]/10 px-4 py-3 text-sm'>
+              <span className='text-base leading-none'>🎁</span>
+              <span className='text-[#ffd9a0]'>
+                Você chegou por um convite promocional! Cadastre-se e ganhe <strong>saldo bônus</strong> no seu primeiro depósito qualificado.
+              </span>
+            </div>
+          ) : null}
 
           <form className='mt-5 space-y-4' onSubmit={handleSubmit}>
             {mode === 'register' ? (

@@ -22,6 +22,13 @@ export const ENDPOINTS = {
   IMAGES: {
     upload: '/admin/images',
   },
+  PROMOTIONS: {
+    list: '/admin/promotions',
+    create: '/admin/promotions',
+    update: (id: string) => `/admin/promotions/${id}`,
+    delete: (id: string) => `/admin/promotions/${id}`,
+    enrollments: (id: string) => `/admin/promotions/${id}/enrollments`,
+  },
   AUTH: {
     login: '/admin/auth/login',
     login2fa: '/admin/auth/login/2fa',
