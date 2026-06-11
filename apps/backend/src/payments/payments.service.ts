@@ -234,6 +234,43 @@ export class PaymentsService {
         },
       });
 
+      // Bônus de promoção (QR do panfleto): no 1º depósito que atinge o mínimo da
+      // campanha, credita o saldo bônus uma única vez. A claim atômica (updateMany
+      // gated em PENDING) evita conceder em dobro se dois depósitos confirmarem juntos.
+      const enrollment = await tx.promoEnrollment.findUnique({
+        where: { userId: payment.userId },
+        include: { campaign: true },
+      });
+      if (
+        enrollment &&
+        enrollment.bonusStatus === 'PENDING' &&
+        Number(amount) >= Number(enrollment.campaign.minDeposit)
+      ) {
+        const claimedBonus = await tx.promoEnrollment.updateMany({
+          where: { id: enrollment.id, bonusStatus: 'PENDING' },
+          data: {
+            bonusStatus: 'GRANTED',
+            bonusAmount: enrollment.campaign.bonusAmount,
+            qualifyingPaymentId: paymentId,
+            bonusGrantedAt: new Date(),
+          },
+        });
+        if (claimedBonus.count === 1) {
+          await tx.wallet.update({
+            where: { id: wallet.id },
+            data: { balance: { increment: enrollment.campaign.bonusAmount } },
+          });
+          await tx.walletTransaction.create({
+            data: {
+              walletId: wallet.id,
+              type: WalletTransactionType.BONUS,
+              amount: enrollment.campaign.bonusAmount,
+              reference: `promo-bonus-${enrollment.id}`,
+            },
+          });
+        }
+      }
+
       const updatedWallet = await tx.wallet.findUnique({
         where: { id: wallet.id },
       });

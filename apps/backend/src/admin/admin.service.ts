@@ -1703,6 +1703,125 @@ export class AdminService {
     });
   }
 
+  // ── Promoções (QR Code do panfleto) ──
+
+  /** Normaliza o código da campanha para um slug seguro pro link (/login?promo=<code>). */
+  private slugifyPromoCode(raw: string): string {
+    return raw
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '') // remove acentos (combining marks)
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  async listPromotions() {
+    const campaigns = await this.prisma.promoCampaign.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: { select: { enrollments: true } },
+        enrollments: { select: { bonusStatus: true, bonusAmount: true } },
+      },
+    });
+    return campaigns.map(({ enrollments, _count, ...rest }) => {
+      const granted = enrollments.filter((e) => e.bonusStatus === 'GRANTED');
+      return {
+        ...rest,
+        enrolledCount: _count.enrollments,
+        grantedCount: granted.length,
+        totalPaidOut: granted.reduce((s, e) => s + Number(e.bonusAmount ?? 0), 0),
+      };
+    });
+  }
+
+  async createPromotion(
+    payload: { name: string; code?: string; bonusAmount?: number; minDeposit?: number },
+    audit: AuditContext = {},
+  ) {
+    const name = payload.name?.trim();
+    if (!name) throw new BadRequestException('Nome da campanha é obrigatório');
+    const code = this.slugifyPromoCode(payload.code?.trim() || name);
+    if (!code) throw new BadRequestException('Código inválido — use letras ou números');
+
+    const existing = await this.prisma.promoCampaign.findUnique({ where: { code } });
+    if (existing) throw new ConflictException('Já existe uma campanha com esse código');
+
+    return this.prisma.$transaction(async (tx) => {
+      const campaign = await tx.promoCampaign.create({
+        data: {
+          name,
+          code,
+          bonusAmount:
+            payload.bonusAmount !== undefined ? new Prisma.Decimal(payload.bonusAmount) : undefined,
+          minDeposit:
+            payload.minDeposit !== undefined ? new Prisma.Decimal(payload.minDeposit) : undefined,
+        },
+      });
+      await this.logAction(tx, 'ADMIN_CREATE_PROMOTION', 'PromoCampaign', campaign.id, {
+        name, code, bonusAmount: payload.bonusAmount, minDeposit: payload.minDeposit,
+      }, audit);
+      return campaign;
+    });
+  }
+
+  async updatePromotion(
+    id: string,
+    payload: { name?: string; code?: string; bonusAmount?: number; minDeposit?: number; active?: boolean },
+    audit: AuditContext = {},
+  ) {
+    const existing = await this.prisma.promoCampaign.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Campanha não encontrada');
+
+    let code: string | undefined;
+    if (payload.code !== undefined) {
+      code = this.slugifyPromoCode(payload.code);
+      if (!code) throw new BadRequestException('Código inválido — use letras ou números');
+      const dup = await this.prisma.promoCampaign.findUnique({ where: { code } });
+      if (dup && dup.id !== id) throw new ConflictException('Já existe uma campanha com esse código');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.promoCampaign.update({
+        where: { id },
+        data: {
+          name: payload.name?.trim(),
+          code,
+          bonusAmount:
+            payload.bonusAmount !== undefined ? new Prisma.Decimal(payload.bonusAmount) : undefined,
+          minDeposit:
+            payload.minDeposit !== undefined ? new Prisma.Decimal(payload.minDeposit) : undefined,
+          active: payload.active,
+        },
+      });
+      await this.logAction(tx, 'ADMIN_UPDATE_PROMOTION', 'PromoCampaign', id, payload, audit);
+      return updated;
+    });
+  }
+
+  async deletePromotion(id: string, audit: AuditContext = {}) {
+    const existing = await this.prisma.promoCampaign.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Campanha não encontrada');
+    return this.prisma.$transaction(async (tx) => {
+      await tx.promoCampaign.update({ where: { id }, data: { active: false } });
+      await this.logAction(tx, 'ADMIN_DEACTIVATE_PROMOTION', 'PromoCampaign', id, { active: false }, audit);
+      return { id, active: false };
+    });
+  }
+
+  /** Todos os usuários inscritos via QR dessa campanha + status do bônus. */
+  async getPromotionEnrollments(campaignId: string) {
+    const campaign = await this.prisma.promoCampaign.findUnique({ where: { id: campaignId } });
+    if (!campaign) throw new NotFoundException('Campanha não encontrada');
+    return this.prisma.promoEnrollment.findMany({
+      where: { campaignId },
+      orderBy: { enrolledAt: 'desc' },
+      include: {
+        user: { select: { id: true, name: true, email: true, createdAt: true } },
+      },
+    });
+  }
+
   // ── Profit Dashboard ──
 
   async getProfitByMarket() {

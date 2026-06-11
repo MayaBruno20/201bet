@@ -33,4 +33,11 @@ export class RegisterDto {
   @IsOptional()
   @IsDateString()
   birthDate?: string;
+
+  // Código da campanha promocional (QR Code do panfleto). Capturado de
+  // /login?promo=<code>. Se bater com uma campanha ativa, inscreve o usuário.
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  promoCode?: string;
 }

@@ -237,6 +237,7 @@ model User {
   verificationTokens VerificationToken[]
   affiliate          Affiliate?          @relation("affiliateUsers", fields: [affiliateId], references: [id], onDelete: SetNull)
   adminSessions      AdminSession[]
+  promoEnrollment    PromoEnrollment?
 
   @@index([status])
   @@index([role])
@@ -606,6 +607,54 @@ model AffiliateCommission {
   @@index([affiliateId, createdAt])
   @@index([betId])
   @@index([marketId])
+}
+
+/// Status do bônus de um inscrito numa campanha promocional (QR Code do panfleto).
+enum PromoBonusStatus {
+  PENDING // inscrito, mas ainda não fez o depósito qualificado
+  GRANTED // depósito >= mínimo confirmado → bônus creditado no saldo
+}
+
+/// Campanha promocional (ex.: QR Code de panfleto). Define o bônus de saldo
+/// concedido a novos usuários cadastrados pelo link e a regra de depósito mínimo.
+model PromoCampaign {
+  id          String   @id @default(uuid())
+  name        String
+  /// Código usado no link/QR (ex.: panfleto-armageddon). Vira /login?promo=<code>.
+  code        String   @unique
+  /// Saldo bônus creditado (R$) ao bater o depósito mínimo.
+  bonusAmount Decimal  @default(5) @db.Decimal(20, 4)
+  /// Depósito mínimo (R$) para liberar o bônus.
+  minDeposit  Decimal  @default(20) @db.Decimal(20, 4)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  enrollments PromoEnrollment[]
+
+  @@index([code])
+  @@index([active])
+}
+
+/// Inscrição de um usuário numa campanha (1 por usuário). Rastreia quem se
+/// cadastrou via QR e se já recebeu o bônus.
+model PromoEnrollment {
+  id              String           @id @default(uuid())
+  campaignId      String
+  userId          String           @unique
+  bonusStatus     PromoBonusStatus @default(PENDING)
+  /// Valor efetivamente creditado (snapshot no momento da concessão).
+  bonusAmount     Decimal?         @db.Decimal(20, 4)
+  /// Payment.id do depósito que disparou o bônus (auditoria).
+  qualifyingPaymentId String?
+  enrolledAt      DateTime         @default(now())
+  bonusGrantedAt  DateTime?
+
+  campaign PromoCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, bonusStatus])
+  @@index([userId])
 }
 
 model BrazilList {

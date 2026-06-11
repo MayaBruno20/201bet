@@ -483,6 +483,41 @@ export class AdminController {
     return this.adminService.getAffiliateCommissions(id);
   }
 
+  // ── Promoções (QR Code do panfleto) ──
+
+  @Get('promotions')
+  listPromotions() {
+    return this.adminService.listPromotions();
+  }
+
+  @Post('promotions')
+  createPromotion(
+    @Body() payload: { name: string; code?: string; bonusAmount?: number; minDeposit?: number },
+    @Req() req: ReqUser,
+  ) {
+    return this.adminService.createPromotion(payload, this.auditFromReq(req));
+  }
+
+  @Patch('promotions/:id')
+  updatePromotion(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body()
+    payload: { name?: string; code?: string; bonusAmount?: number; minDeposit?: number; active?: boolean },
+    @Req() req: ReqUser,
+  ) {
+    return this.adminService.updatePromotion(id, payload, this.auditFromReq(req));
+  }
+
+  @Delete('promotions/:id')
+  deletePromotion(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
+    return this.adminService.deletePromotion(id, this.auditFromReq(req));
+  }
+
+  @Get('promotions/:id/enrollments')
+  promotionEnrollments(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getPromotionEnrollments(id);
+  }
+
   // ── Config ──
 
   @Post('config/margin')
