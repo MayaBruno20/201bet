@@ -1,6 +1,6 @@
 # 201Bet - Guia de execução local (passo a passo)
 
-Este guia é para qualquer novo programador subir o projeto local sem dor de cabeça.
+Este Guia é para qualquer novo programador subir o projeto local sem dor de cabeça.
 
 ## 1) Pré-requisitos
 
