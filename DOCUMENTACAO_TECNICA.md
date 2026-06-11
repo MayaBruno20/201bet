@@ -12,7 +12,7 @@
 - **Backups e recuperação.** Suporte nativo a restore e histórico de dados.
 
 **Decisão técnica:** o projeto mantém o schema em Prisma e executa em qualquer PostgreSQL compatível. NeonDB é a recomendação para produção por custo, escalabilidade e operação simplificada.
-
+a
 ---
 
 ## 2) Modelo de dados completo
