@@ -7,6 +7,7 @@ import { useToast } from '@admin/components/ui/toast';
 import { useConfirm } from '@admin/components/ui/confirm';
 import { api } from '@admin/lib/api';
 import { ENDPOINTS } from '@admin/lib/endpoints';
+import { getPublicSiteUrl } from '@/lib/env-public';
 
 type Campaign = {
   id: string;
@@ -31,21 +32,6 @@ type Enrollment = {
   user: { id: string; name: string; email: string; createdAt: string };
 };
 
-// Base do site público (onde o cadastro acontece). Derivada da API; editável na UI
-// caso o setup do admin seja diferente. Ex.: https://api.201-bet.com/api → https://201-bet.com
-function derivePublicBase(): string {
-  try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
-    if (!apiUrl) return '';
-    const u = new URL(apiUrl);
-    let host = u.host.replace(/^api\./, '');
-    host = host.replace(/:3502$/, ':3501'); // dev: API 3502 → site 3501
-    return `${u.protocol}//${host}`;
-  } catch {
-    return '';
-  }
-}
-
 const emptyForm = { name: '', code: '', bonusAmount: 5, minDeposit: 20, active: true };
 
 export default function PromocoesPage() {
@@ -67,7 +53,7 @@ export default function PromocoesPage() {
   const { push } = useToast();
   const confirm = useConfirm();
 
-  React.useEffect(() => { setLinkBase(derivePublicBase()); }, []);
+  React.useEffect(() => { setLinkBase(getPublicSiteUrl()); }, []);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -259,7 +245,7 @@ export default function PromocoesPage() {
             <div className="space-y-3">
               <div>
                 <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Base do site público</label>
-                <input className="input mt-1 font-mono text-[12px]" value={linkBase} onChange={(e) => setLinkBase(e.target.value)} placeholder="https://201-bet.com"/>
+                <input className="input mt-1 font-mono text-[12px]" value={linkBase} onChange={(e) => setLinkBase(e.target.value)} placeholder="https://palpite201.com"/>
                 <div className="text-[11px] text-[color:var(--text-4)] mt-1">Ajuste se o domínio do site for diferente. O QR e o link usam essa base.</div>
               </div>
 
