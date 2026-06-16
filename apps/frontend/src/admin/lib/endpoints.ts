@@ -91,6 +91,10 @@ export const ENDPOINTS = {
     list: '/admin/markets',
     live: '/admin/markets/live',
     create: '/admin/markets',
+    // PATCH status/nome/fechamento — usado para pausar/reabrir multi-mercados.
+    update: (id: string) => `/admin/markets/${id}`,
+    // Fechamento financeiro: potes por opção, projeção por cenário, ganhadores.
+    summary: (id: string) => `/admin/markets/${id}/summary`,
     settle: (id: string) => `/admin/markets/${id}/settle`,
     void: (id: string) => `/admin/markets/${id}/void`,
     restartEvent: (eventId: string) => `/admin/events/${eventId}/restart`,
@@ -190,6 +194,11 @@ export const ENDPOINTS = {
       toggleMarket: (matchupId: string) => `/admin/armageddon/matchups/${matchupId}/market`,
       settle: (matchupId: string) => `/admin/armageddon/matchups/${matchupId}/settle`,
       delete: (matchupId: string) => `/admin/armageddon/matchups/${matchupId}`,
+    },
+    // Multi-mercados (campeão / reação / queimada) sobre o Event vinculado.
+    markets: {
+      list: (eventId: string) => `/admin/armageddon/${eventId}/markets`,
+      create: (eventId: string) => `/admin/armageddon/${eventId}/markets`,
     },
   },
 

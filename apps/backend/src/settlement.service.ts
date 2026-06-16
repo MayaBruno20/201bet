@@ -68,6 +68,12 @@ export class SettlementService {
 
       if (!market) throw new NotFoundException('Mercado não encontrado');
 
+      // Mercado multi-vencedor (QUALIFY) não pode ser liquidado por 1 vencedor só
+      // — pagaria errado. Vai pelo fluxo settleMultiWinnerMarket (apuração dos classificados).
+      if (market.type === 'QUALIFY') {
+        throw new BadRequestException('Mercado de classificados liquida pelo fluxo de múltiplos vencedores, não por vencedor único.');
+      }
+
       const winnerOdd = market.odds.find((o) => o.id === winnerOddId);
       if (!winnerOdd) {
         throw new BadRequestException('Opção vencedora não pertence a este mercado');
@@ -338,6 +344,168 @@ export class SettlementService {
       marketId,
       winnerOddId,
       winnerLabel: result.winnerLabel,
+      totalPool: result.totalPool,
+      rakeCollected: result.rakeCollected,
+      totalPayout: result.totalPayout,
+      totalAffiliateCommission: result.totalAffiliateCommission,
+      houseNetProfit,
+      winningBets: result.winningBets,
+      losingBets: result.losingBets,
+    };
+  }
+
+  /**
+   * Liquidação MULTI-VENCEDOR (ex.: "32 classificados ao resorteio").
+   * Vários `winnerOddIds` ganham ao mesmo tempo. O pote líquido (após rake de
+   * 20%) é rateado entre TODAS as apostas das opções vencedoras, proporcional
+   * ao stake — todas com o MESMO multiplicador.
+   *
+   * Invariante de proteção da casa (idêntica ao single-winner):
+   *   odd = max(1.0, netPool / winnerPool); payout = winnerPool * odd
+   *       = max(winnerPool, netPool) <= totalPool
+   *   ⇒ a casa NUNCA paga do próprio bolso (no pior caso, esmagamento, a
+   *   margem encolhe até 0). Comissões de afiliado saem de dentro do rake.
+   *
+   * Não grava `winnerOddId` (são vários) — a verdade fica nos status das Bets
+   * (WON/LOST) e no AuditLog. Idempotente sob lock pelo status SETTLED.
+   */
+  async settleMultiWinnerMarket(
+    marketId: string,
+    winnerOddIds: string[],
+    audit: AuditContext = {},
+  ): Promise<Omit<SettlementResult, 'winnerOddId' | 'winnerLabel'> & { winnerOddIds: string[]; winnerLabels: string[] }> {
+    const effectiveRake = HOUSE_MARGIN_PERCENT;
+    const winnerSet = new Set(winnerOddIds);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+        SELECT id, status FROM "Market" WHERE id = ${marketId} FOR UPDATE
+      `.then((rows) => rows[0] ?? null);
+      if (!locked) throw new NotFoundException('Mercado não encontrado');
+      if (locked.status === 'SETTLED') throw new BadRequestException('Mercado já foi liquidado');
+      if (!['OPEN', 'CLOSED', 'SUSPENDED'].includes(locked.status)) {
+        throw new BadRequestException('Mercado não está em um status que permite liquidação');
+      }
+
+      const market = await tx.market.findUnique({
+        where: { id: marketId },
+        include: {
+          odds: { include: { betItems: { include: { bet: { include: { user: { include: { wallet: true, affiliate: true } } } } } } } },
+        },
+      });
+      if (!market) throw new NotFoundException('Mercado não encontrado');
+
+      const validWinners = market.odds.filter((o) => winnerSet.has(o.id));
+      if (validWinners.length === 0) {
+        throw new BadRequestException('Nenhuma das opções vencedoras pertence a este mercado');
+      }
+      const winnerLabels = validWinners.map((o) => o.label);
+
+      // Deduplica bets e calcula pools.
+      const seen = new Set<string>();
+      let totalPool = 0;
+      let winnerPool = 0;
+      const uniqueBets: Array<{ betId: string; stake: number; oddId: string; user: typeof market.odds[0]['betItems'][0]['bet']['user'] }> = [];
+      for (const odd of market.odds) {
+        for (const it of odd.betItems) {
+          if (it.bet.status !== BetStatus.OPEN) continue;
+          if (seen.has(it.betId)) continue;
+          seen.add(it.betId);
+          const stake = Number(it.bet.stake);
+          totalPool += stake;
+          if (winnerSet.has(odd.id)) winnerPool += stake;
+          uniqueBets.push({ betId: it.betId, stake, oddId: odd.id, user: it.bet.user });
+        }
+      }
+
+      const rakeCollected = totalPool * (effectiveRake / 100);
+      const netPool = totalPool - rakeCollected;
+      const rawOdd = winnerPool > 0 ? netPool / winnerPool : 0;
+      const payoutOdd = winnerPool > 0 ? Math.max(1.0, rawOdd) : 0;
+
+      await tx.market.update({
+        where: { id: marketId },
+        data: { status: MarketStatus.SETTLED, winnerOddId: null, settledAt: new Date() },
+      });
+      await tx.odd.updateMany({ where: { marketId }, data: { status: OddStatus.CLOSED } });
+
+      let totalPayout = 0;
+      let totalAffiliateCommission = 0;
+      let winningBets = 0;
+      let losingBets = 0;
+
+      for (const bet of uniqueBets) {
+        const isWinner = winnerSet.has(bet.oddId);
+        if (isWinner) {
+          winningBets++;
+          const payout = bet.stake * payoutOdd;
+          totalPayout += payout;
+          await tx.bet.update({
+            where: { id: bet.betId },
+            data: { status: BetStatus.WON, potentialWin: new Prisma.Decimal(payout.toFixed(4)) },
+          });
+          const wallet = bet.user.wallet;
+          if (wallet) {
+            await tx.walletTransaction.create({
+              data: { walletId: wallet.id, type: WalletTransactionType.BET_WON, amount: new Prisma.Decimal(payout.toFixed(4)), reference: bet.betId },
+            });
+            await tx.wallet.update({ where: { id: wallet.id }, data: { balance: { increment: new Prisma.Decimal(payout.toFixed(4)) } } });
+          }
+        } else {
+          losingBets++;
+          await tx.bet.update({ where: { id: bet.betId }, data: { status: BetStatus.LOST } });
+        }
+
+        const affiliate = bet.user.affiliate;
+        if (affiliate && affiliate.active) {
+          const afPct = Math.min(Number(affiliate.commissionPct), 100);
+          const commission = bet.stake * (effectiveRake / 100) * (afPct / 100);
+          if (commission > 0) {
+            totalAffiliateCommission += commission;
+            await tx.affiliateCommission.create({
+              data: { affiliateId: affiliate.id, betId: bet.betId, marketId, amount: new Prisma.Decimal(commission.toFixed(4)) },
+            });
+          }
+        }
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: audit.actorUserId,
+          action: 'SETTLE_MULTI_WINNER_MARKET',
+          entity: 'Market',
+          entityId: marketId,
+          payload: {
+            winnerOddIds: validWinners.map((o) => o.id),
+            winnerLabels,
+            totalPool, rakeCollected, totalPayout, totalAffiliateCommission,
+            winningBets, losingBets, payoutOddApplied: payoutOdd, payoutOddRaw: rawOdd,
+            flooredAt1: rawOdd > 0 && rawOdd < 1.0,
+          } as unknown as Prisma.InputJsonValue,
+          ipAddress: audit.ipAddress,
+          userAgent: audit.userAgent,
+        },
+      });
+
+      return { totalPool, rakeCollected, totalPayout, totalAffiliateCommission, winningBets, losingBets, winnerLabels };
+    }, { timeout: 60_000, maxWait: 5_000 });
+
+    const houseNetProfit = result.rakeCollected - result.totalAffiliateCommission;
+    this.logger.log(
+      `Multi-winner market ${marketId} settled: winners=${result.winnerLabels.length}, pool=${result.totalPool.toFixed(2)}, ` +
+      `payout=${result.totalPayout.toFixed(2)}, affiliate=${result.totalAffiliateCommission.toFixed(2)}, houseNet=${houseNetProfit.toFixed(2)}`,
+    );
+
+    try {
+      this.marketGateway?.emitSettlement({ marketId, winnerOddId: '', winnerLabel: `${result.winnerLabels.length} classificados` });
+    } catch (e) {
+      this.logger.warn(`Falha ao emitir settlement multi-winner por WS: ${e instanceof Error ? e.message : e}`);
+    }
+
+    return {
+      marketId,
+      winnerOddIds,
+      winnerLabels: result.winnerLabels,
       totalPool: result.totalPool,
       rakeCollected: result.rakeCollected,
       totalPayout: result.totalPayout,

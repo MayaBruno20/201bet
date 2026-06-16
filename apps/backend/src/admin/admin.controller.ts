@@ -294,6 +294,12 @@ export class AdminController {
     return this.adminService.listLiveMarkets(eventId);
   }
 
+  /** Fechamento financeiro de um multi-mercado: potes por opção, projeções por cenário e, se liquidado, lista de ganhadores. */
+  @Get('markets/:id/summary')
+  marketSummary(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getMultiRunnerMarketSummary(id);
+  }
+
   /** Reinicia o evento: refund de apostas em aberto + reset dos pools + reabertura dos mercados. */
   @Post('events/:id/restart')
   restartEvent(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {

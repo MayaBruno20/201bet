@@ -15,6 +15,7 @@ import { useToast } from '@admin/components/ui/toast';
 import { useConfirm } from '@admin/components/ui/confirm';
 import { api } from '@admin/lib/api';
 import { ENDPOINTS } from '@admin/lib/endpoints';
+import { MultiMarketManager } from './multi-market-manager';
 
 // Estrutura das chaves do 1º sorteio (espelha FIRST_DRAW_KEYS do backend).
 const KEYS: Array<{ key: string; size: number; qualifiers: number }> = [
@@ -96,7 +97,7 @@ export function ArmageddonEliminationDetail({ eventId, onChanged }: { eventId: s
   const [detail, setDetail] = React.useState<Detail | null>(null);
   const [fin, setFin] = React.useState<FinancialSummary | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [tab, setTab] = React.useState<'cadastro' | 'auditoria' | 'segundo'>('cadastro');
+  const [tab, setTab] = React.useState<'cadastro' | 'auditoria' | 'segundo' | 'mercados'>('cadastro');
   const [busy, setBusy] = React.useState<string | null>(null);
   const [addOpen, setAddOpen] = React.useState<{ bracketKey: string; position: number } | null>(null);
   const [settleMatchup, setSettleMatchup] = React.useState<Matchup | null>(null);
@@ -261,6 +262,9 @@ export function ArmageddonEliminationDetail({ eventId, onChanged }: { eventId: s
           <button onClick={() => setTab('segundo')} className={`tab ${tab === 'segundo' ? 'active' : ''}`}>
             2º Sorteio {firstDrawComplete && secondDraw.length === 0 && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full" style={{ background: 'var(--emerald)' }}/>}
           </button>
+          <button onClick={() => setTab('mercados')} className={`tab ${tab === 'mercados' ? 'active' : ''}`}>
+            Multi-Mercados
+          </button>
           {(firstDraw.length > 0 || secondDraw.length > 0) && (
             <button className="btn btn-ghost focusable ml-auto text-[12px]" style={{ color: '#ff7585' }}
               onClick={resetEvent} disabled={busy === 'reset'}>
@@ -292,6 +296,14 @@ export function ArmageddonEliminationDetail({ eventId, onChanged }: { eventId: s
           eventId={eventId} secondDraw={secondDraw} qualifiers={qualifiers}
           firstDrawComplete={firstDrawComplete} busy={busy}
           onGenerate={generateSecondDraw} onSaved={() => { void load(); onChanged?.(); }}
+        />
+      )}
+
+      {tab === 'mercados' && (
+        <MultiMarketManager
+          armageddonEventId={eventId}
+          eventName={detail.name}
+          roster={detail.roster.map((r) => ({ driverId: r.driverId, name: r.driverName }))}
         />
       )}
 

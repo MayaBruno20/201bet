@@ -6,11 +6,12 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { MarketStatus, MarketType, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
+import { BetStatus, MarketStatus, MarketType, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from './database/prisma.service';
 import { ActivityService } from './common/activity.service';
 import { HOUSE_MARGIN_PERCENT } from './market.service';
+import { aggregatePoolsByOdd } from './multi-market-financials';
 
 type RunnerState = {
   oddId: string;
@@ -258,21 +259,25 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
+    // Potes SEMPRE derivados do banco (apostas OPEN por odd). O incremento em
+    // memória feito no placeBet é só cache de baixa latência entre refreshes —
+    // sem esta reconstrução, um restart do backend zerava os potes exibidos
+    // enquanto as apostas continuavam valendo no banco.
+    const allOddIds = markets.flatMap((m) => m.odds.map((o) => o.id));
+    const poolByOdd = await aggregatePoolsByOdd(this.prisma, allOddIds, [BetStatus.OPEN]);
+
     const next = new Map<string, MultiRunnerEngineState>();
 
     for (const market of markets) {
       const existing = this.states.get(market.id);
 
       const runners: RunnerState[] = market.odds.map((odd) => {
-        const existingRunner = existing?.runners.find((r) => r.oddId === odd.id);
-        if (existingRunner) {
-          return { ...existingRunner };
-        }
+        const agg = poolByOdd.get(odd.id);
         return {
           oddId: odd.id,
           label: odd.label,
-          pool: 0,
-          tickets: 0,
+          pool: agg?.pool ?? 0,
+          tickets: agg?.tickets ?? 0,
           odd: 0,
           locked: false,
         };
@@ -343,9 +348,13 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
     const totalPool = state.runners.reduce((sum, r) => sum + r.pool, 0);
     const net = totalPool * (1 - state.rakePercent / 100);
 
+    // Piso 1.00 — o MESMO da liquidação (settlement.service). O piso antigo de
+    // 1.01 prometia na tela um retorno que a liquidação não paga em cenário de
+    // esmagamento (ela paga no máximo o stake de volta). A casa nunca paga do
+    // próprio bolso: totalPayout <= max(netPool, winnerPool) <= totalPool.
     for (const runner of state.runners) {
       runner.odd = runner.pool > 0
-        ? Math.max(1.01, net / runner.pool)
+        ? Math.max(1.0, net / runner.pool)
         : 0;
     }
   }

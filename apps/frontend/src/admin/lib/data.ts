@@ -339,7 +339,9 @@ export type MarketRow = {
   totalPool: number;
   leftPool: number;
   rightPool: number;
-  odds: Array<{ id: string; label: string; value: number; status: string }>;
+  // pool/tickets por odd: derivados do banco para mercados multi-runner
+  // (para DUEL continuam 0 — o pote deles vem do DuelPoolState).
+  odds: Array<{ id: string; label: string; value: number; status: string; pool: number; tickets: number }>;
   matchupOrigin: MatchupOrigin | null;
 };
 
@@ -349,7 +351,7 @@ type BackendMarket = {
   duelId?: string | null; winnerOddId?: string | null;
   event: { name: string };
   duel?: { poolState?: { leftPool?: string | number; rightPool?: string | number } | null } | null;
-  odds: Array<{ id: string; label: string; value: string | number; status: string }>;
+  odds: Array<{ id: string; label: string; value: string | number; status: string; pool?: string | number; tickets?: number }>;
   matchupOrigin?: MatchupOrigin | null;
 };
 
@@ -360,6 +362,16 @@ export async function fetchMarkets(): Promise<MarketRow[]> {
     return list.map((m) => {
       const left = Number(m.duel?.poolState?.leftPool ?? 0);
       const right = Number(m.duel?.poolState?.rightPool ?? 0);
+      const odds = m.odds.map((o) => ({
+        id: o.id,
+        label: o.label,
+        value: Number(o.value),
+        status: o.status,
+        pool: Number(o.pool ?? 0),
+        tickets: Number(o.tickets ?? 0),
+      }));
+      const isDuel = m.type === 'DUEL';
+      const mrPool = odds.reduce((s, o) => s + o.pool, 0);
       return {
         id: m.id,
         eventId: m.eventId,
@@ -371,10 +383,10 @@ export async function fetchMarkets(): Promise<MarketRow[]> {
         bookingCloseAt: m.bookingCloseAt ?? null,
         duelId: m.duelId ?? null,
         winnerOddId: m.winnerOddId ?? null,
-        totalPool: left + right,
+        totalPool: isDuel ? left + right : mrPool,
         leftPool: left,
         rightPool: right,
-        odds: m.odds.map((o) => ({ id: o.id, label: o.label, value: Number(o.value), status: o.status })),
+        odds,
         matchupOrigin: m.matchupOrigin ?? null,
       };
     });

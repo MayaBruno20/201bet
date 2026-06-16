@@ -44,10 +44,14 @@ export default function MarketControlPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  // Página é "Mercados ao vivo": lista APENAS mercados OPEN.
-  // Stats cards no topo continuam mostrando contadores totais (admin precisa ver
-  // se tem CLOSED/SUSPENDED pendentes de auditoria em outra aba).
-  const openMarkets = React.useMemo(() => markets.filter((m) => m.status === 'OPEN'), [markets]);
+  // Página é "Mercados ao vivo": lista mercados OPEN + multi-mercados PAUSADOS
+  // e FECHADOS (pausado precisa de onde reabrir; fechado ainda guarda apostas
+  // e aguarda auditoria — sumir daqui esconderia dinheiro em jogo do operador).
+  // Duelos seguem a regra antiga: só OPEN (o resto é gerido na aba de origem).
+  const openMarkets = React.useMemo(
+    () => markets.filter((m) => m.status === 'OPEN' || (m.type !== 'DUEL' && (m.status === 'SUSPENDED' || m.status === 'CLOSED'))),
+    [markets],
+  );
   const events = ['all', ...Array.from(new Set(openMarkets.map((m) => m.eventName)))];
   const filtered = eventFilter === 'all' ? openMarkets : openMarkets.filter((m) => m.eventName === eventFilter);
 
@@ -104,6 +108,25 @@ export default function MarketControlPage() {
       await api.post(ENDPOINTS.MARKETS.settle(m.id), { winnerOddId });
       push({ title: 'Mercado auditado', body: `${m.name} — vencedor pago.`, tone: 'emerald' });
       setAuditModal(null);
+      await load();
+    } catch (e) {
+      push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' });
+    } finally { setBusy(null); }
+  };
+
+  // Pausar/reabrir vale só para multi-mercados (type != DUEL): os de duelo
+  // continuam controlados exclusivamente pela aba de origem (Listas/Copa/Armageddon).
+  // OPEN → pausa; SUSPENDED/CLOSED → reabre (o backend reativa as odds junto).
+  const toggleSuspend = async (m: MarketRow) => {
+    const nextStatus = m.status === 'OPEN' ? 'SUSPENDED' : 'OPEN';
+    setBusy(m.id);
+    try {
+      await api.patch(ENDPOINTS.MARKETS.update(m.id), { status: nextStatus });
+      push({
+        title: nextStatus === 'SUSPENDED' ? 'Mercado pausado' : 'Mercado reaberto',
+        body: m.name,
+        tone: nextStatus === 'SUSPENDED' ? 'amber' : 'emerald',
+      });
       await load();
     } catch (e) {
       push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' });
@@ -241,8 +264,10 @@ export default function MarketControlPage() {
                     const pos = m.matchupOrigin
                       ? (idx === 0 ? m.matchupOrigin.leftPosition : idx === 1 ? m.matchupOrigin.rightPosition : null)
                       : null;
-                    const sidePool = idx === 0 ? m.leftPool : idx === 1 ? m.rightPool : 0;
-                    const sideShare = m.totalPool > 0 ? (sidePool / m.totalPool) * 100 : 50;
+                    const sidePool = m.type === 'DUEL'
+                      ? (idx === 0 ? m.leftPool : idx === 1 ? m.rightPool : 0)
+                      : o.pool;
+                    const sideShare = m.totalPool > 0 ? (sidePool / m.totalPool) * 100 : m.type === 'DUEL' ? 50 : 0;
                     return (
                       <div key={o.id} className="rounded-[10px] px-2 py-1.5 flex items-center justify-between gap-2"
                         style={{ background: m.winnerOddId === o.id ? 'rgba(33, 217, 122, 0.15)' : 'rgba(255,255,255,0.02)', border: '1px solid ' + (m.winnerOddId === o.id ? 'var(--emerald)' : 'var(--border)') }}>
@@ -281,6 +306,14 @@ export default function MarketControlPage() {
                       <I.Trophy size={13}/> Auditar vencedor
                     </button>
                   )}
+                  {m.type !== 'DUEL' && m.status !== 'SETTLED' && (
+                    <button className="btn btn-ghost"
+                      onClick={() => toggleSuspend(m)}
+                      disabled={busy === m.id}
+                      style={{ color: m.status === 'OPEN' ? 'var(--accent)' : '#3ee093' }}>
+                      {m.status === 'OPEN' ? <><I.Pause size={13}/> Pausar</> : <><I.Play size={13}/> Reabrir</>}
+                    </button>
+                  )}
                   {canVoid && (
                     <button className="btn btn-ghost"
                       onClick={() => voidMarket(m)}
@@ -291,10 +324,10 @@ export default function MarketControlPage() {
                   )}
                 </div>
 
-                {m.status === 'OPEN' && (
+                {m.status === 'OPEN' && m.type === 'DUEL' && (
                   <div className="mt-2 text-[10.5px] text-[color:var(--text-3)]">
                     Para abrir/pausar/fechar este mercado pré-liquidação, use a aba de origem
-                    {m.type === 'DUEL' ? ' (Copa Categorias / Listas Brasil / Armageddon).' : '.'}
+                    (Copa Categorias / Listas Brasil / Armageddon).
                   </div>
                 )}
               </div>
@@ -324,10 +357,14 @@ export default function MarketControlPage() {
             </div>
 
             <div className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] mt-4 mb-2">Selecione o vencedor</div>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
               {auditModal.odds.map((o, idx) => {
-                const sidePool = idx === 0 ? auditModal.leftPool : idx === 1 ? auditModal.rightPool : 0;
-                const sideShare = auditModal.totalPool > 0 ? (sidePool / auditModal.totalPool) * 100 : 50;
+                const sidePool = auditModal.type === 'DUEL'
+                  ? (idx === 0 ? auditModal.leftPool : idx === 1 ? auditModal.rightPool : 0)
+                  : o.pool;
+                const sideShare = auditModal.totalPool > 0
+                  ? (sidePool / auditModal.totalPool) * 100
+                  : auditModal.type === 'DUEL' ? 50 : 0;
                 return (
                   <button key={o.id} type="button" onClick={() => setSelectedWinnerOdd(o.id)}
                     className="w-full surface-2 p-3 flex items-center justify-between gap-3"
@@ -348,6 +385,34 @@ export default function MarketControlPage() {
                 );
               })}
             </div>
+
+            {/* Preview do fechamento: espelha a regra da liquidação (rake 20%,
+                odd = max(1.0, líquido/pote do vencedor)). Casa nunca paga do bolso. */}
+            {(() => {
+              const idx = auditModal.odds.findIndex((o) => o.id === selectedWinnerOdd);
+              if (idx < 0) return null;
+              const winnerPool = auditModal.type === 'DUEL'
+                ? (idx === 0 ? auditModal.leftPool : idx === 1 ? auditModal.rightPool : 0)
+                : auditModal.odds[idx].pool;
+              const total = auditModal.totalPool;
+              const net = total * 0.8;
+              const payout = winnerPool > 0 ? winnerPool * Math.max(1, net / winnerPool) : 0;
+              const houseGross = total - payout;
+              const fmt = (v: number) => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              return (
+                <div className="mt-3 rounded-[10px] p-3 text-[12px]" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                  <div className="flex justify-between"><span style={{ color: 'var(--text-3)' }}>Pote total</span><span className="font-mono font-bold">{fmt(total)}</span></div>
+                  <div className="flex justify-between"><span style={{ color: 'var(--text-3)' }}>Pago aos ganhadores</span><span className="font-mono font-bold">{fmt(payout)}</span></div>
+                  <div className="flex justify-between"><span style={{ color: 'var(--text-3)' }}>Fica com a casa (bruto)</span><span className="font-mono font-bold" style={{ color: 'var(--emerald)' }}>{fmt(houseGross)}</span></div>
+                  {winnerPool === 0 && total > 0 && (
+                    <div className="mt-2" style={{ color: 'var(--accent)' }}>
+                      ⚠ Ninguém apostou nesta opção: nenhum prêmio será pago e o pote inteiro fica com a casa.
+                      Se preferir devolver as apostas, use “Anular”.
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="flex gap-2 mt-5">
               <button className="btn btn-ghost flex-1 justify-center" onClick={() => setAuditModal(null)} disabled={!!busy}>

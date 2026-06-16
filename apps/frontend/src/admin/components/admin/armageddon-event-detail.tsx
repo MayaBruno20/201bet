@@ -7,12 +7,17 @@ import { useToast } from '@admin/components/ui/toast';
 import { useConfirm } from '@admin/components/ui/confirm';
 import { api } from '@admin/lib/api';
 import { ENDPOINTS } from '@admin/lib/endpoints';
+import { MultiMarketManager } from './multi-market-manager';
 
 type Driver = { id: string; name: string; team?: string | null };
 
 type RosterEntry = {
   id: string;
   driver: Driver;
+  // O serializer do backend também envia o shape "flat" (driverId/driverName);
+  // mantemos os dois para compatibilidade.
+  driverId?: string;
+  driverName?: string;
   sourceListAreaCode?: number | null;
   active: boolean;
 };
@@ -43,7 +48,7 @@ type ArmageddonDetail = {
 export function ArmageddonEventDetail({ eventId, onChanged }: { eventId: string; onChanged?: () => void }) {
   const [detail, setDetail] = React.useState<ArmageddonDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [tab, setTab] = React.useState<'roster' | 'matchups'>('roster');
+  const [tab, setTab] = React.useState<'roster' | 'matchups' | 'mercados'>('roster');
   const [busy, setBusy] = React.useState<string | null>(null);
   const [importOpen, setImportOpen] = React.useState(false);
   const [auditMatchup, setAuditMatchup] = React.useState<Matchup | null>(null);
@@ -159,8 +164,22 @@ export function ArmageddonEventDetail({ eventId, onChanged }: { eventId: string;
           <button onClick={() => setTab('matchups')} className={`tab ${tab === 'matchups' ? 'active' : ''}`}>
             Embates <span className="text-[color:var(--text-4)]">({detail.matchups.length})</span>
           </button>
+          <button onClick={() => setTab('mercados')} className={`tab ${tab === 'mercados' ? 'active' : ''}`}>
+            Multi-Mercados
+          </button>
         </div>
       </Card>
+
+      {tab === 'mercados' && (
+        <MultiMarketManager
+          armageddonEventId={eventId}
+          eventName={detail.name}
+          roster={detail.roster.map((r) => ({
+            driverId: r.driver?.id ?? r.driverId ?? '',
+            name: r.driver?.name ?? r.driverName ?? '—',
+          }))}
+        />
+      )}
 
       {tab === 'roster' && (
         <Card className="p-5">

@@ -11,7 +11,7 @@ import { CountdownPill } from '@/components/home/countdown-pill';
  * Market with 3+ competing runners (Vencedor Geral / Reação / Queimada).
  */
 
-export type MultiRunnerMarketType = 'WINNER' | 'BEST_REACTION' | 'FALSE_START';
+export type MultiRunnerMarketType = 'WINNER' | 'QUALIFY' | 'BEST_REACTION' | 'FALSE_START';
 
 export interface Runner {
   oddId: string;
@@ -59,6 +59,7 @@ function formatShare(share01: number): string {
 
 const MARKET_TYPE_LABEL: Record<MultiRunnerMarketType, string> = {
   WINNER: 'Vencedor geral',
+  QUALIFY: 'Classificados ao resorteio',
   BEST_REACTION: 'Melhor reação',
   FALSE_START: 'Queima de largada',
 };

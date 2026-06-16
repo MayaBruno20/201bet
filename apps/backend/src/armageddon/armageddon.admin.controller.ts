@@ -29,6 +29,7 @@ import {
   SaveSecondDrawLayoutDto,
   SettleArmageddonMatchupDto,
 } from './dto/armageddon-matchup.dto';
+import { CreateArmageddonMultiMarketDto } from './dto/armageddon-multi-market.dto';
 
 type ReqUser = Request & { user?: { userId?: string; role?: UserRole } };
 
@@ -175,6 +176,28 @@ export class ArmageddonAdminController {
   @Get(':id/financial-summary')
   financialSummary(@Param('id') id: string) {
     return this.service.adminGetFinancialSummary(id);
+  }
+
+  // ── Multi-mercados (campeão / reação / queimada) ──
+
+  @Get(':id/markets')
+  listMultiMarkets(@Param('id') id: string) {
+    return this.service.adminListMultiMarkets(id);
+  }
+
+  @Post(':id/markets')
+  createMultiMarket(
+    @Param('id') id: string,
+    @Body() dto: CreateArmageddonMultiMarketDto,
+    @Req() req: ReqUser,
+  ) {
+    return this.service.adminCreateMultiMarket(id, dto, this.audit(req));
+  }
+
+  /** Reapura manualmente os mercados de classificados (resorteio) — fallback do auto-settle do 2º sorteio. */
+  @Post(':id/settle-qualify')
+  settleQualify(@Param('id') id: string, @Req() req: ReqUser) {
+    return this.service.settleQualifyMarketsForEvent(id, this.audit(req));
   }
 
   @Patch('matchups/:matchupId/market')
