@@ -14,6 +14,8 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { MainNav } from '@/components/site/main-nav';
 import { BettingExperience } from '@/components/apostas/betting-board';
+import { ArmageddonChampionShowcase } from '@/components/apostas/armageddon-champion-showcase';
+import { CheckeredFlagIcon, CrownIcon, TargetIcon, BracketIcon, TrophyIcon } from '@/components/apostas/armageddon-icons';
 import { getPublicApiUrl } from '@/lib/env-public';
 
 const apiUrl = getPublicApiUrl();
@@ -204,17 +206,42 @@ export default function ArmageddonHubPage() {
             </section>
           )}
 
-          {/* ── APOSTAS AO VIVO (inline, mesma máquina do /apostas) ── */}
-          <section id="ao-vivo" className="pt-4">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-              <h2 className="text-lg font-bold">Apostas ao vivo</h2>
-              <p className="text-[13px] text-white/45">Aposte direto aqui — escolha os pilotos e monte seu bilhete (multi-aposta). Cotação dinâmica.</p>
+          {/* ── ÂNCORAS DE ACESSO RÁPIDO (foco nas Passadas + atalho pras outras modalidades) ── */}
+          <div className="sticky top-[41px] z-20 border-b border-white/10 bg-[#0b0e18]/90 backdrop-blur-md">
+            <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-4 sm:px-6 lg:px-8 py-2.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <span className="mr-1 hidden shrink-0 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/30 sm:inline">Ir para</span>
+              <a href="#ao-vivo" className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[linear-gradient(180deg,#ffc55a,#ff8a2a)] px-4 py-1.5 text-[12.5px] font-bold text-[#1a1305] shadow-[0_8px_22px_-10px_rgba(255,138,42,0.7)]">
+                <CheckeredFlagIcon size={15} stroke={2} /> Passadas
+              </a>
+              <a href="#campeonato" className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.05] px-4 py-1.5 text-[12.5px] font-semibold text-white/80 transition hover:bg-white/10">
+                <CrownIcon size={15} /> Campeão
+              </a>
+              <a href="#resorteio" className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.05] px-4 py-1.5 text-[12.5px] font-semibold text-white/80 transition hover:bg-white/10">
+                <TargetIcon size={15} /> Resorteio
+              </a>
+              <a href="#chaveamento" className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.05] px-4 py-1.5 text-[12.5px] font-semibold text-white/70 transition hover:bg-white/10">
+                <BracketIcon size={15} /> Chaveamento
+              </a>
             </div>
-            <BettingExperience lockedEventId={event.eventId ?? undefined} hideHeader hideFeatured />
+          </div>
+
+          {/* ── APOSTAS AO VIVO — PASSADAS (foco principal) ── */}
+          <section id="ao-vivo" className="pt-6 scroll-mt-28">
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+              <div className="flex items-center gap-2">
+                <span className="h-5 w-1 rounded-full bg-[#ffb028]" />
+                <h2 className="text-lg font-bold">Passadas ao vivo</h2>
+              </div>
+              <p className="mt-1 text-[13px] text-white/45">O coração do Armageddon — escolha os pilotos e monte seu bilhete (multi-aposta). Cotação dinâmica.</p>
+            </div>
+            <BettingExperience lockedEventId={event.eventId ?? undefined} hideHeader hideFeatured passadasOnly />
           </section>
 
+          {/* ── MULTI-MERCADOS DO CAMPEONATO (Campeão Geral + Resorteio) ── */}
+          {event.eventId && <ArmageddonChampionShowcase eventId={event.eventId} />}
+
           {/* ── CHAVEAMENTO (só o que já foi formado/auditado) ── */}
-          <section id="chaveamento" className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pb-16">
+          <section id="chaveamento" className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pb-16 scroll-mt-28">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold">Chaveamento</h2>
               <span className="text-[12px] text-white/40">As próximas baterias aparecem conforme são auditadas</span>
@@ -256,12 +283,14 @@ function MatchupRow({ m }: { m: ArmaMatchup }) {
   return (
     <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[12.5px]"
       style={{ background: settled ? 'rgba(16,185,129,0.06)' : m.marketOpen ? 'rgba(255,176,40,0.06)' : 'transparent' }}>
-      <span className={`flex-1 truncate ${m.winnerSide === 'LEFT' ? 'font-bold text-emerald-300' : ''}`}>
-        {m.winnerSide === 'LEFT' && '🏆 '}{m.leftDriverName ?? '—'}
+      <span className={`flex flex-1 items-center gap-1.5 truncate ${m.winnerSide === 'LEFT' ? 'font-bold text-emerald-300' : ''}`}>
+        {m.winnerSide === 'LEFT' && <TrophyIcon size={13} className="shrink-0 text-emerald-300" />}
+        <span className="truncate">{m.leftDriverName ?? '—'}</span>
       </span>
       <span className="text-white/25 text-[10px]">vs</span>
-      <span className={`flex-1 truncate text-right ${m.winnerSide === 'RIGHT' ? 'font-bold text-emerald-300' : ''}`}>
-        {m.rightDriverName ?? '—'}{m.winnerSide === 'RIGHT' && ' 🏆'}
+      <span className={`flex flex-1 items-center justify-end gap-1.5 truncate text-right ${m.winnerSide === 'RIGHT' ? 'font-bold text-emerald-300' : ''}`}>
+        <span className="truncate">{m.rightDriverName ?? '—'}</span>
+        {m.winnerSide === 'RIGHT' && <TrophyIcon size={13} className="shrink-0 text-emerald-300" />}
       </span>
       {m.marketOpen && !settled && m.duelId && (
         <Link href={`/apostas?duelId=${m.duelId}`} className="shrink-0 rounded-md bg-[#ffb028]/15 px-2 py-0.5 text-[10px] font-bold text-[#ffb028]">apostar</Link>
@@ -273,7 +302,9 @@ function MatchupRow({ m }: { m: ArmaMatchup }) {
 function NoEventState() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-24 text-center">
-      <div className="text-5xl mb-4">🏁</div>
+      <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl border border-[#ffb028]/25 bg-[#ffb028]/10 text-[#ffb028]">
+        <CheckeredFlagIcon size={30} />
+      </div>
       <h1 className="text-2xl font-bold">Nenhum Armageddon ao vivo agora</h1>
       <p className="mt-2 text-white/50">O maior evento de arrancada NoPrep da América Latina volta em breve. Enquanto isso, há outras corridas rolando.</p>
       <div className="mt-6 flex justify-center gap-3">

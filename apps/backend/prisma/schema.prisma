@@ -103,6 +103,9 @@ enum MarketType {
   WINNER
   BEST_REACTION
   FALSE_START
+  // Mercado multi-vencedor: "quem se classifica" (ex.: os 32 do resorteio do
+  // Armageddon). Liquidação paga TODOS os apostadores das opções vencedoras.
+  QUALIFY
 }
 
 enum ListFormat {
@@ -463,6 +466,11 @@ model Odd {
   id        String    @id @default(uuid())
   marketId  String
   label     String
+  // Piloto associado a esta opção (mercados multi-runner baseados em roster:
+  // WINNER/QUALIFY do Armageddon). Permite liquidar por driverId em vez de
+  // casar pelo nome — usado na apuração automática do resorteio. Null em
+  // mercados de duelo e opções não-ligadas a piloto.
+  driverId  String?
   value     Decimal   @db.Decimal(12, 4)
   status    OddStatus @default(ACTIVE)
   version   Int       @default(1)

@@ -9,11 +9,13 @@ import {
   ArmageddonBracketType,
   ArmageddonStage,
   ArmageddonStatus,
+  BetStatus,
   DuelStatus,
   EventStatus,
   ListFormat,
   ListRoundType,
   MarketStatus,
+  MarketType,
   MatchupSide,
   OddStatus,
   Prisma,
@@ -22,6 +24,8 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { SettlementService } from '../settlement.service';
 import { CacheService } from '../cache/cache.service';
+import { aggregatePoolsByOdd, computeMultiMarketFinancials } from '../multi-market-financials';
+import { HOUSE_MARGIN_PERCENT } from '../market.service';
 import { buildBracketPairs } from '../brazil-lists/brazil-lists.service';
 import {
   buildArmageddonFirstDraw,
@@ -43,6 +47,7 @@ import {
   SaveSecondDrawLayoutDto,
   SettleArmageddonMatchupDto,
 } from './dto/armageddon-matchup.dto';
+import { CreateArmageddonMultiMarketDto } from './dto/armageddon-multi-market.dto';
 
 type AuditContext = {
   actorUserId?: string;
@@ -843,7 +848,7 @@ export class ArmageddonService {
 
     const specs = buildArmageddonSecondDraw();
 
-    return this.prisma.$transaction(async (tx) => {
+    const out = await this.prisma.$transaction(async (tx) => {
       const settled2 = await tx.armageddonMatchup.count({
         where: { eventId, stage: ArmageddonStage.SECOND_DRAW, winnerSide: { not: null } },
       });
@@ -857,6 +862,73 @@ export class ArmageddonService {
       }, audit);
       return { stage: 'SECOND_DRAW', matchups: specs.length, qualifiers };
     }, { timeout: 30000, maxWait: 10000 });
+
+    // Os 32 classificados estão definidos → apura automaticamente os mercados de
+    // resorteio (QUALIFY). Falha aqui NÃO desfaz o 2º sorteio: o admin pode
+    // reapurar manualmente (POST :id/settle-qualify).
+    let qualifySettled = 0;
+    try {
+      const r = await this.settleQualifyMarketsForEvent(eventId, audit);
+      qualifySettled = r.settled;
+    } catch (e) {
+      this.logger.warn(`Auto-apuração dos classificados falhou (apure manualmente): ${e instanceof Error ? e.message : e}`);
+    }
+    return { ...out, qualifySettled };
+  }
+
+  /**
+   * Apura os mercados de classificados (QUALIFY) do evento: paga TODOS que
+   * bancaram os pilotos que venceram as baterias terminais do 1º sorteio — os
+   * que vão ao resorteio. Idempotente (mercados já liquidados são ignorados).
+   * Disparado ao gerar o 2º sorteio; também exposto para reapuração manual.
+   */
+  async settleQualifyMarketsForEvent(eventId: string, audit: AuditContext) {
+    const event = await this.prisma.armageddonEvent.findUnique({
+      where: { id: eventId },
+      include: { matchups: { include: { leftDriver: true, rightDriver: true } } },
+    });
+    if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
+    if (!event.eventId) return { settled: 0, markets: [] as Array<{ marketId: string; winners: number }> };
+
+    const terminals = event.matchups.filter(
+      (m) => m.stage === ArmageddonStage.FIRST_DRAW && m.nextMatchupId === null,
+    );
+    const decided = terminals.filter((m) => m.winnerSide);
+    if (terminals.length === 0 || decided.length < terminals.length) {
+      throw new BadRequestException('1º sorteio incompleto — não dá para apurar os classificados.');
+    }
+    const qualifierDriverIds = new Set(
+      decided.map((m) => this.winnerDriverId(m)).filter((id): id is string => !!id),
+    );
+    if (qualifierDriverIds.size === 0) throw new BadRequestException('Nenhum classificado identificado.');
+
+    const markets = await this.prisma.market.findMany({
+      where: { eventId: event.eventId, type: MarketType.QUALIFY, status: { not: MarketStatus.SETTLED } },
+      include: { odds: true },
+    });
+
+    const results: Array<{ marketId: string; winners: number }> = [];
+    for (const m of markets) {
+      const winnerOddIds = m.odds
+        .filter((o) => o.driverId && qualifierDriverIds.has(o.driverId))
+        .map((o) => o.id);
+      if (winnerOddIds.length === 0) continue;
+      await this.settlementService.settleMultiWinnerMarket(m.id, winnerOddIds, audit);
+      results.push({ marketId: m.id, winners: winnerOddIds.length });
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: audit.actorUserId,
+        action: 'ARMAGEDDON_QUALIFY_AUTO_SETTLE',
+        entity: 'ArmageddonEvent',
+        entityId: eventId,
+        payload: { qualifiers: qualifierDriverIds.size, marketsSettled: results.length } as Prisma.InputJsonValue,
+        ipAddress: audit.ipAddress,
+        userAgent: audit.userAgent,
+      },
+    });
+    return { settled: results.length, markets: results };
   }
 
   /** Salva o posicionamento (arrasta-e-solta) da 1ª rodada do 2º sorteio. */
@@ -1025,6 +1097,167 @@ export class ArmageddonService {
       settledCount,
       totalMatchups: event.matchups.length,
       matchups,
+    };
+  }
+
+  // ── Admin: multi-mercados (campeão / reação / queimada do evento) ──
+  //
+  // Motor pari-mutuel de N opções sobre o Event vinculado ao Armageddon.
+  // NÃO toca no motor dos embates 1x1 (Duel/DuelPoolState): mercados aqui são
+  // type != DUEL, vivem no MultiRunnerMarketService e liquidam pelo
+  // settleMarket genérico (rake fixo de 20%, casa nunca paga do próprio bolso).
+
+  /**
+   * Garante o Event de apostas vinculado. Eventos antigos (criados antes do
+   * vínculo eager no adminCreate) podem não ter — cria sob demanda.
+   */
+  private async ensureLinkedEvent(
+    tx: Prisma.TransactionClient,
+    armaEvent: { id: string; eventId: string | null; name: string; description: string | null; bannerUrl: string | null; featured: boolean; scheduledAt: Date },
+  ): Promise<string> {
+    // Lock + releitura DENTRO da transação: o snapshot recebido veio de fora,
+    // e duas criações concorrentes num evento legado (eventId null) criariam
+    // dois Events — o mercado do "perdedor" ficaria órfão, invisível na aba
+    // do Armageddon mas ainda apostável no site.
+    const fresh = await tx.$queryRaw<Array<{ eventId: string | null }>>`
+      SELECT "eventId" FROM "ArmageddonEvent" WHERE id = ${armaEvent.id} FOR UPDATE
+    `.then((rows) => rows[0] ?? null);
+    if (!fresh) throw new NotFoundException('Evento Armageddon não encontrado');
+    if (fresh.eventId) return fresh.eventId;
+
+    const linkedEvent = await tx.event.create({
+      data: {
+        sport: 'DRAG_RACE',
+        name: armaEvent.name,
+        description: armaEvent.description,
+        bannerUrl: armaEvent.bannerUrl,
+        featured: armaEvent.featured,
+        startAt: armaEvent.scheduledAt,
+        status: EventStatus.SCHEDULED,
+      },
+    });
+    await tx.armageddonEvent.update({
+      where: { id: armaEvent.id },
+      data: { eventId: linkedEvent.id },
+    });
+    return linkedEvent.id;
+  }
+
+  async adminCreateMultiMarket(eventId: string, dto: CreateArmageddonMultiMarketDto, audit: AuditContext) {
+    const event = await this.prisma.armageddonEvent.findUnique({
+      where: { id: eventId },
+      include: { roster: { include: { driver: true }, orderBy: { position: 'asc' } } },
+    });
+    if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
+    if (event.status === ArmageddonStatus.CANCELED || event.status === ArmageddonStatus.FINISHED) {
+      throw new BadRequestException('Evento encerrado/cancelado não pode abrir novos mercados');
+    }
+    if (event.roster.length < 2) {
+      throw new BadRequestException('Cadastre o roster antes de criar um multi-mercado');
+    }
+
+    // Opções do mercado = pilotos do roster (todos, ou o subconjunto pedido).
+    // Dedupe defensivo: driverIds repetidos criariam duas odds idênticas para
+    // o mesmo piloto, rachando o pote dele em opções indistinguíveis.
+    let rosterEntries = event.roster;
+    if (dto.driverIds?.length) {
+      const uniqueIds = [...new Set(dto.driverIds)];
+      const byDriver = new Map(event.roster.map((r) => [r.driverId, r]));
+      const missing = uniqueIds.filter((id) => !byDriver.has(id));
+      if (missing.length > 0) {
+        throw new BadRequestException('Há pilotos selecionados que não estão no roster deste evento');
+      }
+      rosterEntries = uniqueIds.map((id) => byDriver.get(id)!);
+    }
+    if (rosterEntries.length < 2) {
+      throw new BadRequestException('O mercado precisa de pelo menos 2 pilotos');
+    }
+
+    const marketType = MarketType[dto.type];
+    const bookingCloseAt = dto.bookingCloseAt ? new Date(dto.bookingCloseAt) : null;
+
+    const market = await this.prisma.$transaction(async (tx) => {
+      const linkedEventId = await this.ensureLinkedEvent(tx, event);
+
+      const created = await tx.market.create({
+        data: {
+          eventId: linkedEventId,
+          name: dto.name.trim(),
+          type: marketType,
+          status: MarketStatus.OPEN,
+          bookingCloseAt,
+          odds: {
+            create: rosterEntries.map((r) => ({
+              label: r.driver.name,
+              // Liga a opção ao piloto → apuração por driverId (resorteio).
+              driverId: r.driverId,
+              value: new Prisma.Decimal(1),
+              status: OddStatus.ACTIVE,
+            })),
+          },
+        },
+        include: { odds: { orderBy: { createdAt: 'asc' } }, event: { select: { id: true, name: true } } },
+      });
+
+      await this.logAudit(tx, 'ARMAGEDDON_MULTI_MARKET_CREATE', 'Market', created.id, {
+        armageddonEventId: eventId,
+        name: created.name,
+        type: created.type,
+        runners: rosterEntries.map((r) => r.driver.name),
+      }, audit);
+
+      return created;
+    });
+
+    return market;
+  }
+
+  /**
+   * Multi-mercados do evento com pote por piloto, odds projetadas e fechamento
+   * financeiro (projeção quando vivo; valores reais quando liquidado).
+   */
+  async adminListMultiMarkets(eventId: string) {
+    const event = await this.prisma.armageddonEvent.findUnique({
+      where: { id: eventId },
+      select: { id: true, eventId: true, name: true },
+    });
+    if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
+    if (!event.eventId) return { armageddonEventId: eventId, linkedEventId: null, markets: [] };
+
+    const markets = await this.prisma.market.findMany({
+      where: { eventId: event.eventId, type: { not: MarketType.DUEL } },
+      orderBy: { createdAt: 'desc' },
+      include: { odds: { orderBy: { createdAt: 'asc' } } },
+    });
+
+    const liveOddIds = markets.filter((m) => m.status !== MarketStatus.SETTLED).flatMap((m) => m.odds.map((o) => o.id));
+    const settledOddIds = markets.filter((m) => m.status === MarketStatus.SETTLED).flatMap((m) => m.odds.map((o) => o.id));
+    const [livePools, settledPools] = await Promise.all([
+      aggregatePoolsByOdd(this.prisma, liveOddIds, [BetStatus.OPEN]),
+      aggregatePoolsByOdd(this.prisma, settledOddIds, [BetStatus.WON, BetStatus.LOST]),
+    ]);
+
+    return {
+      armageddonEventId: eventId,
+      linkedEventId: event.eventId,
+      markets: markets.map((m) => {
+        const source = m.status === MarketStatus.SETTLED ? settledPools : livePools;
+        const runners = m.odds.map((o) => {
+          const agg = source.get(o.id);
+          return { oddId: o.id, label: o.label, pool: agg?.pool ?? 0, tickets: agg?.tickets ?? 0 };
+        });
+        const financials = computeMultiMarketFinancials(runners, HOUSE_MARGIN_PERCENT);
+        return {
+          id: m.id,
+          name: m.name,
+          type: m.type,
+          status: m.status,
+          bookingCloseAt: m.bookingCloseAt,
+          settledAt: m.settledAt,
+          winnerOddId: m.winnerOddId,
+          financials,
+        };
+      }),
     };
   }
 

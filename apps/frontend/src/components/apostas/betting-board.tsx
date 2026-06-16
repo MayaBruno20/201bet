@@ -70,10 +70,14 @@ export function BettingExperience({
   lockedEventId,
   hideHeader,
   hideFeatured,
+  passadasOnly,
 }: {
   lockedEventId?: string;
   hideHeader?: boolean;
   hideFeatured?: boolean;
+  /** Esconde a barra de modalidades e mantém só as Passadas (os multi-mercados
+   * são exibidos numa vitrine própria — ex.: hub do Armageddon). */
+  passadasOnly?: boolean;
 } = {}) {
   const [board, setBoard] = useState<BettingBoard | null>(null);
   const [snapshots, setSnapshots] = useState<Record<string, MarketSnapshot>>({});
@@ -597,8 +601,10 @@ export function BettingExperience({
             </div>
             )}
 
-            {/* Modality tabs — só aparece se há mais de uma modalidade com mercado aberto */}
-            {tabsForUI.filter((t) => t.available).length > 1 && (
+            {/* Modality tabs — só aparece se há mais de uma modalidade com mercado
+                aberto E o board não está restrito às Passadas (no hub do Armageddon
+                os multi-mercados têm vitrine própria, então a barra fica oculta). */}
+            {!passadasOnly && tabsForUI.filter((t) => t.available).length > 1 && (
               <div className='mt-5'>
                 <ModalityTabs tabs={tabsForUI} activeId={activeTab} onChange={(id) => setActiveTab(id as Tab)} />
               </div>

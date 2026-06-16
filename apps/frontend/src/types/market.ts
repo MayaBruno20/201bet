@@ -40,7 +40,7 @@ export type MarketSnapshot = {
 
 export type MultiRunnerSnapshot = {
   marketId: string;
-  marketType: 'WINNER' | 'BEST_REACTION' | 'FALSE_START';
+  marketType: 'WINNER' | 'QUALIFY' | 'BEST_REACTION' | 'FALSE_START';
   eventId: string;
   eventName: string;
   marketName: string;

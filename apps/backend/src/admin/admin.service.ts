@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  BetStatus,
   DuelStatus,
   EventStatus,
   MarketStatus,
@@ -22,6 +23,7 @@ import {
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../database/prisma.service';
 import { HOUSE_MARGIN_PERCENT, MarketService } from '../market.service';
+import { aggregatePoolsByOdd, computeMultiMarketFinancials } from '../multi-market-financials';
 import { MultiRunnerMarketService } from '../multi-runner-market.service';
 import { SettlementService } from '../settlement.service';
 import {
@@ -1351,7 +1353,7 @@ export class AdminService {
   }
 
   async listMultiRunnerMarkets(eventId?: string) {
-    return this.prisma.market.findMany({
+    const markets = await this.prisma.market.findMany({
       where: {
         type: { not: MarketType.DUEL },
         ...(eventId ? { eventId } : {}),
@@ -1361,6 +1363,42 @@ export class AdminService {
         event: { select: { id: true, name: true } },
         odds: { orderBy: { createdAt: 'asc' } },
       },
+    });
+    return this.attachOddPools(markets);
+  }
+
+  /**
+   * Anexa pool/tickets (derivados do banco) a cada odd de mercados multi-runner.
+   * Mercados DUEL ficam intactos — o pote deles vem do DuelPoolState, como sempre.
+   * Apostas OPEN contam para mercados vivos; WON/LOST para os já liquidados
+   * (assim o pote por opção continua visível depois da auditoria).
+   */
+  private async attachOddPools<
+    T extends { id: string; type: MarketType; status: MarketStatus; odds: Array<{ id: string }> },
+  >(markets: T[]): Promise<Array<T & { odds: Array<T['odds'][number] & { pool?: number; tickets?: number }> }>> {
+    const liveOddIds: string[] = [];
+    const settledOddIds: string[] = [];
+    for (const m of markets) {
+      if (m.type === MarketType.DUEL) continue;
+      const target = m.status === MarketStatus.SETTLED ? settledOddIds : liveOddIds;
+      for (const o of m.odds) target.push(o.id);
+    }
+
+    const [livePools, settledPools] = await Promise.all([
+      aggregatePoolsByOdd(this.prisma, liveOddIds, [BetStatus.OPEN]),
+      aggregatePoolsByOdd(this.prisma, settledOddIds, [BetStatus.WON, BetStatus.LOST]),
+    ]);
+
+    return markets.map((m) => {
+      if (m.type === MarketType.DUEL) return m;
+      const source = m.status === MarketStatus.SETTLED ? settledPools : livePools;
+      return {
+        ...m,
+        odds: m.odds.map((o) => {
+          const agg = source.get(o.id);
+          return { ...o, pool: agg?.pool ?? 0, tickets: agg?.tickets ?? 0 };
+        }),
+      };
     });
   }
 
@@ -1389,9 +1427,12 @@ export class AdminService {
     // Enriquece com origem (Lista/Armageddon) + posição dos pilotos pra ajudar
     // a auditoria saber qual confronto de cada lista está vendo. Sem isso, o
     // operador precisa abrir outra aba e cruzar manualmente.
-    const duelIds = markets.map((m) => m.duelId).filter((id): id is string => !!id);
+    // Potes por opção dos mercados multi-runner (o pote dos DUEL vem do poolState).
+    const withPools = await this.attachOddPools(markets);
+
+    const duelIds = withPools.map((m) => m.duelId).filter((id): id is string => !!id);
     if (duelIds.length === 0) {
-      return markets.map((m) => ({ ...m, matchupOrigin: null as MatchupOrigin | null }));
+      return withPools.map((m) => ({ ...m, matchupOrigin: null as MatchupOrigin | null }));
     }
 
     const [listMatchups, armaMatchups] = await Promise.all([
@@ -1425,10 +1466,159 @@ export class AdminService {
       }
     }
 
-    return markets.map((m) => ({
+    return withPools.map((m) => ({
       ...m,
       matchupOrigin: m.duelId ? originByDuel.get(m.duelId) ?? null : null,
     }));
+  }
+
+  /**
+   * Resumo financeiro completo de um mercado multi-runner — o "fechamento" que
+   * o painel admin mostra antes (projeção por cenário) e depois (real) da
+   * auditoria. A casa nunca paga do próprio bolso: ver invariante documentada
+   * em multi-market-financials.ts.
+   */
+  async getMultiRunnerMarketSummary(marketId: string) {
+    const market = await this.prisma.market.findUnique({
+      where: { id: marketId },
+      include: {
+        event: { select: { id: true, name: true } },
+        odds: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+    if (!market) throw new NotFoundException('Mercado não encontrado');
+    if (market.type === MarketType.DUEL) {
+      throw new BadRequestException('Use o fluxo de duelos para mercados do tipo DUEL');
+    }
+
+    const settled = market.status === MarketStatus.SETTLED;
+    const countedStatuses: BetStatus[] = settled ? [BetStatus.WON, BetStatus.LOST] : [BetStatus.OPEN];
+
+    // Apostas do mercado (deduplicadas por bet) com afiliado — base de tudo.
+    const betItems = await this.prisma.betItem.findMany({
+      where: { oddId: { in: market.odds.map((o) => o.id) } },
+      include: {
+        bet: {
+          include: {
+            user: { select: { id: true, name: true, email: true, affiliate: true } },
+          },
+        },
+      },
+    });
+
+    const seen = new Set<string>();
+    const bets: Array<{
+      betId: string;
+      oddId: string;
+      stake: number;
+      status: BetStatus;
+      payout: number;
+      userName: string;
+      userEmail: string;
+      affiliate: { id: string; name: string; commissionPct: number; active: boolean } | null;
+      createdAt: Date;
+    }> = [];
+    for (const item of betItems) {
+      if (seen.has(item.betId)) continue;
+      seen.add(item.betId);
+      const b = item.bet;
+      if (!countedStatuses.includes(b.status)) continue;
+      const af = b.user.affiliate;
+      bets.push({
+        betId: b.id,
+        oddId: item.oddId,
+        stake: Number(b.stake),
+        status: b.status,
+        payout: b.status === BetStatus.WON ? Number(b.potentialWin) : 0,
+        userName: b.user.name,
+        userEmail: b.user.email,
+        affiliate: af ? { id: af.id, name: af.name, commissionPct: Number(af.commissionPct), active: af.active } : null,
+        createdAt: b.createdAt,
+      });
+    }
+
+    const rakePercent = HOUSE_MARGIN_PERCENT;
+    const runnersInput = market.odds.map((odd) => {
+      const mine = bets.filter((b) => b.oddId === odd.id);
+      return {
+        oddId: odd.id,
+        label: odd.label,
+        pool: mine.reduce((s, b) => s + b.stake, 0),
+        tickets: mine.length,
+      };
+    });
+    const financials = computeMultiMarketFinancials(runnersInput, rakePercent);
+
+    // Comissões de afiliado: projeção (mercado vivo) usa a MESMA fórmula da
+    // liquidação — stake * rake * pct, cap 100% do rake. Mercado liquidado usa
+    // os registros reais (reversed=false).
+    let affiliateCommissionTotal = 0;
+    if (settled) {
+      const rows = await this.prisma.affiliateCommission.findMany({
+        where: { marketId, reversed: false },
+        select: { amount: true },
+      });
+      affiliateCommissionTotal = rows.reduce((s, r) => s + Number(r.amount), 0);
+    } else {
+      for (const b of bets) {
+        if (!b.affiliate?.active) continue;
+        const pct = Math.min(b.affiliate.commissionPct, 100);
+        affiliateCommissionTotal += b.stake * (rakePercent / 100) * (pct / 100);
+      }
+    }
+    affiliateCommissionTotal = Number(affiliateCommissionTotal.toFixed(2));
+
+    const base = {
+      marketId: market.id,
+      name: market.name,
+      type: market.type,
+      status: market.status,
+      eventId: market.eventId,
+      eventName: market.event.name,
+      bookingCloseAt: market.bookingCloseAt,
+      settledAt: market.settledAt,
+      winnerOddId: market.winnerOddId,
+      financials,
+      affiliateCommissionTotal,
+    };
+
+    if (!settled) return { ...base, settlement: null };
+
+    const winnerOdd = market.odds.find((o) => o.id === market.winnerOddId) ?? null;
+    const winners = bets
+      .filter((b) => b.status === BetStatus.WON)
+      .sort((a, b) => b.payout - a.payout)
+      .map((b) => ({
+        betId: b.betId,
+        userName: b.userName,
+        userEmail: b.userEmail,
+        stake: Number(b.stake.toFixed(2)),
+        payout: Number(b.payout.toFixed(2)),
+      }));
+
+    const totalPayout = Number(winners.reduce((s, w) => s + w.payout, 0).toFixed(2));
+    const rakeCollected = Number((financials.totalPool * (rakePercent / 100)).toFixed(2));
+    // Lucro REAL da casa: tudo que entrou menos tudo que saiu. Quando ninguém
+    // acertou o vencedor, o pote inteiro fica com a casa (payout = 0).
+    const houseNetProfit = Number(
+      (financials.totalPool - totalPayout - affiliateCommissionTotal).toFixed(2),
+    );
+
+    return {
+      ...base,
+      settlement: {
+        winnerOddId: market.winnerOddId,
+        winnerLabel: winnerOdd?.label ?? null,
+        totalPool: financials.totalPool,
+        rakeCollected,
+        totalPayout,
+        affiliateCommissionTotal,
+        houseNetProfit,
+        winningBets: winners.length,
+        losingBets: bets.filter((b) => b.status === BetStatus.LOST).length,
+        winners,
+      },
+    };
   }
 
   /**
@@ -1518,6 +1708,16 @@ export class AdminService {
       });
     });
 
+    // 3. Invalida o estado em memória dos multi-mercados afetados (mesmo
+    // padrão do settleMarket/voidMarket). Sem isto, até o próximo refresh o
+    // motor exibia potes/odds de apostas que acabaram de ser reembolsadas — e
+    // aceitava apostas precificadas nesses potes fantasmas.
+    for (const m of event.markets) {
+      if (m.type !== MarketType.DUEL && marketIds.includes(m.id)) {
+        this.multiRunnerService.removeMarket(m.id);
+      }
+    }
+
     return {
       eventId,
       refundedMarkets: marketIds.length,
@@ -1583,17 +1783,53 @@ export class AdminService {
     payload: { name?: string; status?: string; rakePercent?: number; bookingCloseAt?: string },
     audit: AuditContext = {},
   ) {
-    const existing = await this.prisma.market.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('Mercado não encontrado');
+    // Transições de status permitidas via PATCH. SETTLED fica de fora dos dois
+    // lados: mercado liquidado é IMUTÁVEL (ganhadores já receberam) — reverter
+    // status reabriria apostas num mercado pago e permitiria dupla liquidação.
+    // Para estornar um settle existe o fluxo próprio (refundSettledMarket).
+    const ALLOWED_STATUS: MarketStatus[] = [MarketStatus.OPEN, MarketStatus.SUSPENDED, MarketStatus.CLOSED];
 
-    const data: Prisma.MarketUpdateInput = {};
-    if (payload.name) data.name = payload.name.trim();
-    if (payload.status) data.status = payload.status as MarketStatus;
-    if (payload.rakePercent !== undefined) data.rakePercent = new Prisma.Decimal(payload.rakePercent);
-    if (payload.bookingCloseAt) data.bookingCloseAt = new Date(payload.bookingCloseAt);
+    let targetStatus: MarketStatus | undefined;
+    if (payload.status !== undefined) {
+      targetStatus = ALLOWED_STATUS.find((s) => s === payload.status);
+      if (!targetStatus) {
+        throw new BadRequestException('Status inválido. Use OPEN, SUSPENDED ou CLOSED');
+      }
+    }
 
     return this.prisma.$transaction(async (tx) => {
+      // Lock da linha: evita corrida com uma liquidação concorrente (operador A
+      // audita enquanto o painel desatualizado do operador B clica em "Pausar").
+      const locked = await tx.$queryRaw<Array<{ id: string; status: string; type: string }>>`
+        SELECT id, status, type FROM "Market" WHERE id = ${id} FOR UPDATE
+      `.then((rows) => rows[0] ?? null);
+      if (!locked) throw new NotFoundException('Mercado não encontrado');
+
+      if (targetStatus && locked.type === 'DUEL') {
+        throw new BadRequestException('Status de mercado de duelo é controlado pela aba de origem (Listas/Copa/Armageddon)');
+      }
+      if (targetStatus && locked.status === 'SETTLED') {
+        throw new BadRequestException('Mercado já liquidado não pode mudar de status. Use o estorno de liquidação se precisar reverter.');
+      }
+
+      const data: Prisma.MarketUpdateInput = {};
+      if (payload.name) data.name = payload.name.trim();
+      if (targetStatus) data.status = targetStatus;
+      if (payload.rakePercent !== undefined) data.rakePercent = new Prisma.Decimal(payload.rakePercent);
+      if (payload.bookingCloseAt) data.bookingCloseAt = new Date(payload.bookingCloseAt);
+
       const updated = await tx.market.update({ where: { id }, data, include: { odds: true } });
+
+      // Reabrir um mercado FECHADO (inclusive um anulado, que fecha odds junto)
+      // precisa reativar as odds — senão o motor recarrega o mercado sem
+      // nenhuma opção apostável.
+      if (targetStatus === MarketStatus.OPEN) {
+        await tx.odd.updateMany({
+          where: { marketId: id, status: OddStatus.CLOSED },
+          data: { status: OddStatus.ACTIVE },
+        });
+      }
+
       await this.logAction(tx, 'ADMIN_UPDATE_MARKET', 'Market', id, payload, audit);
       return updated;
     });
