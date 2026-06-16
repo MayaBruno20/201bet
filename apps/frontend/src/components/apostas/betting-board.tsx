@@ -71,6 +71,7 @@ export function BettingExperience({
   hideHeader,
   hideFeatured,
   passadasOnly,
+  hideMyBets,
 }: {
   lockedEventId?: string;
   hideHeader?: boolean;
@@ -78,6 +79,9 @@ export function BettingExperience({
   /** Esconde a barra de modalidades e mantém só as Passadas (os multi-mercados
    * são exibidos numa vitrine própria — ex.: hub do Armageddon). */
   passadasOnly?: boolean;
+  /** Esconde o "Meus bilhetes" interno — usado quando a página o renderiza no fim
+   * (ex.: hub do Armageddon, que mostra o histórico depois do chaveamento). */
+  hideMyBets?: boolean;
 } = {}) {
   const [board, setBoard] = useState<BettingBoard | null>(null);
   const [snapshots, setSnapshots] = useState<Record<string, MarketSnapshot>>({});
@@ -727,9 +731,11 @@ export function BettingExperience({
             )}
 
             {/* Histórico do usuário */}
-            <div className='mt-12 pb-2'>
-              <MyBetsHistory bets={historyItems} />
-            </div>
+            {!hideMyBets && (
+              <div className='mt-12 pb-2'>
+                <MyBetsHistory bets={historyItems} />
+              </div>
+            )}
           </>
         )}
       </div>

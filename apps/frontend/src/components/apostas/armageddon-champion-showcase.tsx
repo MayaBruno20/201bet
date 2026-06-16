@@ -129,6 +129,12 @@ export function ArmageddonChampionShowcase({ eventId }: { eventId: string }) {
           animation: arma-foil 6s linear infinite;
         }
         .arma-lines { background-image: repeating-linear-gradient(115deg, rgba(255,176,40,0.07) 0 2px, transparent 2px 28px); animation: arma-lines 3.2s linear infinite; }
+        .arma-foil-blue {
+          background: linear-gradient(110deg, #0e3a5a 0%, #7cd0ff 22%, #dff3ff 38%, #4cc4ff 52%, #0e3a5a 70%, #7cd0ff 90%);
+          background-size: 200% auto; -webkit-background-clip: text; background-clip: text; color: transparent;
+          animation: arma-foil 6s linear infinite;
+        }
+        .arma-lines-blue { background-image: repeating-linear-gradient(115deg, rgba(76,196,255,0.08) 0 2px, transparent 2px 28px); animation: arma-lines 3.2s linear infinite; }
       `}</style>
 
       {/* Marquee do campeonato */}
@@ -157,7 +163,24 @@ export function ArmageddonChampionShowcase({ eventId }: { eventId: string }) {
 
       {/* Mercado de Classificados ao Resorteio (aparece quando criado no admin) */}
       {qualify.length > 0 && (
-        <div id="resorteio" className="mt-4 space-y-4 scroll-mt-24">
+        <div id="resorteio" className="mt-8 space-y-4 scroll-mt-24">
+          {/* Banner do Resorteio (pegada azul, espelha o "Aposte no Campeão") */}
+          <div className="relative overflow-hidden rounded-3xl border border-[#4cc4ff]/25 bg-[#0c0e16]">
+            <div className="absolute inset-0 arma-lines-blue" aria-hidden />
+            <div className="absolute -top-24 left-1/2 h-48 w-[120%] -translate-x-1/2 rounded-[100%] bg-[#4cc4ff]/10 blur-3xl" aria-hidden style={{ animation: 'arma-glow 4s ease-in-out infinite' }} />
+            <div className="relative flex flex-col gap-3 p-5 sm:p-7">
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[#4cc4ff]/30 bg-[#4cc4ff]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-[#9fe0ff]">
+                <TargetIcon size={13} /> Mercados do resorteio
+              </div>
+              <h2 className="arma-foil-blue font-display text-3xl font-extrabold tracking-tight sm:text-5xl">Aposte no Resorteio</h2>
+              <p className="max-w-xl text-[13px] leading-relaxed text-white/45">
+                Aposte em quem se classifica para o 2º sorteio (Top 32). É um mercado de múltiplos vencedores —
+                todos que apostarem num piloto classificado dividem o pote, proporcional ao valor apostado.
+                Quem acerta nunca recebe menos que o valor apostado.
+              </p>
+            </div>
+          </div>
+
           {qualify.map((m) => (
             <MarketBoard key={m.marketId} market={markets[m.marketId] ?? m} accent="#4cc4ff"
               subtitle="Classificados ao Resorteio · 2ª etapa" onPick={(oddId) => setBet({ market: m, oddId })} />

@@ -151,7 +151,14 @@ export function MainNav() {
   useEffect(() => {
     if (!fixedShellRef.current) return;
     const el = fixedShellRef.current;
-    const update = () => setShellHeight(el.offsetHeight);
+    const update = () => {
+      const h = el.offsetHeight;
+      setShellHeight(h);
+      // Expõe a altura real do shell fixo (header + disclaimers) como CSS var, para
+      // que sub-barras sticky (ex.: broadcast/abas do Armageddon) grudem ABAIXO dele
+      // em vez de encavalar no topo do viewport.
+      document.documentElement.style.setProperty('--app-shell-h', `${h}px`);
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
