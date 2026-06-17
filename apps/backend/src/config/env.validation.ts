@@ -39,7 +39,7 @@ export const envValidationSchema = Joi.object({
     .valid('brevo', 'mailtrap', 'noop')
     .default('noop'),
   EMAIL_FROM_ADDRESS: Joi.string().email().required(),
-  EMAIL_FROM_NAME: Joi.string().default('201Bet'),
+  EMAIL_FROM_NAME: Joi.string().default('Palpite201'),
   EMAIL_REPLY_TO: Joi.string().email().optional(),
   EMAIL_DAILY_LIMIT: Joi.number().integer().min(1).max(300).default(295),
   EMAIL_VERIFICATION_TTL_HOURS: Joi.number().integer().min(1).max(168).default(24),
