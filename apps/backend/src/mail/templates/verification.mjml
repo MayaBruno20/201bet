@@ -1,7 +1,7 @@
 <mjml>
   <mj-head>
-    <mj-title>Confirme seu e-mail - 201bet</mj-title>
-    <mj-preview>Falta só um passo para ativar sua conta no 201bet.</mj-preview>
+    <mj-title>Confirme seu e-mail - Palpite201</mj-title>
+    <mj-preview>Falta só um passo para ativar sua conta no Palpite201.</mj-preview>
     <mj-attributes>
       <mj-all font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" />
       <mj-text font-size="15px" line-height="1.65" color="#334155" font-weight="400" padding="0" />
@@ -40,7 +40,7 @@
       <!-- HEADER -->
       <mj-section background-color="#0c1019" padding="36px 24px 32px" border-radius="14px 14px 0 0">
         <mj-column>
-          <mj-image src="{{logoUrl}}" alt="201bet" width="240px" align="center" padding="0" border="0" />
+          <mj-image src="{{logoUrl}}" alt="Palpite201" width="240px" align="center" padding="0" border="0" />
         </mj-column>
       </mj-section>
       <mj-section background-color="#0c1019" padding="0 24px 28px">
@@ -62,7 +62,7 @@
             Olá{{#if userName}}, {{userName}}{{/if}} 👋
           </mj-text>
           <mj-text padding="16px 0 0">
-            Recebemos o cadastro da sua conta no 201bet. Para começar a apostar, precisamos confirmar que este e-mail é mesmo seu.
+            Recebemos o cadastro da sua conta no Palpite201. Para começar a apostar, precisamos confirmar que este e-mail é mesmo seu.
           </mj-text>
         </mj-column>
       </mj-section>
@@ -95,7 +95,7 @@
       <mj-section background-color="#ffffff" padding="20px 32px 40px" css-class="card-pad">
         <mj-column>
           <mj-text mj-class="muted">
-            🔒 Este link expira em <strong style="color:#0f172a">{{expiresInHours}} horas</strong>. Se você não se cadastrou no 201bet, pode ignorar este e-mail com segurança — nenhuma conta será criada.
+            🔒 Este link expira em <strong style="color:#0f172a">{{expiresInHours}} horas</strong>. Se você não se cadastrou no Palpite201, pode ignorar este e-mail com segurança — nenhuma conta será criada.
           </mj-text>
         </mj-column>
       </mj-section>
@@ -103,16 +103,16 @@
       <!-- FOOTER -->
       <mj-section background-color="#0c1019" padding="32px 24px 12px">
         <mj-column>
-          <mj-image src="{{logoUrl}}" alt="201bet" width="120px" align="center" padding="0 0 14px" border="0" />
+          <mj-image src="{{logoUrl}}" alt="Palpite201" width="120px" align="center" padding="0 0 14px" border="0" />
           <mj-text align="center" color="#64748b" font-size="11px" line-height="1.7" padding="0">
-            Você está recebendo este e-mail porque há uma conta no 201bet<br />vinculada a este endereço.
+            Você está recebendo este e-mail porque há uma conta no Palpite201<br />vinculada a este endereço.
           </mj-text>
         </mj-column>
       </mj-section>
       <mj-section background-color="#0c1019" padding="6px 24px 28px" border-radius="0 0 14px 14px">
         <mj-column>
           <mj-text align="center" color="#475569" font-size="11px" line-height="1.7" padding="0">
-            © {{year}} 201bet &middot; Todos os direitos reservados<br />
+            © {{year}} Palpite201 &middot; Todos os direitos reservados<br />
             Dúvidas? <a href="mailto:{{supportEmail}}" style="color:#94a3b8;text-decoration:none;">{{supportEmail}}</a>
           </mj-text>
         </mj-column>
