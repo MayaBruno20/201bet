@@ -68,6 +68,8 @@ export const ENDPOINTS = {
     list: '/admin/drivers',
     create: '/admin/drivers',
     bulkImport: '/admin/drivers/bulk-import',
+    parseFile: '/admin/drivers/parse-file',
+    deleteUnused: '/admin/drivers/delete-unused',
     update: (id: string) => `/admin/drivers/${id}`,
     delete: (id: string) => `/admin/drivers/${id}`,
   },

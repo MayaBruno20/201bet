@@ -39,6 +39,7 @@ import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { CreateCarDto } from './dto/create-car.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { BulkImportDriversDto } from './dto/bulk-import-drivers.dto';
+import { parsePilotsFromPdf } from './pilot-file-parse.util';
 import { CreateDuelDto } from './dto/create-duel.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
@@ -700,6 +701,73 @@ export class AdminService {
     );
 
     return result;
+  }
+
+  /**
+   * Lê um PDF (tabela Área · Nome · Apelido) e devolve as linhas parseadas para
+   * pré-visualização — NÃO grava nada. Planilhas (.xlsx/.csv) são lidas no
+   * próprio navegador (SheetJS); aqui tratamos só PDF.
+   */
+  async parsePilotFile(file?: Express.Multer.File) {
+    if (!file?.buffer?.length) throw new BadRequestException('Nenhum arquivo enviado');
+    const filename = (file.originalname || '').toLowerCase();
+    const isPdf = file.mimetype === 'application/pdf' || filename.endsWith('.pdf');
+    if (!isPdf) {
+      throw new BadRequestException('Envie um PDF. Planilhas (.xlsx/.csv) são lidas direto no navegador.');
+    }
+    let pilots: Awaited<ReturnType<typeof parsePilotsFromPdf>>;
+    try {
+      pilots = await parsePilotsFromPdf(file.buffer);
+    } catch {
+      throw new BadRequestException('Não consegui ler este PDF. Tente exportar a lista como .xlsx/.csv.');
+    }
+    return { pilots, count: pilots.length };
+  }
+
+  /**
+   * Reset SEGURO do pool: remove apenas pilotos SEM nenhuma referência (sem
+   * carro, lista, shark tank, categoria da Copa, chave do Armageddon ou
+   * embate). Pilotos em uso em qualquer lugar são mantidos — assim não quebra
+   * Listas/Copa/apostas que compartilham o cadastro global de pilotos.
+   */
+  async deleteUnusedDrivers(audit: AuditContext = {}) {
+    const drivers = await this.prisma.driver.findMany({
+      select: {
+        id: true,
+        name: true,
+        _count: {
+          select: {
+            cars: true,
+            rosters: true,
+            leftMatchups: true,
+            rightMatchups: true,
+            sharkTankEntries: true,
+            categoryCompetitors: true,
+            armageddonRoster: true,
+            armageddonLeftMatches: true,
+            armageddonRightMatches: true,
+          },
+        },
+      },
+    });
+
+    const unused = drivers.filter((d) => Object.values(d._count).every((n) => n === 0));
+    if (unused.length === 0) return { deleted: 0, kept: drivers.length };
+
+    const ids = unused.map((d) => d.id);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.driver.deleteMany({ where: { id: { in: ids } } });
+      await this.logAction(
+        tx,
+        'ADMIN_DELETE_UNUSED_DRIVERS',
+        'Driver',
+        null,
+        { deleted: ids.length, names: unused.map((d) => d.name).slice(0, 200) },
+        audit,
+      );
+    });
+
+    return { deleted: ids.length, kept: drivers.length - ids.length };
   }
 
   async updateDriver(

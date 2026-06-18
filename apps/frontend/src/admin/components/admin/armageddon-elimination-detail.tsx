@@ -13,7 +13,7 @@ import { I } from '@admin/components/ui/icons';
 import { Card, SectionTitle } from '@admin/components/ui/primitives';
 import { useToast } from '@admin/components/ui/toast';
 import { useConfirm } from '@admin/components/ui/confirm';
-import { api } from '@admin/lib/api';
+import { api, apiUpload } from '@admin/lib/api';
 import { ENDPOINTS } from '@admin/lib/endpoints';
 import { MultiMarketManager } from './multi-market-manager';
 
@@ -244,6 +244,28 @@ export function ArmageddonEliminationDetail({ eventId, onChanged }: { eventId: s
     finally { setBusy(null); }
   };
 
+  // Reset SEGURO do pool: remove só pilotos sem nenhuma referência (não toca em
+  // quem está em lista/chave/categoria/aposta). Pilotos do cadastro são globais.
+  const resetPool = async () => {
+    const ok = await confirm({
+      title: 'Remover pilotos não usados?',
+      body: 'Apaga do cadastro os pilotos que NÃO estão em uso (sem lista, chave, categoria da Copa, carro ou aposta). Pilotos já posicionados em chaves ou usados em outros módulos são mantidos. Útil para limpar o pool e reimportar.',
+      tone: 'danger', confirmLabel: 'Remover não usados', icon: 'Trash',
+    });
+    if (!ok) return;
+    setBusy('resetpool');
+    try {
+      const r = await api.post<{ deleted: number; kept: number }>(ENDPOINTS.DRIVERS.deleteUnused);
+      push({
+        title: r.deleted ? `${r.deleted} piloto(s) removido(s)` : 'Nenhum piloto removível',
+        body: `${r.kept} mantido(s) (em uso ou posicionado).`,
+        tone: r.deleted ? 'amber' : 'emerald',
+      });
+      await load({ silent: true });
+    } catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
+    finally { setBusy(null); }
+  };
+
   if (loading) return <Card className="p-12 text-center text-[13px] text-[color:var(--text-3)]">Carregando…</Card>;
   if (!detail) return null;
 
@@ -279,7 +301,7 @@ export function ArmageddonEliminationDetail({ eventId, onChanged }: { eventId: s
         <CadastroTab
           detail={detail} busy={busy} firstDrawGenerated={firstDraw.length > 0}
           onAdd={(bracketKey, position) => setAddOpen({ bracketKey, position })}
-          onImport={() => setImportOpen(true)}
+          onImport={() => setImportOpen(true)} onResetPool={resetPool}
           onRemove={removeRoster} onGenerate={generateFirstDraw} onClearKeys={clearKeys}
         />
       )}
@@ -336,10 +358,10 @@ export function ArmageddonEliminationDetail({ eventId, onChanged }: { eventId: s
 
 /* ───────────────────────── Cadastro ───────────────────────── */
 
-function CadastroTab({ detail, busy, firstDrawGenerated, onAdd, onImport, onRemove, onGenerate, onClearKeys }: {
+function CadastroTab({ detail, busy, firstDrawGenerated, onAdd, onImport, onResetPool, onRemove, onGenerate, onClearKeys }: {
   detail: Detail; busy: string | null; firstDrawGenerated: boolean;
   onAdd: (bracketKey: string, position: number) => void;
-  onImport: () => void;
+  onImport: () => void; onResetPool: () => void;
   onRemove: (r: RosterEntry) => void; onGenerate: () => void; onClearKeys: () => void;
 }) {
   const byKey = new Map<string, Map<number, RosterEntry>>();
@@ -357,6 +379,10 @@ function CadastroTab({ detail, busy, firstDrawGenerated, onAdd, onImport, onRemo
           <div className="flex items-center gap-2">
             <button className="btn btn-ghost focusable" onClick={onImport}>
               <I.Upload size={14}/> Importar pilotos
+            </button>
+            <button className="btn btn-ghost focusable" style={{ color: '#ff7585' }}
+              onClick={onResetPool} disabled={busy === 'resetpool'}>
+              {busy === 'resetpool' ? <><span className="pulse-dot"/> Removendo…</> : <><I.Trash size={14}/> Remover não usados</>}
             </button>
             {firstDrawGenerated && (
               <button className="btn btn-ghost focusable" style={{ color: 'var(--accent)' }} onClick={onClearKeys} disabled={busy === 'clear'}>
@@ -605,14 +631,98 @@ function parsePilots(raw: string): ParsedPilot[] {
       if (parts.length >= 3) { area = parts[0]; name = parts[1]; nickname = parts.slice(2).join(' '); }
       else if (parts.length === 2) { area = parts[0]; name = parts[1]; }
       else { name = parts[0] ?? ''; }
+      // Piloto só com apelido (NOME em branco): usa o apelido como nome.
+      if (!name.trim() && nickname.trim()) name = nickname;
       return { area, name, nickname, valid: name.trim().length >= 2 };
     });
+}
+
+type FileRow = { area: string; name: string; nickname: string };
+
+const rowsToTsv = (rows: FileRow[]) =>
+  rows.map((r) => `${r.area}\t${r.name}\t${r.nickname}`).join('\n');
+
+// Lê planilha (.xlsx/.xls/.csv) no navegador via SheetJS. Detecta o cabeçalho
+// (AREA/NOME/APELIDO) ou cai num mapeamento por nº de colunas.
+async function parseSpreadsheet(file: File): Promise<FileRow[]> {
+  const mod: any = await import('xlsx');
+  const XLSX = mod.read ? mod : mod.default;
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: '' }) as unknown as unknown[][];
+
+  let headerIdx = -1, ai = -1, ni = -1, pi = -1;
+  for (let i = 0; i < Math.min(aoa.length, 15); i++) {
+    const up = aoa[i].map((c) => String(c).trim().toUpperCase());
+    if (up.includes('NOME') && up.includes('APELIDO')) {
+      headerIdx = i;
+      ai = up.findIndex((c) => c === 'AREA' || c === 'ÁREA');
+      ni = up.indexOf('NOME');
+      pi = up.indexOf('APELIDO');
+      break;
+    }
+  }
+
+  const out: FileRow[] = [];
+  const cellsOf = (row: unknown[]) => row.map((c) => String(c ?? '').trim());
+  if (headerIdx >= 0) {
+    for (let i = headerIdx + 1; i < aoa.length; i++) {
+      const row = cellsOf(aoa[i]);
+      const area = ai >= 0 ? (row[ai] ?? '') : '';
+      const name = ni >= 0 ? (row[ni] ?? '') : '';
+      const nickname = pi >= 0 ? (row[pi] ?? '') : '';
+      if (!name && !nickname) continue;
+      out.push({ area, name, nickname });
+    }
+  } else {
+    for (const r of aoa) {
+      const cells = cellsOf(r);
+      if (cells.every((c) => !c)) continue;
+      let area = '', name = '', nickname = '';
+      if (cells.length >= 4) { area = cells[1]; name = cells[2]; nickname = cells[3]; }
+      else if (cells.length === 3) { area = cells[0]; name = cells[1]; nickname = cells[2]; }
+      else if (cells.length === 2) { name = cells[0]; nickname = cells[1]; }
+      else { name = cells[0]; }
+      if (!name && !nickname) continue;
+      out.push({ area, name, nickname });
+    }
+  }
+  return out;
 }
 
 function ImportPilotsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [raw, setRaw] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  const [fileBusy, setFileBusy] = React.useState(false);
+  const [fileName, setFileName] = React.useState('');
+  const fileRef = React.useRef<HTMLInputElement>(null);
   const { push } = useToast();
+
+  const onFile = async (file: File) => {
+    setFileBusy(true);
+    setFileName(file.name);
+    try {
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      let rows: FileRow[];
+      if (ext === 'pdf') {
+        const r = await apiUpload<{ pilots: FileRow[] }>(ENDPOINTS.DRIVERS.parseFile, file, 'file');
+        rows = r.pilots ?? [];
+      } else if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+        rows = await parseSpreadsheet(file);
+      } else {
+        setRaw(await file.text());
+        return;
+      }
+      if (rows.length === 0) {
+        push({ title: 'Nenhum piloto encontrado no arquivo', body: 'Confira se tem colunas Área/Nome/Apelido.', tone: 'amber' });
+      }
+      setRaw(rowsToTsv(rows));
+    } catch (e) {
+      push({ title: 'Não consegui ler o arquivo', body: e instanceof Error ? e.message : '', tone: 'rose' });
+    } finally {
+      setFileBusy(false);
+    }
+  };
 
   const rows = React.useMemo(() => parsePilots(raw), [raw]);
   const valid = rows.filter((r) => r.valid);
@@ -644,11 +754,25 @@ function ImportPilotsModal({ onClose, onSaved }: { onClose: () => void; onSaved:
         <div className="font-display text-[18px] font-bold mb-1">Importar pilotos</div>
         <div className="text-[12px] text-[color:var(--text-3)] mb-3">
           Cria os pilotos no <strong>pool</strong> (ficam disponíveis para o sorteio — não posiciona nas chaves).
-          De-dup por nome: quem já existe não duplica.
+          De-dup por nome: quem já existe é atualizado (apelido), não duplica.
+        </div>
+
+        {/* Upload de arquivo (PDF / Excel / CSV) */}
+        <input
+          ref={fileRef} type="file" accept=".pdf,.xlsx,.xls,.csv,.tsv,.txt" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void onFile(f); e.target.value = ''; }}
+        />
+        <div className="flex items-center gap-2 mb-3">
+          <button className="btn btn-ghost focusable" onClick={() => fileRef.current?.click()} disabled={fileBusy}>
+            {fileBusy ? <><span className="pulse-dot"/> Lendo…</> : <><I.Upload size={14}/> Escolher arquivo (PDF, Excel, CSV)</>}
+          </button>
+          {fileName && !fileBusy && (
+            <span className="text-[11.5px] text-[color:var(--text-4)] truncate">{fileName}</span>
+          )}
         </div>
 
         <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">
-          Cole a lista — uma linha por piloto: Área &nbsp;⇥&nbsp; Nome &nbsp;⇥&nbsp; Apelido
+          …ou cole a lista — uma linha por piloto: Área &nbsp;⇥&nbsp; Nome &nbsp;⇥&nbsp; Apelido
         </label>
         <textarea
           className="input mt-1 font-mono text-[12px]" rows={7} autoFocus value={raw}
