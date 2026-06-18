@@ -616,10 +616,15 @@ export class AuthService {
 
         return {
           id: item.id,
+          oddId: item.oddId,
           oddAtPlacement: Number(item.oddAtPlacement),
           oddLabel: item.odd.label,
           eventId: item.odd.market.eventId,
+          marketId: item.odd.market.id,
           marketName: item.odd.market.name,
+          marketType: item.odd.market.type,
+          // Chave (A-E) do piloto — usado no resorteio pra contar picks por chave.
+          bracketKey: item.odd.bracketKey ?? null,
           eventName: item.odd.market.event.name,
           duelId: nearest?.id ?? null,
           stageLabel: nearest

@@ -12,6 +12,7 @@ import { PrismaService } from './database/prisma.service';
 import { ActivityService } from './common/activity.service';
 import { HOUSE_MARGIN_PERCENT } from './market.service';
 import { aggregatePoolsByOdd } from './multi-market-financials';
+import { FIRST_DRAW_KEYS } from './armageddon/armageddon-bracket.util';
 
 type RunnerState = {
   oddId: string;
@@ -20,6 +21,8 @@ type RunnerState = {
   tickets: number;
   odd: number;
   locked: boolean;
+  /** Chave (A-E) do piloto no resorteio (QUALIFY). Null fora do resorteio. */
+  bracketKey: string | null;
 };
 
 type MultiRunnerEngineState = {
@@ -59,6 +62,8 @@ export type MultiRunnerSnapshot = {
     tickets: number;
     locked: boolean;
     poolShare: number;
+    /** Chave (A-E) do piloto no resorteio (QUALIFY). Null fora do resorteio. */
+    bracketKey: string | null;
   }>;
   history: Array<{
     at: string;
@@ -184,6 +189,29 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
         throw new BadRequestException('Saldo insuficiente para realizar essa aposta');
       }
 
+      // Resorteio (QUALIFY): trava o nº de pilotos DISTINTOS que o usuário pode
+      // apostar por chave (A=4, B-E=7). Roda DENTRO da transação, após o lock da
+      // carteira (que serializa apostas do mesmo usuário) → à prova de corrida.
+      if (state.marketType === MarketType.QUALIFY && runner.bracketKey) {
+        const limit = FIRST_DRAW_KEYS.find((k) => k.key === runner.bracketKey)?.qualifiers;
+        if (limit) {
+          const picked = await tx.betItem.findMany({
+            where: {
+              bet: { userId: input.userId, status: BetStatus.OPEN },
+              odd: { marketId: input.marketId, bracketKey: runner.bracketKey },
+            },
+            select: { oddId: true },
+            distinct: ['oddId'],
+          });
+          const distinct = new Set(picked.map((p) => p.oddId));
+          if (!distinct.has(input.oddId) && distinct.size >= limit) {
+            throw new BadRequestException(
+              `No resorteio você só pode apostar em ${limit} piloto${limit > 1 ? 's' : ''} da Chave ${runner.bracketKey}.`,
+            );
+          }
+        }
+      }
+
       const bet = await tx.bet.create({
         data: {
           userId: input.userId,
@@ -280,6 +308,7 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
           tickets: agg?.tickets ?? 0,
           odd: 0,
           locked: false,
+          bracketKey: odd.bracketKey ?? null,
         };
       });
 
@@ -381,6 +410,7 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
         tickets: r.tickets,
         locked: false,
         poolShare: totalPool > 0 ? Number(((r.pool / totalPool) * 100).toFixed(1)) : 0,
+        bracketKey: r.bracketKey,
       })),
       history: state.history.slice(-30),
     };

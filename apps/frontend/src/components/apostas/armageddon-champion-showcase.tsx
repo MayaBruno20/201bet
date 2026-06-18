@@ -16,7 +16,7 @@
 
 import * as React from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { Loader2, Search, Check, X, Lock } from 'lucide-react';
+import { Loader2, Search, Check, X, Lock, ChevronDown } from 'lucide-react';
 import { CrownIcon, TargetIcon, TrophyIcon } from '@/components/apostas/armageddon-icons';
 import { apiFetch, parseApiErrorMessage } from '@/lib/api-request';
 import { getPublicApiUrl, getPublicWsUrl } from '@/lib/env-public';
@@ -42,12 +42,20 @@ const RANK_STYLE = [
   'bg-[linear-gradient(160deg,#e0a36a,#8a5a2b)] text-[#1d1208]',
 ];
 
+/* Resorteio: nº de classificados (finalistas) por chave — trava quantos pilotos
+   DISTINTOS o usuário pode apostar por chave. Espelha FIRST_DRAW_KEYS do backend
+   (regra travada do Armageddon). O backend é o enforcer final. */
+const CHAVE_ORDER = ['A', 'B', 'C', 'D', 'E'] as const;
+const BRACKET_QUALIFIERS: Record<string, number> = { A: 4, B: 7, C: 7, D: 7, E: 7 };
+
 export function ArmageddonChampionShowcase({ eventId }: { eventId: string }) {
   const [markets, setMarkets] = React.useState<Record<string, MultiRunnerSnapshot>>({});
   const [me, setMe] = React.useState<Me | null>(null);
   const [minBet, setMinBet] = React.useState(10);
   const [loaded, setLoaded] = React.useState(false);
   const [bet, setBet] = React.useState<{ market: MultiRunnerSnapshot; oddId: string } | null>(null);
+  // oddIds das apostas OPEN do usuário — pra contar/travar picks por chave no resorteio.
+  const [pickedOddIds, setPickedOddIds] = React.useState<Set<string>>(new Set());
 
   const absorb = React.useCallback((list: MultiRunnerSnapshot[]) => {
     setMarkets((prev) => {
@@ -65,8 +73,23 @@ export function ArmageddonChampionShowcase({ eventId }: { eventId: string }) {
     setLoaded(true);
   }, [absorb]);
 
+  const refetchMyBets = React.useCallback(async () => {
+    try {
+      const r = await apiFetch(`${apiUrl}/auth/my-bets`, { cache: 'no-store' });
+      if (!r.ok) return;
+      const bets = (await r.json()) as Array<{ status: string; items?: Array<{ oddId?: string }> }>;
+      const ids = new Set<string>();
+      for (const b of bets) {
+        if (b.status !== 'OPEN') continue; // só apostas em aberto contam pro limite por chave
+        for (const it of b.items ?? []) if (it.oddId) ids.add(it.oddId);
+      }
+      setPickedOddIds(ids);
+    } catch { /* deslogado */ }
+  }, []);
+
   React.useEffect(() => {
     void refetch();
+    void refetchMyBets();
     void (async () => {
       try {
         const r = await apiFetch(`${apiUrl}/auth/me`, { cache: 'no-store' });
@@ -80,7 +103,7 @@ export function ArmageddonChampionShowcase({ eventId }: { eventId: string }) {
         if (typeof cfg?.minBetAmount === 'number' && cfg.minBetAmount > 0) setMinBet(cfg.minBetAmount);
       } catch { /* default 10 */ }
     })();
-  }, [refetch]);
+  }, [refetch, refetchMyBets]);
 
   React.useEffect(() => {
     const socket: Socket = io(wsUrl, { transports: ['websocket'] });
@@ -89,10 +112,11 @@ export function ArmageddonChampionShowcase({ eventId }: { eventId: string }) {
     });
     socket.on('market:settled', () => {
       void refetch();
+      void refetchMyBets();
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('wallet:refresh'));
     });
     return () => { socket.disconnect(); };
-  }, [eventId, refetch]);
+  }, [eventId, refetch, refetchMyBets]);
 
   // Só exibimos Campeão (WINNER) e Classificados ao Resorteio (QUALIFY).
   const champion = React.useMemo(
@@ -109,6 +133,7 @@ export function ArmageddonChampionShowcase({ eventId }: { eventId: string }) {
   const onBetPlaced = (snapshot: MultiRunnerSnapshot, newBalance: number) => {
     setMarkets((prev) => ({ ...prev, [snapshot.marketId]: snapshot }));
     setMe((p) => (p ? { ...p, wallet: { balance: newBalance } } : p));
+    void refetchMyBets(); // atualiza o contador "X/N escolhidos" por chave na hora
     if (typeof window !== 'undefined') window.dispatchEvent(new Event('wallet:refresh'));
   };
 
@@ -157,7 +182,7 @@ export function ArmageddonChampionShowcase({ eventId }: { eventId: string }) {
       <div className="mt-4 space-y-4">
         {champion.map((m) => (
           <MarketBoard key={m.marketId} market={markets[m.marketId] ?? m} accent="#ffb028"
-            subtitle="Campeão Geral · top 1 do Armageddon" onPick={(oddId) => setBet({ market: m, oddId })} />
+            subtitle="Campeão Geral · top 1 do Armageddon" onPick={(oddId) => setBet({ market: m, oddId })} pickedOddIds={pickedOddIds} />
         ))}
       </div>
 
@@ -183,7 +208,7 @@ export function ArmageddonChampionShowcase({ eventId }: { eventId: string }) {
 
           {qualify.map((m) => (
             <MarketBoard key={m.marketId} market={markets[m.marketId] ?? m} accent="#4cc4ff"
-              subtitle="Classificados ao Resorteio · 2ª etapa" onPick={(oddId) => setBet({ market: m, oddId })} />
+              subtitle="Classificados ao Resorteio · 2ª etapa" onPick={(oddId) => setBet({ market: m, oddId })} pickedOddIds={pickedOddIds} />
           ))}
         </div>
       )}
@@ -205,13 +230,22 @@ export function ArmageddonChampionShowcase({ eventId }: { eventId: string }) {
 
 /* ───────────────────────── Board de um mercado ───────────────────────── */
 
-function MarketBoard({ market, accent, subtitle, onPick }: {
+function MarketBoard({ market, accent, subtitle, onPick, pickedOddIds }: {
   market: MultiRunnerSnapshot;
   accent: string;
   subtitle: string;
   onPick: (oddId: string) => void;
+  /** oddIds que o usuário já apostou neste mercado (pra contar/travar por chave no resorteio). */
+  pickedOddIds?: Set<string>;
 }) {
   const [query, setQuery] = React.useState('');
+  // Accordion das chaves do resorteio — compacto no mobile. Chave A aberta por padrão.
+  const [openChaves, setOpenChaves] = React.useState<Set<string>>(() => new Set(['A']));
+  const toggleChave = (chave: string) => setOpenChaves((prev) => {
+    const next = new Set(prev);
+    if (next.has(chave)) next.delete(chave); else next.add(chave);
+    return next;
+  });
   const open = market.status === 'OPEN';
   const paused = market.status === 'SUSPENDED';
   const accentSoft = `${accent}1f`;
@@ -227,6 +261,68 @@ function MarketBoard({ market, accent, subtitle, onPick }: {
   }, [sorted, query]);
   const leaderPool = sorted[0]?.pool ?? 0;
   const withBets = sorted.filter((r) => r.pool > 0).length;
+
+  // Resorteio: agrupa por chave e trava o nº de pilotos distintos apostáveis por chave.
+  const isQualify = market.marketType === 'QUALIFY';
+  const pickedCountByChave = React.useMemo(() => {
+    const m: Record<string, number> = {};
+    if (pickedOddIds) {
+      for (const r of market.runners) {
+        if (r.bracketKey && pickedOddIds.has(r.oddId)) {
+          m[r.bracketKey] = (m[r.bracketKey] ?? 0) + 1;
+        }
+      }
+    }
+    return m;
+  }, [market.runners, pickedOddIds]);
+
+  const renderRunner = (r: Runner, rankIdx: number, disabled: boolean) => {
+    const barW = leaderPool > 0 ? Math.max(r.pool / leaderPool, r.pool > 0 ? 0.06 : 0) : 0;
+    const hasOdd = r.pool > 0 && r.odd > 0;
+    const picked = pickedOddIds?.has(r.oddId) ?? false;
+    return (
+      <li key={r.oddId}>
+        <button
+          type="button" disabled={disabled} onClick={() => onPick(r.oddId)}
+          className="group flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-white/[0.03] disabled:cursor-not-allowed disabled:opacity-40 sm:px-5"
+        >
+          <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md font-mono text-[11px] font-extrabold ${rankIdx < 3 && r.pool > 0 ? RANK_STYLE[rankIdx] : 'bg-white/[0.05] text-white/35'}`}>
+            {rankIdx + 1}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-[13.5px] font-semibold text-white/85">{r.label}</span>
+              {picked && <span className="shrink-0 rounded bg-emerald-400/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-300">apostado</span>}
+            </div>
+            <div className="mt-1 h-[5px] overflow-hidden rounded-full bg-white/[0.05]">
+              <div className="h-full rounded-full transition-[width] duration-700"
+                style={{ width: `${barW * 100}%`, background: `linear-gradient(90deg, ${accent}55, ${accent})`, boxShadow: rankIdx === 0 && r.pool > 0 ? `0 0 12px ${accent}88` : undefined }} />
+            </div>
+            <div className="mt-0.5 flex gap-2 font-mono text-[10.5px] tabular-nums text-white/35">
+              <span>{fmtBRLShort(r.pool)}</span>
+              <span className="text-white/15">·</span>
+              <span>{r.tickets} {r.tickets === 1 ? 'aposta' : 'apostas'}</span>
+              {r.pool > 0 && <><span className="text-white/15">·</span><span>{r.poolShare.toFixed(0)}%</span></>}
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            {hasOdd ? (
+              <>
+                <div className="font-mono text-lg font-extrabold tabular-nums text-white transition group-hover:brightness-110" style={{ color: accent }}>
+                  {r.odd.toFixed(2)}<span className="text-[12px] opacity-70">x</span>
+                </div>
+                <div className="text-[9px] uppercase tracking-wider text-white/30">cotação agora</div>
+              </>
+            ) : (
+              <span className="rounded-lg border border-dashed px-2 py-1 text-[10px] font-semibold" style={{ borderColor: `${accent}55`, color: accent }}>
+                {disabled ? '—' : 'apostar'}
+              </span>
+            )}
+          </div>
+        </button>
+      </li>
+    );
+  };
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#0e1118]"
@@ -273,51 +369,67 @@ function MarketBoard({ market, accent, subtitle, onPick }: {
       </div>
 
       {/* Leaderboard rolável */}
-      <ul className="max-h-[420px] divide-y divide-white/[0.04] overflow-y-auto overscroll-contain">
-        {filtered.map((r) => {
-          const rank = sorted.indexOf(r);
-          const barW = leaderPool > 0 ? Math.max(r.pool / leaderPool, r.pool > 0 ? 0.06 : 0) : 0;
-          const hasOdd = r.pool > 0 && r.odd > 0;
-          return (
-            <li key={r.oddId}>
-              <button
-                type="button" disabled={!open} onClick={() => onPick(r.oddId)}
-                className="group flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-white/[0.03] disabled:cursor-default disabled:opacity-60 sm:px-5"
-              >
-                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md font-mono text-[11px] font-extrabold ${rank < 3 && r.pool > 0 ? RANK_STYLE[rank] : 'bg-white/[0.05] text-white/35'}`}>
-                  {rank + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13.5px] font-semibold text-white/85">{r.label}</div>
-                  <div className="mt-1 h-[5px] overflow-hidden rounded-full bg-white/[0.05]">
-                    <div className="h-full rounded-full transition-[width] duration-700"
-                      style={{ width: `${barW * 100}%`, background: `linear-gradient(90deg, ${accent}55, ${accent})`, boxShadow: rank === 0 && r.pool > 0 ? `0 0 12px ${accent}88` : undefined }} />
-                  </div>
-                  <div className="mt-0.5 flex gap-2 font-mono text-[10.5px] tabular-nums text-white/35">
-                    <span>{fmtBRLShort(r.pool)}</span>
-                    <span className="text-white/15">·</span>
-                    <span>{r.tickets} {r.tickets === 1 ? 'aposta' : 'apostas'}</span>
-                    {r.pool > 0 && <><span className="text-white/15">·</span><span>{r.poolShare.toFixed(0)}%</span></>}
-                  </div>
-                </div>
-                <div className="shrink-0 text-right">
-                  {hasOdd ? (
-                    <>
-                      <div className="font-mono text-lg font-extrabold tabular-nums text-white transition group-hover:brightness-110" style={{ color: accent }}>
-                        {r.odd.toFixed(2)}<span className="text-[12px] opacity-70">x</span>
-                      </div>
-                      <div className="text-[9px] uppercase tracking-wider text-white/30">cotação agora</div>
-                    </>
-                  ) : (
-                    <span className="rounded-lg border border-dashed px-2 py-1 text-[10px] font-semibold" style={{ borderColor: `${accent}55`, color: accent }}>
-                      {open ? 'apostar' : '—'}
+      <ul className="max-h-[460px] divide-y divide-white/[0.04] overflow-y-auto overscroll-contain">
+        {isQualify ? (
+          <>
+            {CHAVE_ORDER.map((chave) => {
+              const chaveRunners = filtered.filter((r) => (r.bracketKey ?? '') === chave);
+              if (!chaveRunners.length) return null;
+              const limit = BRACKET_QUALIFIERS[chave] ?? 0;
+              const pickedN = pickedCountByChave[chave] ?? 0;
+              const atLimit = limit > 0 && pickedN >= limit;
+              const expanded = query.trim().length > 0 || openChaves.has(chave);
+              return (
+                <li key={chave}>
+                  <button
+                    type="button" onClick={() => toggleChave(chave)} aria-expanded={expanded}
+                    className="sticky top-0 z-[1] flex w-full items-center justify-between gap-2 border-y border-white/[0.06] bg-[#0e1118]/95 px-4 py-2.5 text-left backdrop-blur transition-colors hover:bg-white/[0.03] sm:px-5"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <ChevronDown className={`h-4 w-4 shrink-0 text-white/40 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+                      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md font-mono text-[12px] font-extrabold" style={{ background: `${accent}1f`, color: accent }}>{chave}</span>
+                      <span className="text-[12.5px] font-bold text-white/85">Chave {chave}</span>
+                      <span className="truncate text-[10.5px] text-white/35">· até {limit} classificados</span>
+                    </div>
+                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10.5px] font-bold tabular-nums ${atLimit ? 'bg-amber-400/15 text-amber-300' : 'bg-white/[0.05] text-white/45'}`}>
+                      {pickedN}/{limit}
                     </span>
+                  </button>
+                  {expanded && (
+                    <ul className="divide-y divide-white/[0.04]">
+                      {chaveRunners.map((r, i) => renderRunner(r, i, !open || (atLimit && !(pickedOddIds?.has(r.oddId) ?? false))))}
+                    </ul>
                   )}
-                </div>
-              </button>
-            </li>
-          );
-        })}
+                </li>
+              );
+            })}
+            {(() => {
+              // Defensivo: pilotos sem chave A-E (roster mal configurado) não somem da lista.
+              const others = filtered.filter((r) => !(CHAVE_ORDER as readonly string[]).includes(r.bracketKey ?? ''));
+              if (!others.length) return null;
+              const othersExpanded = query.trim().length > 0 || openChaves.has('__outros');
+              return (
+                <li key="__outros">
+                  <button
+                    type="button" onClick={() => toggleChave('__outros')} aria-expanded={othersExpanded}
+                    className="sticky top-0 z-[1] flex w-full items-center gap-2 border-y border-white/[0.06] bg-[#0e1118]/95 px-4 py-2.5 text-left backdrop-blur transition-colors hover:bg-white/[0.03] sm:px-5"
+                  >
+                    <ChevronDown className={`h-4 w-4 shrink-0 text-white/40 transition-transform duration-200 ${othersExpanded ? 'rotate-180' : ''}`} />
+                    <span className="text-[12.5px] font-bold text-white/70">Outros</span>
+                    <span className="text-[10.5px] text-white/35">sem chave definida</span>
+                  </button>
+                  {othersExpanded && (
+                    <ul className="divide-y divide-white/[0.04]">
+                      {others.map((r, i) => renderRunner(r, i, !open))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })()}
+          </>
+        ) : (
+          filtered.map((r) => renderRunner(r, sorted.indexOf(r), !open))
+        )}
         {filtered.length === 0 && (
           <li className="px-5 py-8 text-center text-[13px] text-white/40">Nenhum piloto encontrado para “{query}”.</li>
         )}
