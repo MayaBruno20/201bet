@@ -35,6 +35,7 @@ import { AnalyticsExportQueryDto } from './dto/analytics-query.dto';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { CreateCarDto } from './dto/create-car.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
+import { BulkImportDriversDto } from './dto/bulk-import-drivers.dto';
 import { CreateDuelDto } from './dto/create-duel.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpsertSettingDto } from './dto/upsert-setting.dto';
@@ -135,6 +136,11 @@ export class AdminController {
   @Post('drivers')
   createDriver(@Body() payload: CreateDriverDto, @Req() req: ReqUser) {
     return this.adminService.createDriver(payload, this.auditFromReq(req));
+  }
+
+  @Post('drivers/bulk-import')
+  bulkImportDrivers(@Body() payload: BulkImportDriversDto, @Req() req: ReqUser) {
+    return this.adminService.bulkImportDrivers(payload, this.auditFromReq(req));
   }
 
   @Patch('drivers/:id')

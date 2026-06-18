@@ -416,13 +416,19 @@ export class ArmageddonService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const nickname = dto.driverNickname?.trim() || null;
       let driverId = dto.driverId;
       if (!driverId) {
         if (!dto.driverName) {
           throw new BadRequestException('Informe driverId ou driverName');
         }
-        const driver = await tx.driver.create({ data: { name: dto.driverName } });
+        const driver = await tx.driver.create({
+          data: { name: dto.driverName.trim(), nickname },
+        });
         driverId = driver.id;
+      } else if (nickname) {
+        // Piloto existente: atualiza o apelido se o operador preencheu o campo.
+        await tx.driver.update({ where: { id: driverId }, data: { nickname } });
       }
 
       // findFirst (não findUnique) porque a unicidade agora é (eventId, bracketKey, position)
