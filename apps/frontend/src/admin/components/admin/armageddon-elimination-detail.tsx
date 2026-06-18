@@ -100,6 +100,7 @@ export function ArmageddonEliminationDetail({ eventId, onChanged }: { eventId: s
   const [tab, setTab] = React.useState<'cadastro' | 'auditoria' | 'segundo' | 'mercados'>('cadastro');
   const [busy, setBusy] = React.useState<string | null>(null);
   const [addOpen, setAddOpen] = React.useState<{ bracketKey: string; position: number } | null>(null);
+  const [importOpen, setImportOpen] = React.useState(false);
   const [settleMatchup, setSettleMatchup] = React.useState<Matchup | null>(null);
   const { push } = useToast();
   const confirm = useConfirm();
@@ -278,6 +279,7 @@ export function ArmageddonEliminationDetail({ eventId, onChanged }: { eventId: s
         <CadastroTab
           detail={detail} busy={busy} firstDrawGenerated={firstDraw.length > 0}
           onAdd={(bracketKey, position) => setAddOpen({ bracketKey, position })}
+          onImport={() => setImportOpen(true)}
           onRemove={removeRoster} onGenerate={generateFirstDraw} onClearKeys={clearKeys}
         />
       )}
@@ -315,6 +317,13 @@ export function ArmageddonEliminationDetail({ eventId, onChanged }: { eventId: s
         />
       )}
 
+      {importOpen && (
+        <ImportPilotsModal
+          onClose={() => setImportOpen(false)}
+          onSaved={() => { setImportOpen(false); void load({ silent: true }); }}
+        />
+      )}
+
       {settleMatchup && (
         <SettleModal
           matchup={settleMatchup} onClose={() => setSettleMatchup(null)}
@@ -327,9 +336,10 @@ export function ArmageddonEliminationDetail({ eventId, onChanged }: { eventId: s
 
 /* ───────────────────────── Cadastro ───────────────────────── */
 
-function CadastroTab({ detail, busy, firstDrawGenerated, onAdd, onRemove, onGenerate, onClearKeys }: {
+function CadastroTab({ detail, busy, firstDrawGenerated, onAdd, onImport, onRemove, onGenerate, onClearKeys }: {
   detail: Detail; busy: string | null; firstDrawGenerated: boolean;
   onAdd: (bracketKey: string, position: number) => void;
+  onImport: () => void;
   onRemove: (r: RosterEntry) => void; onGenerate: () => void; onClearKeys: () => void;
 }) {
   const byKey = new Map<string, Map<number, RosterEntry>>();
@@ -345,6 +355,9 @@ function CadastroTab({ detail, busy, firstDrawGenerated, onAdd, onRemove, onGene
         title="Cadastro nas chaves" sub="Adicione os 144 pilotos nas chaves A–E. Clique numa posição vazia para cadastrar."
         action={
           <div className="flex items-center gap-2">
+            <button className="btn btn-ghost focusable" onClick={onImport}>
+              <I.Upload size={14}/> Importar pilotos
+            </button>
             {firstDrawGenerated && (
               <button className="btn btn-ghost focusable" style={{ color: 'var(--accent)' }} onClick={onClearKeys} disabled={busy === 'clear'}>
                 {busy === 'clear' ? <><span className="pulse-dot"/> Refazendo…</> : <><I.Bolt size={14}/> Refazer chaves</>}
@@ -412,6 +425,7 @@ function AddPilotModal({ eventId, bracketKey, position, onClose, onSaved }: {
   eventId: string; bracketKey: string; position: number; onClose: () => void; onSaved: () => void;
 }) {
   const [name, setName] = React.useState('');
+  const [nickname, setNickname] = React.useState('');
   const [hits, setHits] = React.useState<DriverHit[]>([]);
   const [searching, setSearching] = React.useState(false);
   const [selected, setSelected] = React.useState<DriverHit | null>(null);
@@ -473,6 +487,7 @@ function AddPilotModal({ eventId, bracketKey, position, onClose, onSaved }: {
     try {
       await api.post(ENDPOINTS.ARMAGEDDON.roster.upsert(eventId), {
         ...(selected ? { driverId: selected.driverId } : { driverName: name.trim() }),
+        driverNickname: nickname.trim() || undefined,
         bracketKey, position,
         fromListId: list.fromListId, fromAreaCode: list.fromAreaCode,
       });
@@ -521,6 +536,13 @@ function AddPilotModal({ eventId, bracketKey, position, onClose, onSaved }: {
           </div>
         ) : null}
 
+        {/* Apelido do piloto */}
+        <div className="mt-3">
+          <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Apelido</label>
+          <input className="input mt-1" value={nickname} placeholder="Como o piloto é conhecido (opcional)"
+            onChange={(e) => setNickname(e.target.value)}/>
+        </div>
+
         {/* Lista do piloto */}
         <div className="mt-3">
           <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Lista (DDD)</label>
@@ -550,6 +572,128 @@ function AddPilotModal({ eventId, bracketKey, position, onClose, onSaved }: {
           <button className="btn btn-ghost flex-1 justify-center" onClick={onClose} disabled={busy}>Cancelar</button>
           <button className="btn btn-primary flex-1 justify-center" onClick={submit} disabled={busy}>
             {busy ? <><span className="pulse-dot"/> Salvando…</> : <><I.Check size={14}/> Cadastrar</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────── Importar pilotos (em massa, pool global) ─────────────── */
+
+type ParsedPilot = { area: string; name: string; nickname: string; valid: boolean };
+
+// Aceita TAB / ";" / 2+ espaços como separador. Ordem: Área · Nome · Apelido.
+// Apelido é opcional. Linhas sem nome (≥2 chars) são marcadas como inválidas.
+function parsePilots(raw: string): ParsedPilot[] {
+  return raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => {
+      let parts: string[];
+      if (line.includes('\t')) parts = line.split('\t');
+      else if (line.includes(';')) parts = line.split(';');
+      else if (/\s{2,}/.test(line)) parts = line.split(/\s{2,}/);
+      else {
+        // separado por 1 espaço: 1º token vira Área só se parecer um código (11/ARG/PAR).
+        const m = line.match(/^(\S+)\s+(.+)$/);
+        parts = m && /^([0-9]{1,3}|[A-Za-z]{2,4})$/.test(m[1]) ? [m[1], m[2]] : [line];
+      }
+      parts = parts.map((p) => p.trim());
+      let area = '', name = '', nickname = '';
+      if (parts.length >= 3) { area = parts[0]; name = parts[1]; nickname = parts.slice(2).join(' '); }
+      else if (parts.length === 2) { area = parts[0]; name = parts[1]; }
+      else { name = parts[0] ?? ''; }
+      return { area, name, nickname, valid: name.trim().length >= 2 };
+    });
+}
+
+function ImportPilotsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [raw, setRaw] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const { push } = useToast();
+
+  const rows = React.useMemo(() => parsePilots(raw), [raw]);
+  const valid = rows.filter((r) => r.valid);
+  const invalid = rows.length - valid.length;
+  const withNick = valid.filter((r) => r.nickname.trim()).length;
+
+  const submit = async () => {
+    if (valid.length === 0) { push({ title: 'Cole ao menos um piloto', tone: 'rose' }); return; }
+    if (valid.length > 300) { push({ title: 'Máximo de 300 por importação', body: 'Divida em lotes menores.', tone: 'rose' }); return; }
+    setBusy(true);
+    try {
+      const r = await api.post<{ received: number; created: number; updated: number; skipped: number }>(
+        ENDPOINTS.DRIVERS.bulkImport,
+        { pilots: valid.map((p) => ({ name: p.name.trim(), nickname: p.nickname.trim() || undefined, area: p.area.trim() || undefined })) },
+      );
+      push({
+        title: 'Importação concluída',
+        body: `${r.created} novo(s) · ${r.updated} apelido(s) atualizado(s) · ${r.skipped} já existia(m)`,
+        tone: 'emerald',
+      });
+      onSaved();
+    } catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
+      <div className="surface-elev p-6 w-full max-w-xl">
+        <div className="font-display text-[18px] font-bold mb-1">Importar pilotos</div>
+        <div className="text-[12px] text-[color:var(--text-3)] mb-3">
+          Cria os pilotos no <strong>pool</strong> (ficam disponíveis para o sorteio — não posiciona nas chaves).
+          De-dup por nome: quem já existe não duplica.
+        </div>
+
+        <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">
+          Cole a lista — uma linha por piloto: Área &nbsp;⇥&nbsp; Nome &nbsp;⇥&nbsp; Apelido
+        </label>
+        <textarea
+          className="input mt-1 font-mono text-[12px]" rows={7} autoFocus value={raw}
+          placeholder={'11\tALISSON RAPOZO MAIELLO\tAPELIDO\n41\tRODRIGO MILIKINA\tMILIKINA\nARG\tALEJANDRO FABIAN LUCAS\tLUCAS'}
+          onChange={(e) => setRaw(e.target.value)}
+          style={{ resize: 'vertical', whiteSpace: 'pre', overflowWrap: 'normal', overflowX: 'auto' }}
+        />
+        <div className="text-[11px] text-[color:var(--text-4)] mt-1">
+          Separe as colunas por TAB (cole direto da planilha), <code>;</code> ou 2+ espaços. Apelido é opcional.
+        </div>
+
+        {rows.length > 0 && (
+          <div className="mt-3">
+            <div className="flex items-center gap-3 text-[11.5px] mb-1.5">
+              <span className="text-[color:var(--text-2)]"><strong>{valid.length}</strong> piloto(s)</span>
+              <span className="text-[color:var(--text-4)]">{withNick} com apelido</span>
+              {invalid > 0 && <span style={{ color: '#ff7585' }}>{invalid} linha(s) sem nome — ignorada(s)</span>}
+            </div>
+            <div className="surface-2 max-h-52 overflow-auto" style={{ borderRadius: 10 }}>
+              <table className="w-full text-[12px]">
+                <thead className="sticky top-0" style={{ background: 'var(--surface-3)' }}>
+                  <tr className="text-[10px] uppercase tracking-[0.1em] text-[color:var(--text-4)]">
+                    <th className="text-left font-semibold px-2 py-1.5 w-12">Área</th>
+                    <th className="text-left font-semibold px-2 py-1.5">Nome</th>
+                    <th className="text-left font-semibold px-2 py-1.5">Apelido</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i} style={{ opacity: r.valid ? 1 : 0.45, borderTop: '1px solid var(--border-subtle, var(--border))' }}>
+                      <td className="px-2 py-1 tabular-nums text-[color:var(--text-3)]">{r.area || '—'}</td>
+                      <td className="px-2 py-1 font-medium truncate">{r.name || <span style={{ color: '#ff7585' }}>(sem nome)</span>}</td>
+                      <td className="px-2 py-1 text-[color:var(--text-3)] truncate">{r.nickname || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-2 mt-5">
+          <button className="btn btn-ghost flex-1 justify-center" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button className="btn btn-primary flex-1 justify-center" onClick={submit} disabled={busy || valid.length === 0}>
+            {busy ? <><span className="pulse-dot"/> Importando…</> : <><I.Upload size={14}/> Importar {valid.length || ''}</>}
           </button>
         </div>
       </div>

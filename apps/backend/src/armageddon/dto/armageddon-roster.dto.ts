@@ -46,6 +46,13 @@ export class UpsertArmageddonRosterDto {
   @MaxLength(200)
   driverName?: string;
 
+  // Apelido do piloto. Ao criar um piloto novo (driverName) grava em Driver.nickname;
+  // se um driverId existente for informado e vier preenchido, atualiza o apelido dele.
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  driverNickname?: string;
+
   // Chave do 1º sorteio na eliminação ("A".."E"). Null/ausente em eventos LADDER.
   @IsOptional()
   @IsString()

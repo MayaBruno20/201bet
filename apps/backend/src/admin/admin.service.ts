@@ -38,6 +38,7 @@ import {
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { CreateCarDto } from './dto/create-car.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
+import { BulkImportDriversDto } from './dto/bulk-import-drivers.dto';
 import { CreateDuelDto } from './dto/create-duel.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
@@ -636,6 +637,69 @@ export class AdminService {
       );
       return created;
     });
+  }
+
+  /**
+   * Importa pilotos em massa para o pool global (cadastro de Driver).
+   * - De-dup por nome (case-insensitive, trim) contra o banco E dentro do próprio lote.
+   * - Piloto já existente: atualiza o apelido só se vier preenchido e for diferente.
+   * - Não posiciona em chave nenhuma — apenas cria os pilotos disponíveis.
+   */
+  async bulkImportDrivers(payload: BulkImportDriversDto, audit: AuditContext = {}) {
+    // Normaliza e remove duplicados internos do lote (mantém o 1º de cada nome).
+    const seen = new Set<string>();
+    const rows = payload.pilots
+      .map((p) => ({
+        name: p.name.trim(),
+        nickname: p.nickname?.trim() || null,
+        area: p.area?.trim() || null,
+      }))
+      .filter((p) => p.name.length >= 2)
+      .filter((p) => {
+        const key = p.name.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+    const result = { received: payload.pilots.length, created: 0, updated: 0, skipped: 0 };
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        for (const row of rows) {
+          const existing = await tx.driver.findFirst({
+            where: { name: { equals: row.name, mode: 'insensitive' } },
+            select: { id: true, nickname: true },
+          });
+          if (existing) {
+            if (row.nickname && existing.nickname !== row.nickname) {
+              await tx.driver.update({ where: { id: existing.id }, data: { nickname: row.nickname } });
+              result.updated += 1;
+            } else {
+              result.skipped += 1;
+            }
+            continue;
+          }
+          await tx.driver.create({ data: { name: row.name, nickname: row.nickname } });
+          result.created += 1;
+        }
+
+        await this.logAction(
+          tx,
+          'ADMIN_BULK_IMPORT_DRIVERS',
+          'Driver',
+          null,
+          {
+            ...result,
+            areas: Array.from(new Set(rows.map((r) => r.area).filter(Boolean))),
+          },
+          audit,
+        );
+      },
+      { timeout: 60000, maxWait: 10000 },
+    );
+
+    return result;
   }
 
   async updateDriver(
