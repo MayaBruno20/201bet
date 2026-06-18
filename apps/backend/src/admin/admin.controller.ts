@@ -17,7 +17,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import { diskStorage, memoryStorage } from 'multer';
 import type { Request } from 'express';
 import { UserRole } from '@prisma/client';
 import { CARS_UPLOAD_DIR, BANNERS_UPLOAD_DIR } from '../common/uploads';
@@ -141,6 +141,21 @@ export class AdminController {
   @Post('drivers/bulk-import')
   bulkImportDrivers(@Body() payload: BulkImportDriversDto, @Req() req: ReqUser) {
     return this.adminService.bulkImportDrivers(payload, this.auditFromReq(req));
+  }
+
+  // Parse de PDF (Área · Nome · Apelido) → linhas para pré-visualização. Não grava.
+  @Post('drivers/parse-file')
+  @UseInterceptors(
+    FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } }),
+  )
+  parsePilotFile(@UploadedFile() file: Express.Multer.File) {
+    return this.adminService.parsePilotFile(file);
+  }
+
+  // Reset seguro do pool: remove só pilotos sem nenhuma referência.
+  @Post('drivers/delete-unused')
+  deleteUnusedDrivers(@Req() req: ReqUser) {
+    return this.adminService.deleteUnusedDrivers(this.auditFromReq(req));
   }
 
   @Patch('drivers/:id')
