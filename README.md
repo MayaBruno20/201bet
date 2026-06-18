@@ -124,12 +124,7 @@ Acessos:
 - API health: `http://localhost:3502/api/health`
 - Nginx (quando estiver ligado): `http://localhost:3503`
 
-## 8) Credenciais seed
-
-- Admin: `admin@201bet.local` / `Admin@201Bet123`
-- Usuário: `user@201bet.local` / `User@201Bet123`
-
-## 9) Rodar stack completa em Docker (apps + infra)
+## 8) Rodar stack completa em Docker (apps + infra)
 
 Quando quiser subir tudo containerizado:
 
@@ -145,7 +140,7 @@ Serviços do profile `apps`:
 
 Infra (`postgres`, `redis`) sobe junto via compose.
 
-## 10) Fluxo recomendado para dia a dia
+## 9) Fluxo recomendado para dia a dia
 
 1. Subir infra:
 
@@ -171,7 +166,7 @@ npm run dev
 npm run infra:down
 ```
 
-## 11) Problemas comuns (e solução)
+## 10) Problemas comuns (e solução)
 
 ### 10.1 `EADDRINUSE` (porta em uso)
 
