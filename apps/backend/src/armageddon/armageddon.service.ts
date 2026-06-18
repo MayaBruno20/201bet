@@ -1174,6 +1174,14 @@ export class ArmageddonService {
     }
 
     const marketType = MarketType[dto.type];
+    // Resorteio (QUALIFY) depende da chave (A-E) de cada piloto pra agrupar e travar
+    // o nº de finalistas apostáveis por chave. Sem chave o limite falharia aberto —
+    // então recusamos criar o mercado com roster incompleto (defense-in-depth).
+    if (marketType === MarketType.QUALIFY && rosterEntries.some((r) => !r.bracketKey)) {
+      throw new BadRequestException(
+        'Mercado de resorteio (QUALIFY) exige que todos os pilotos tenham chave (A-E) definida no roster.',
+      );
+    }
     const bookingCloseAt = dto.bookingCloseAt ? new Date(dto.bookingCloseAt) : null;
 
     const market = await this.prisma.$transaction(async (tx) => {
@@ -1191,6 +1199,9 @@ export class ArmageddonService {
               label: r.driver.name,
               // Liga a opção ao piloto → apuração por driverId (resorteio).
               driverId: r.driverId,
+              // Copia a chave (A-E) do roster → agrupar runners por chave e travar
+              // o nº de finalistas apostáveis por chave no resorteio (QUALIFY).
+              bracketKey: r.bracketKey ?? null,
               value: new Prisma.Decimal(1),
               status: OddStatus.ACTIVE,
             })),

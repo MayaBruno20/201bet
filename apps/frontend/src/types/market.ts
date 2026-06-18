@@ -58,6 +58,8 @@ export type MultiRunnerSnapshot = {
     tickets: number;
     locked: boolean;
     poolShare: number;
+    /** Chave (A-E) do piloto no resorteio (QUALIFY). Null fora do resorteio. */
+    bracketKey?: string | null;
   }>;
   history: Array<{
     at: string;

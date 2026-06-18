@@ -471,6 +471,11 @@ model Odd {
   // casar pelo nome — usado na apuração automática do resorteio. Null em
   // mercados de duelo e opções não-ligadas a piloto.
   driverId  String?
+  // Chave (A-E) do piloto no Armageddon, copiada do ArmageddonRoster na criação do
+  // mercado QUALIFY (resorteio). Permite agrupar os runners por chave e travar o
+  // nº de finalistas que o usuário pode apostar por chave (A=4, B-E=7) sem join.
+  // Null fora do resorteio.
+  bracketKey String?
   value     Decimal   @db.Decimal(12, 4)
   status    OddStatus @default(ACTIVE)
   version   Int       @default(1)
@@ -481,6 +486,7 @@ model Odd {
   betItems BetItem[]
 
   @@index([marketId, status])
+  @@index([marketId, bracketKey])
 }
 
 model Bet {
