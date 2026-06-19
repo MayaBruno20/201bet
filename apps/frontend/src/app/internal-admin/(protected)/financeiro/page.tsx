@@ -15,7 +15,7 @@ type PaymentRow = {
   id: string;
   type: 'DEPOSIT' | 'WITHDRAW';
   amount: number | string;
-  status: 'PENDING' | 'APPROVED' | 'FAILED' | 'CANCELED';
+  status: 'PENDING' | 'UNKNOWN' | 'APPROVED' | 'FAILED' | 'CANCELED';
   provider: string;
   providerRef: string | null;
   pixKey: string | null;
@@ -46,16 +46,23 @@ type Tab = 'pending' | 'withdrawals' | 'deposits';
 
 const STATUS_LABEL: Record<PaymentRow['status'], string> = {
   PENDING: 'Pendente',
+  UNKNOWN: 'Indefinido',
   APPROVED: 'Aprovado',
   FAILED: 'Falhou',
   CANCELED: 'Cancelado',
 };
 const STATUS_TONE: Record<PaymentRow['status'], { bg: string; fg: string }> = {
   PENDING: { bg: 'var(--accent-soft)', fg: 'var(--accent)' },
+  UNKNOWN: { bg: 'var(--surface-3)', fg: 'var(--text-3)' },
   APPROVED: { bg: 'var(--emerald-soft)', fg: 'var(--emerald)' },
   FAILED: { bg: 'var(--rose-soft)', fg: '#ff7585' },
   CANCELED: { bg: 'var(--surface-3)', fg: 'var(--text-3)' },
 };
+// Defensivo: qualquer status não-mapeado (enum futuro) cai num tom neutro em vez
+// de quebrar a página com `undefined.bg`.
+const NEUTRAL_TONE = { bg: 'var(--surface-3)', fg: 'var(--text-3)' };
+const statusTone = (s: string) => STATUS_TONE[s as PaymentRow['status']] ?? NEUTRAL_TONE;
+const statusLabel = (s: string) => STATUS_LABEL[s as PaymentRow['status']] ?? s;
 
 const PIX_KEY_LABEL: Record<string, string> = {
   document: 'CPF/CNPJ', phone: 'Telefone', email: 'E-mail', evp: 'Aleatória',
@@ -517,8 +524,8 @@ const PaymentsHistoryTab: React.FC<{ type: 'DEPOSIT' | 'WITHDRAW' }> = ({ type }
                     <td>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[10.5px] font-semibold tracking-[0.06em] uppercase px-2 py-0.5 rounded-full"
-                          style={{ background: STATUS_TONE[p.status].bg, color: STATUS_TONE[p.status].fg }}>
-                          {STATUS_LABEL[p.status]}
+                          style={{ background: statusTone(p.status).bg, color: statusTone(p.status).fg }}>
+                          {statusLabel(p.status)}
                         </span>
                         {p.holdReason && (
                           <span className="text-[10px] font-semibold tracking-[0.06em] uppercase px-1.5 py-0.5 rounded-full"

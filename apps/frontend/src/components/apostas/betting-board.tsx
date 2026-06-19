@@ -170,6 +170,11 @@ export function BettingExperience({
     const snap = snapshots[stage.duelId];
     if (snap?.settlement) return 'SETTLED';
     if (stage.matchupStatus === 'COMPLETED' || stage.matchupStatus === 'INVALIDATED') return 'SETTLED';
+    // Duelo já auditado/encerrado pelo backend (status FINISHED). No Armageddon o
+    // matchupStatus vem null e o snapshot vivo some depois de liquidar, então sem
+    // esta linha um embate auditado caía em 'OPEN' e a rodada (ex.: Rodada 1) não
+    // desaparecia. É só classificação de exibição — não toca em aposta/saldo.
+    if (stage.status === 'FINISHED') return 'SETTLED';
     if (snap && (snap.locked || snap.status === 'BOOKING_CLOSED' || snap.status === 'FINISHED')) return 'CLOSED';
     return 'OPEN';
   };
