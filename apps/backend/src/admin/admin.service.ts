@@ -1626,13 +1626,13 @@ export class AdminService {
     const settled = market.status === MarketStatus.SETTLED;
     const countedStatuses: BetStatus[] = settled ? [BetStatus.WON, BetStatus.LOST] : [BetStatus.OPEN];
 
-    // Apostas do mercado (deduplicadas por bet) com afiliado — base de tudo.
+    // Apostas do mercado (deduplicadas por bet) — base de tudo.
     const betItems = await this.prisma.betItem.findMany({
       where: { oddId: { in: market.odds.map((o) => o.id) } },
       include: {
         bet: {
           include: {
-            user: { select: { id: true, name: true, email: true, affiliate: true } },
+            user: { select: { id: true, name: true, email: true } },
           },
         },
       },
@@ -1647,7 +1647,6 @@ export class AdminService {
       payout: number;
       userName: string;
       userEmail: string;
-      affiliate: { id: string; name: string; commissionPct: number; active: boolean } | null;
       createdAt: Date;
     }> = [];
     for (const item of betItems) {
@@ -1655,7 +1654,6 @@ export class AdminService {
       seen.add(item.betId);
       const b = item.bet;
       if (!countedStatuses.includes(b.status)) continue;
-      const af = b.user.affiliate;
       bets.push({
         betId: b.id,
         oddId: item.oddId,
@@ -1664,7 +1662,6 @@ export class AdminService {
         payout: b.status === BetStatus.WON ? Number(b.potentialWin) : 0,
         userName: b.user.name,
         userEmail: b.user.email,
-        affiliate: af ? { id: af.id, name: af.name, commissionPct: Number(af.commissionPct), active: af.active } : null,
         createdAt: b.createdAt,
       });
     }
@@ -1681,24 +1678,9 @@ export class AdminService {
     });
     const financials = computeMultiMarketFinancials(runnersInput, rakePercent);
 
-    // Comissões de afiliado: projeção (mercado vivo) usa a MESMA fórmula da
-    // liquidação — stake * rake * pct, cap 100% do rake. Mercado liquidado usa
-    // os registros reais (reversed=false).
-    let affiliateCommissionTotal = 0;
-    if (settled) {
-      const rows = await this.prisma.affiliateCommission.findMany({
-        where: { marketId, reversed: false },
-        select: { amount: true },
-      });
-      affiliateCommissionTotal = rows.reduce((s, r) => s + Number(r.amount), 0);
-    } else {
-      for (const b of bets) {
-        if (!b.affiliate?.active) continue;
-        const pct = Math.min(b.affiliate.commissionPct, 100);
-        affiliateCommissionTotal += b.stake * (rakePercent / 100) * (pct / 100);
-      }
-    }
-    affiliateCommissionTotal = Number(affiliateCommissionTotal.toFixed(2));
+    // Afiliados ficam FORA do sistema: o único afiliado é pago à mão (10% do
+    // lucro da casa) após o evento. Dashboards/relatórios não exibem comissão —
+    // o "lucro da casa" mostrado é a margem realizada (pote − prêmios pagos).
 
     const base = {
       marketId: market.id,
@@ -1711,7 +1693,6 @@ export class AdminService {
       settledAt: market.settledAt,
       winnerOddId: market.winnerOddId,
       financials,
-      affiliateCommissionTotal,
     };
 
     if (!settled) return { ...base, settlement: null };
@@ -1730,10 +1711,11 @@ export class AdminService {
 
     const totalPayout = Number(winners.reduce((s, w) => s + w.payout, 0).toFixed(2));
     const rakeCollected = Number((financials.totalPool * (rakePercent / 100)).toFixed(2));
-    // Lucro REAL da casa: tudo que entrou menos tudo que saiu. Quando ninguém
-    // acertou o vencedor, o pote inteiro fica com a casa (payout = 0).
+    // Lucro da casa = margem REALIZADA: tudo que entrou menos os prêmios pagos.
+    // Sempre >= 0 (a casa nunca paga do próprio bolso). É sobre ESTE número que
+    // os 10% do afiliado único são calculados à mão, fora do sistema.
     const houseNetProfit = Number(
-      (financials.totalPool - totalPayout - affiliateCommissionTotal).toFixed(2),
+      (financials.totalPool - totalPayout).toFixed(2),
     );
 
     return {
@@ -1744,7 +1726,6 @@ export class AdminService {
         totalPool: financials.totalPool,
         rakeCollected,
         totalPayout,
-        affiliateCommissionTotal,
         houseNetProfit,
         winningBets: winners.length,
         losingBets: bets.filter((b) => b.status === BetStatus.LOST).length,
@@ -2199,27 +2180,37 @@ export class AdminService {
       include: {
         event: { select: { name: true } },
         odds: { select: { id: true, label: true } },
-        commissions: { select: { amount: true } },
       },
     });
 
     const results: Array<{
       marketId: string; marketName: string; marketType: string; eventName: string;
       winnerLabel: string; totalPool: number; rakePercent: number; rakeCollected: number;
-      affiliatePayouts: number; netProfit: number; settledAt: Date | null;
+      netProfit: number; settledAt: Date | null;
     }> = [];
     for (const market of settledMarkets) {
-      // Get total pool from bets
-      const bets = await this.prisma.betItem.findMany({
+      // Pote e prêmios pagos a partir das apostas (deduplicadas por bet).
+      const betItems = await this.prisma.betItem.findMany({
         where: { odd: { marketId: market.id } },
-        include: { bet: { select: { stake: true } } },
+        include: { bet: { select: { id: true, stake: true, status: true, potentialWin: true } } },
       });
 
-      const totalPool = bets.reduce((sum, bi) => sum + Number(bi.bet.stake), 0);
-      const rakePercent = market.rakePercent ? Number(market.rakePercent) : 6;
+      const seenBets = new Set<string>();
+      let totalPool = 0;
+      let totalPayout = 0;
+      for (const bi of betItems) {
+        if (seenBets.has(bi.bet.id)) continue;
+        seenBets.add(bi.bet.id);
+        totalPool += Number(bi.bet.stake);
+        if (bi.bet.status === BetStatus.WON) totalPayout += Number(bi.bet.potentialWin);
+      }
+
+      // Margem fixa de 20% (HOUSE_MARGIN_PERCENT) — a coluna market.rakePercent é ignorada.
+      const rakePercent = HOUSE_MARGIN_PERCENT;
       const rakeCollected = totalPool * (rakePercent / 100);
-      const affiliatePayouts = market.commissions.reduce((sum, c) => sum + Number(c.amount), 0);
-      const netProfit = rakeCollected - affiliatePayouts;
+      // Lucro = margem REALIZADA (pote − prêmios pagos), sempre >= 0. Afiliados ficam
+      // fora do sistema (10% do lucro pagos à mão), então não entram no relatório.
+      const netProfit = totalPool - totalPayout;
       const winnerOdd = market.odds.find((o) => o.id === market.winnerOddId);
 
       results.push({
@@ -2231,7 +2222,6 @@ export class AdminService {
         totalPool,
         rakePercent,
         rakeCollected,
-        affiliatePayouts,
         netProfit,
         settledAt: market.settledAt,
       });
@@ -2245,14 +2235,12 @@ export class AdminService {
 
     const totalPool = markets.reduce((s, m) => s + m.totalPool, 0);
     const totalRake = markets.reduce((s, m) => s + m.rakeCollected, 0);
-    const totalAffiliatePayouts = markets.reduce((s, m) => s + m.affiliatePayouts, 0);
     const totalNetProfit = markets.reduce((s, m) => s + m.netProfit, 0);
 
     return {
       settledMarkets: markets.length,
       totalPool,
       totalRake,
-      totalAffiliatePayouts,
       totalNetProfit,
       averageRakePercent: markets.length > 0 ? totalRake / totalPool * 100 : 0,
     };
@@ -2337,11 +2325,11 @@ export class AdminService {
       source === 'list'
         ? await this.prisma.listEvent.findUnique({
             where: { id: eventId },
-            select: { id: true, name: true, scheduledAt: true, endsAt: true },
+            select: { id: true, name: true, scheduledAt: true, endsAt: true, eventId: true },
           })
         : await this.prisma.armageddonEvent.findUnique({
             where: { id: eventId },
-            select: { id: true, name: true, scheduledAt: true, endsAt: true },
+            select: { id: true, name: true, scheduledAt: true, endsAt: true, eventId: true },
           });
 
     if (!event) {
@@ -2373,12 +2361,30 @@ export class AdminService {
     let betCount = 0;
     let wonBets = 0;
     let lostBets = 0;
+    let lostStake = 0;
+    let wonStake = 0;
     const bettors = new Set<string>();
     const marketIdsList: string[] = [];
 
-    if (duelIds.length > 0) {
+    // Mercados do evento: tanto os 1x1 dos embates (via duelId) QUANTO os
+    // multi-mercados (campeão/classificados/reação/queimada), que são ligados ao
+    // Event vinculado e NÃO têm duelId. Sem o ramo do eventId vinculado, o
+    // fechamento ignorava o mercado de campeão e zerava as apostas.
+    const linkedEventId = event.eventId ?? null;
+    const marketFilters: Prisma.MarketWhereInput[] = [];
+    if (duelIds.length > 0) marketFilters.push({ duelId: { in: duelIds } });
+    if (linkedEventId) marketFilters.push({ eventId: linkedEventId });
+
+    if (marketFilters.length > 0) {
       const markets = await this.prisma.market.findMany({
-        where: { duelId: { in: duelIds } },
+        where: {
+          OR: marketFilters,
+          // Só mercados que valem para o fechamento real: abertos agora, suspensos
+          // (pausa temporária) e liquidados (resultado real). Mercados CLOSED são
+          // anulados/cancelados (apostas reembolsadas) — tipicamente lixo de teste —
+          // e NÃO podem inflar o relatório com dados irreais.
+          status: { in: [MarketStatus.OPEN, MarketStatus.SUSPENDED, MarketStatus.SETTLED] },
+        },
         select: { id: true },
       });
       marketIdsList.push(...markets.map((m) => m.id));
@@ -2402,8 +2408,8 @@ export class AdminService {
             betCount++;
             bettors.add(b.userId);
             totalStaked += Number(b.stake);
-            if (b.status === 'WON') wonBets++;
-            else if (b.status === 'LOST') lostBets++;
+            if (b.status === 'WON') { wonBets++; wonStake += Number(b.stake); }
+            else if (b.status === 'LOST') { lostBets++; lostStake += Number(b.stake); }
           }
 
           const ledger = await this.prisma.walletTransaction.findMany({
@@ -2438,17 +2444,17 @@ export class AdminService {
     }
 
     // 4. Derivados.
-    // Perda dos apostadores = stake - ganhos - reembolsos (clamp em 0 pra
-    // proteger contra dados inconsistentes).
-    const totalLosses = Math.max(0, totalStaked - totalWinnings - totalRefunds);
-    // Rake estimado: HOUSE_MARGIN_PERCENT do stake já liquidado (vencedores +
-    // perdedores). Valor real só é exato pelo audit log dos settlements; aqui
-    // é estimativa pra fechamento rápido.
-    const settledStake =
-      totalStaked > 0 && (wonBets + lostBets) > 0
-        ? totalStaked * ((wonBets + lostBets) / betCount)
-        : 0;
-    const rakeEstimated = settledStake * (HOUSE_MARGIN_PERCENT / 100);
+    // Perda dos apostadores = soma do stake das apostas REALMENTE perdedoras
+    // (status LOST). Apostas abertas (ainda não liquidadas) NÃO entram — são
+    // pendentes, não perda. Sem isso, durante o evento o stake aberto inteiro
+    // aparecia como "perda" (dado irreal).
+    const totalLosses = lostStake;
+    // Margem REALIZADA da casa = o que ela de fato embolsou das apostas já
+    // liquidadas: (stake vencedor + stake perdedor) − prêmios pagos. Apostas
+    // abertas NÃO entram (margem ainda não realizada); reembolsos se anulam
+    // (stake devolvido). Valor real, não estimativa — bate 100% no fechamento,
+    // inclusive sob o piso de odd, onde os 20% nominais não se realizam.
+    const houseMargin = (wonStake + lostStake) - totalWinnings;
 
     return {
       eventId,
@@ -2468,7 +2474,7 @@ export class AdminService {
         totalWinnings,
         totalRefunds,
         totalLosses,
-        rakeEstimated,
+        houseMargin,
       },
       payments: {
         totalDeposits,
