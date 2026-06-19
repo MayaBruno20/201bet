@@ -62,7 +62,7 @@ export class SettlementService {
       const market = await tx.market.findUnique({
         where: { id: marketId },
         include: {
-          odds: { include: { betItems: { include: { bet: { include: { user: { include: { wallet: true, affiliate: true } } } } } } } },
+          odds: { include: { betItems: { include: { bet: { include: { user: { include: { wallet: true } } } } } } } },
         },
       });
 
@@ -220,7 +220,7 @@ export class SettlementService {
       });
 
       let totalPayout = 0;
-      let totalAffiliateCommission = 0;
+      const totalAffiliateCommission = 0;
       let winningBets = 0;
       let losingBets = 0;
 
@@ -265,24 +265,8 @@ export class SettlementService {
           });
         }
 
-        // 4. Calculate affiliate commission (capped at 100% of rake)
-        const affiliate = bet.user.affiliate;
-        if (affiliate && affiliate.active) {
-          const afPct = Math.min(Number(affiliate.commissionPct), 100);
-          const commission = bet.stake * (effectiveRake / 100) * (afPct / 100);
-          if (commission > 0) {
-            totalAffiliateCommission += commission;
-
-            await tx.affiliateCommission.create({
-              data: {
-                affiliateId: affiliate.id,
-                betId: bet.betId,
-                marketId,
-                amount: new Prisma.Decimal(commission.toFixed(4)),
-              },
-            });
-          }
-        }
+        // Afiliados ficam FORA do sistema: o único afiliado é pago à mão (10% do
+        // lucro realizado da casa) após o evento. Não gravamos comissão por aposta.
       }
 
       // 5. Audit log
@@ -321,12 +305,14 @@ export class SettlementService {
       };
     }, { timeout: 60_000, maxWait: 5_000 });
 
-    const houseNetProfit = result.rakeCollected - result.totalAffiliateCommission;
+    // Lucro = margem REALIZADA (pote − prêmios pagos), sempre >= 0. Os 10% do
+    // afiliado único saem deste número, calculados à mão fora do sistema.
+    const houseNetProfit = result.totalPool - result.totalPayout;
 
     this.logger.log(
       `Market ${marketId} settled: winner=${result.winnerLabel}, pool=${result.totalPool.toFixed(2)}, ` +
       `rake=${result.rakeCollected.toFixed(2)}, payout=${result.totalPayout.toFixed(2)}, ` +
-      `affiliate=${result.totalAffiliateCommission.toFixed(2)}, houseNet=${houseNetProfit.toFixed(2)}`,
+      `houseNet=${houseNetProfit.toFixed(2)}`,
     );
 
     // Notifica clientes via WebSocket
@@ -390,7 +376,7 @@ export class SettlementService {
       const market = await tx.market.findUnique({
         where: { id: marketId },
         include: {
-          odds: { include: { betItems: { include: { bet: { include: { user: { include: { wallet: true, affiliate: true } } } } } } } },
+          odds: { include: { betItems: { include: { bet: { include: { user: { include: { wallet: true } } } } } } } },
         },
       });
       if (!market) throw new NotFoundException('Mercado não encontrado');
@@ -430,7 +416,7 @@ export class SettlementService {
       await tx.odd.updateMany({ where: { marketId }, data: { status: OddStatus.CLOSED } });
 
       let totalPayout = 0;
-      let totalAffiliateCommission = 0;
+      const totalAffiliateCommission = 0;
       let winningBets = 0;
       let losingBets = 0;
 
@@ -456,17 +442,8 @@ export class SettlementService {
           await tx.bet.update({ where: { id: bet.betId }, data: { status: BetStatus.LOST } });
         }
 
-        const affiliate = bet.user.affiliate;
-        if (affiliate && affiliate.active) {
-          const afPct = Math.min(Number(affiliate.commissionPct), 100);
-          const commission = bet.stake * (effectiveRake / 100) * (afPct / 100);
-          if (commission > 0) {
-            totalAffiliateCommission += commission;
-            await tx.affiliateCommission.create({
-              data: { affiliateId: affiliate.id, betId: bet.betId, marketId, amount: new Prisma.Decimal(commission.toFixed(4)) },
-            });
-          }
-        }
+        // Afiliados fora do sistema: o único afiliado é pago à mão (10% do lucro
+        // realizado) após o evento. Não gravamos comissão por aposta.
       }
 
       await tx.auditLog.create({
@@ -490,10 +467,12 @@ export class SettlementService {
       return { totalPool, rakeCollected, totalPayout, totalAffiliateCommission, winningBets, losingBets, winnerLabels };
     }, { timeout: 60_000, maxWait: 5_000 });
 
-    const houseNetProfit = result.rakeCollected - result.totalAffiliateCommission;
+    // Lucro = margem REALIZADA (pote − prêmios pagos), sempre >= 0. Os 10% do
+    // afiliado único saem deste número, calculados à mão fora do sistema.
+    const houseNetProfit = result.totalPool - result.totalPayout;
     this.logger.log(
       `Multi-winner market ${marketId} settled: winners=${result.winnerLabels.length}, pool=${result.totalPool.toFixed(2)}, ` +
-      `payout=${result.totalPayout.toFixed(2)}, affiliate=${result.totalAffiliateCommission.toFixed(2)}, houseNet=${houseNetProfit.toFixed(2)}`,
+      `payout=${result.totalPayout.toFixed(2)}, houseNet=${houseNetProfit.toFixed(2)}`,
     );
 
     try {

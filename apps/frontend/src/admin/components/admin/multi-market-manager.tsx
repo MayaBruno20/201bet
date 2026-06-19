@@ -63,13 +63,11 @@ type MarketSummary = {
   name: string;
   status: string;
   financials: Financials;
-  affiliateCommissionTotal: number;
   settlement: {
     winnerLabel: string | null;
     totalPool: number;
     rakeCollected: number;
     totalPayout: number;
-    affiliateCommissionTotal: number;
     houseNetProfit: number;
     winningBets: number;
     losingBets: number;
@@ -457,8 +455,8 @@ function CreateMultiMarketModal({ armageddonEventId, roster, eventName, onClose,
         )}
 
         <div className="mt-4 rounded-[10px] px-3 py-2 text-[11.5px]" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
-          Margem da casa: <strong>20% fixos</strong> sobre o pote bruto (regulamento). Comissões de afiliados saem de dentro
-          dessa margem — a casa só sedia as apostas, nunca custeia prêmio.
+          Margem da casa: <strong>20% fixos</strong> sobre o pote bruto (regulamento). O lucro exibido é a margem
+          realizada (pote − prêmios pagos) — a casa só sedia as apostas, nunca custeia prêmio.
         </div>
 
         <div className="flex gap-2 mt-5">
@@ -598,8 +596,7 @@ function SettlementSummaryModal({ marketId, onClose }: { marketId: string; onClo
               {[
                 { l: 'Pote bruto', v: brl(s.totalPool), c: '#7cd0ff' },
                 { l: 'Prêmios pagos', v: brl(s.totalPayout), c: '#a78bfa' },
-                { l: 'Comissões de afiliados', v: brl(s.affiliateCommissionTotal), c: 'var(--accent)' },
-                { l: 'Lucro líquido da casa', v: brl(s.houseNetProfit), c: 'var(--emerald)' },
+                { l: 'Lucro da casa', v: brl(s.houseNetProfit), c: 'var(--emerald)' },
               ].map((kpi) => (
                 <div key={kpi.l} className="surface-2 p-3" style={{ borderRadius: 12 }}>
                   <div className="text-[10px] uppercase tracking-[0.14em] text-[color:var(--text-3)] font-semibold">{kpi.l}</div>

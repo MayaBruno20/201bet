@@ -21,7 +21,7 @@ export type FinancialClosing = {
     totalWinnings: number;
     totalRefunds: number;
     totalLosses: number;
-    rakeEstimated: number;
+    houseMargin: number;
   };
   payments: {
     totalDeposits: number;
@@ -47,7 +47,7 @@ function toCsv(d: FinancialClosing): string {
     ['Ganhos pagos (R$)', d.bets.totalWinnings.toFixed(2)],
     ['Perdas dos apostadores (R$)', d.bets.totalLosses.toFixed(2)],
     ['Reembolsos (R$)', d.bets.totalRefunds.toFixed(2)],
-    ['Rake estimado (R$)', d.bets.rakeEstimated.toFixed(2)],
+    ['Margem da casa (R$)', d.bets.houseMargin.toFixed(2)],
     ['Apostas (total)', String(d.bets.count)],
     ['Vencedoras', String(d.bets.wonBets)],
     ['Perdedoras', String(d.bets.lostBets)],
@@ -154,7 +154,7 @@ export function FinancialClosingPanel({ eventId, source }: { eventId: string; so
           <KPI label="Total apostado" value={fmtBRL(data.bets.totalStaked)} tone="#7cd0ff" />
           <KPI label="Ganhos pagos" value={fmtBRL(data.bets.totalWinnings)} tone="#3ee093" />
           <KPI label="Perdas dos apostadores" value={fmtBRL(data.bets.totalLosses)} tone="#ff7585" />
-          <KPI label="Rake estimado" value={fmtBRL(data.bets.rakeEstimated)} tone="#a78bfa" />
+          <KPI label="Margem da casa" value={fmtBRL(data.bets.houseMargin)} tone="#a78bfa" />
         </div>
         <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
           <KPI label="Reembolsos" value={fmtBRL(data.bets.totalRefunds)} tone="var(--accent)" />
