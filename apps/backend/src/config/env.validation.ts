@@ -41,7 +41,7 @@ export const envValidationSchema = Joi.object({
   EMAIL_FROM_ADDRESS: Joi.string().email().required(),
   EMAIL_FROM_NAME: Joi.string().default('Palpite201'),
   EMAIL_REPLY_TO: Joi.string().email().optional(),
-  EMAIL_DAILY_LIMIT: Joi.number().integer().min(1).max(300).default(295),
+  EMAIL_DAILY_LIMIT: Joi.number().integer().min(1).max(100000).default(10000),
   EMAIL_VERIFICATION_TTL_HOURS: Joi.number().integer().min(1).max(168).default(24),
   PASSWORD_RESET_TTL_MINUTES: Joi.number().integer().min(5).max(120).default(30),
   EMAIL_LOGO_URL: Joi.string().uri().allow('').optional(),
