@@ -309,7 +309,11 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
               : 'Armageddon';
         meta.set(m.duelId, {
           roundNumber: m.roundNumber,
-          category: m.roundType ?? m.stage ?? null,
+          // Agrupa por CHAVE no 1º sorteio (bracketKey) — assim o board separa as
+          // chaves dentro de cada rodada (antes caía tudo em 'FIRST_DRAW' e as
+          // chaves A/B se misturavam na "Rodada 2"). Mesma prioridade do label:
+          // roundType (LADDER legado) → bracketKey (1º sorteio) → stage (fase final).
+          category: m.roundType ?? m.bracketKey ?? m.stage ?? null,
           categoryLabel: label,
           isSuperFinal: false,
           matchupStatus: null,
