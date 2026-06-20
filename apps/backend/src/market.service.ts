@@ -248,6 +248,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
             startsAt: true,
             bookingCloseAt: true,
             status: true,
+            isCustom: true,
           },
         },
       },
@@ -350,7 +351,18 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
 
     return {
       events: visibleEvents.map((event) => {
-        const stateDuels = event.duels.filter((duel) =>
+        // Duelos ÓRFÃOS (sem matchup) em eventos de chaveamento (Armageddon/Lista/
+        // Copa) são lixo: seed de teste vazado ou duelos antigos deixados pra trás
+        // pelo "Reiniciar evento" (que apaga os matchups mas só CANCELA os duelos,
+        // sem religar nem remover). Eles caíam no fallback `índice+1` e geravam
+        // "Rodada 85, 87..." no board. Regra: num evento que TEM matchups, só
+        // mostra duelo com matchup (ou embate personalizado); em evento de duelo
+        // avulso (sem nenhum matchup) nada é filtrado.
+        const eventHasMatchups = event.duels.some((d) => meta.has(d.id));
+        const boardDuels = eventHasMatchups
+          ? event.duels.filter((d) => meta.has(d.id) || d.isCustom)
+          : event.duels;
+        const stateDuels = boardDuels.filter((duel) =>
           this.states.has(duel.id),
         );
         const current =
@@ -367,7 +379,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
           status: event.status,
           marketNames: event.markets.map((m) => m.name),
           currentDuelId: current?.id ?? null,
-          stages: event.duels.map((duel, index) => {
+          stages: boardDuels.map((duel, index) => {
             const m = meta.get(duel.id);
             const roundNumber = m?.roundNumber ?? index + 1;
             return {
