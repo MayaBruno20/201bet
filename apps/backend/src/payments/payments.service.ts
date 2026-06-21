@@ -385,7 +385,10 @@ export class PaymentsService {
           amount,
           status: PaymentStatus.PENDING,
           provider: 'VALUT_PIX',
-          providerRef: requiresManualReview ? 'PENDING_MANUAL_REVIEW' : null,
+          // Análise manual é sinalizada por `holdReason` (CPF_MISMATCH/HIGH_AMOUNT).
+          // NÃO usar sentinela aqui: providerRef tem @@unique([provider, providerRef]),
+          // então duas strings iguais ('PENDING_MANUAL_REVIEW') colidem ("Registro duplicado").
+          providerRef: null,
           pixKey: pixKeyResolved,
           pixKeyType: payload.pixKeyType,
           holdReason,
@@ -453,7 +456,8 @@ export class PaymentsService {
         await this.prisma.payment.update({
           where: { id: result.id },
           data: {
-            providerRef: 'PENDING_MANUAL_REVIEW',
+            // flag de análise manual via holdReason; providerRef null (não colide no unique)
+            providerRef: null,
             holdReason: WithdrawHoldReason.CPF_MISMATCH,
           },
         });
@@ -480,7 +484,8 @@ export class PaymentsService {
           await this.prisma.payment.update({
             where: { id: result.id },
             data: {
-              providerRef: 'PENDING_MANUAL_REVIEW',
+              // flag de análise manual via holdReason; providerRef null (não colide no unique)
+              providerRef: null,
               holdReason: WithdrawHoldReason.CPF_MISMATCH,
             },
           });
@@ -695,7 +700,9 @@ export class PaymentsService {
       holdReason: p.holdReason,
       receiverDocument: p.receiverDocument,
       createdAt: p.createdAt,
-      requiresManualReview: p.providerRef === 'PENDING_MANUAL_REVIEW',
+      // Aguardando análise manual = tem holdReason e ainda NÃO foi enviado ao gateway
+      // (providerRef null). Após aprovar, providerRef vira o pix_id (não-null).
+      requiresManualReview: p.holdReason !== null && p.providerRef === null,
       user: p.user,
     }));
   }
@@ -706,7 +713,7 @@ export class PaymentsService {
     if (payment.status !== PaymentStatus.PENDING && payment.status !== PaymentStatus.UNKNOWN) {
       throw new BadRequestException('Saque não está pendente');
     }
-    if (payment.providerRef !== 'PENDING_MANUAL_REVIEW') {
+    if (payment.holdReason === null || payment.providerRef !== null) {
       throw new BadRequestException('Saque não requer review manual');
     }
     if (!payment.pixKey || !payment.pixKeyType) {
@@ -743,7 +750,7 @@ export class PaymentsService {
         const fullUser = await this.prisma.user.findUnique({ where: { id: payment.userId }, include: { wallet: true } });
         if (fullUser?.wallet) {
           await this.prisma.$transaction(async (tx) => {
-            await tx.payment.update({ where: { id: paymentId }, data: { status: PaymentStatus.FAILED, providerRef: `valut-rejected-on-approve-${adminUserId}` } });
+            await tx.payment.update({ where: { id: paymentId }, data: { status: PaymentStatus.FAILED, providerRef: `valut-rejected-on-approve-${paymentId}` } });
             await tx.wallet.update({ where: { id: fullUser.wallet!.id }, data: { balance: { increment: payment.amount } } });
             await tx.walletTransaction.create({
               data: {
@@ -802,7 +809,7 @@ export class PaymentsService {
     await this.prisma.$transaction(async (tx) => {
       await tx.payment.update({
         where: { id: paymentId },
-        data: { status: PaymentStatus.FAILED, providerRef: `rejected-by-${adminUserId}` },
+        data: { status: PaymentStatus.FAILED, providerRef: `rejected-by-${paymentId}` },
       });
       await tx.wallet.update({
         where: { id: payment.user.wallet!.id },
@@ -893,8 +900,9 @@ export class PaymentsService {
         type: PaymentType.WITHDRAW,
         status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] },
         provider: 'VALUT_PIX',
+        // Saques em análise manual têm providerRef null (sinalizados por holdReason)
+        // e já são excluídos por `not: null` — só reconciliamos os que têm pix_id real.
         providerRef: { not: null },
-        NOT: { providerRef: 'PENDING_MANUAL_REVIEW' },
       },
       orderBy: { createdAt: 'asc' },
       take: 50,
@@ -932,7 +940,7 @@ export class PaymentsService {
       // claim
       const claimed = await tx.payment.updateMany({
         where: { id: paymentId, status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] } },
-        data: { status: PaymentStatus.FAILED, providerRef: `${payment.providerRef ?? ''}` },
+        data: { status: PaymentStatus.FAILED, providerRef: payment.providerRef ?? `reconcile-refund-${paymentId}` },
       });
       if (claimed.count === 0) return;
       const wallet = await tx.wallet.findUnique({ where: { userId: payment.userId } });
