@@ -81,6 +81,11 @@ export default function SaquePage() {
   }
 
   const numericAmount = parseFloat(amount.replace(',', '.')) || 0;
+  // Saldo SACÁVEL = piso ao centavo. O saldo real pode ter 4 casas decimais
+  // (pagamentos pari-mutuel), e PIX só transfere centavos. Sem o piso, exibir o
+  // saldo arredondado PRA CIMA fazia o saque do "valor total" falhar com
+  // "Saldo insuficiente" (ex.: saldo real 199,0567 exibido 199,06 → 199.06 > 199.0567).
+  const withdrawable = Math.floor(balance * 100) / 100;
 
   function handleAmountChange(value: string) {
     setAmount(value.replace(/[^\d,]/g, ''));
@@ -100,7 +105,7 @@ export default function SaquePage() {
   async function handleWithdraw() {
     if (!sessionOk) return;
     if (numericAmount < 1) { setError('Saque mínimo de R$ 1,00'); return; }
-    if (numericAmount > balance) { setError('Saldo insuficiente'); return; }
+    if (numericAmount > withdrawable) { setError('Saldo insuficiente'); return; }
     if (!pixKey.trim()) { setError('Informe sua chave PIX'); return; }
 
     setLoading(true); setError(''); setSuccess('');
@@ -186,7 +191,7 @@ export default function SaquePage() {
           <div className='flex items-center justify-between mb-3'>
             <span className='text-sm text-white/50'>Saldo disponível para saque</span>
             <span className='text-xl font-bold text-[#00d0a2]'>
-              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(balance)}
+              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(withdrawable)}
             </span>
           </div>
           <div className='flex items-center justify-between'>
