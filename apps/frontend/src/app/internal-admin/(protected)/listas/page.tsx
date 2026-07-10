@@ -92,7 +92,7 @@ export default function ListasPage() {
               <div className="text-[12px] font-semibold">Listas <span className="text-[color:var(--text-3)]">({lists.length})</span></div>
               <div className="relative">
                 <I.Search size={13} style={{ position: 'absolute', left: 9, top: 8, color: 'var(--text-3)' }}/>
-                <input className="input pl-7 py-1 text-[12px]" style={{ width: 140 }} placeholder="DDD"/>
+                <input className="input pl-7 py-1 text-[12px] max-w-full" style={{ width: 140 }} placeholder="DDD"/>
               </div>
             </div>
             <div className="p-2 space-y-1 max-h-[600px] overflow-auto">
@@ -107,7 +107,7 @@ export default function ListasPage() {
                     style={{ background: 'var(--surface-2)', color: 'var(--accent)' }}>{l.ddd}</div>
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-[13px] truncate">{l.name}</div>
-                    <div className="text-[11px] text-[color:var(--text-3)]">{l.tier} · {l.pilots} pilotos · {l.sede}</div>
+                    <div className="text-[11px] text-[color:var(--text-3)] truncate">{l.tier} · {l.pilots} pilotos · {l.sede}</div>
                   </div>
                   <StatusChip status={l.status}/>
                 </button>
@@ -119,14 +119,14 @@ export default function ListasPage() {
         <div className="col-span-12 lg:col-span-8">
           {selected ? (
             <div className="space-y-5">
-              <Card className="p-5">
+              <Card className="p-4 sm:p-5">
                 <div className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Lista · DDD {selected.ddd}</div>
                 <div className="flex items-end justify-between gap-3 flex-wrap mt-1">
                   <div>
                     <div className="font-display text-[24px] font-bold">{selected.name}</div>
                     <div className="text-[12.5px] text-[color:var(--text-3)] mt-0.5">{selected.tier} · {selected.pilots} pilotos · sede {selected.sede} · atualizada {selected.updated}</div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <StatusChip status={selected.status}/>
                     <button
                       className="btn btn-ghost"
@@ -169,7 +169,7 @@ export default function ListasPage() {
               {selected.id && <BrazilListDetail key={selected.id} listId={selected.id} onChanged={load}/>}
             </div>
           ) : (
-            <Card className="p-16 text-center">
+            <Card className="p-8 sm:p-16 text-center">
               <div className="w-14 h-14 rounded-[14px] grid place-items-center mx-auto" style={{ background: 'var(--surface-2)' }}>
                 <I.Layers size={22} style={{ color: 'var(--text-3)' }}/>
               </div>
@@ -231,7 +231,7 @@ function EditListModal({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-lg">
+      <div className="surface-elev p-5 sm:p-6 w-full max-w-lg">
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
             <I.Edit size={18}/>
@@ -261,7 +261,7 @@ function EditListModal({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Cidade sede</label>
               <input className="input mt-1" value={hometown} onChange={(e) => setHometown(e.target.value)} placeholder="—"/>

@@ -140,7 +140,7 @@ export default function DisclaimersPage() {
 
       {showForm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-          <div className="surface-elev p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-lg max-h-[90dvh] overflow-y-auto">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
                 <I.AlertTriangle size={18}/>
@@ -156,7 +156,7 @@ export default function DisclaimersPage() {
                 <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Mensagem *</label>
                 <textarea className="input mt-1" rows={3} value={form.message} onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}/>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] block mb-1.5">Variante (cor)</label>
                   <div className="flex flex-wrap gap-1.5">

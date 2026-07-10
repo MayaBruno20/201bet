@@ -248,7 +248,7 @@ export default function SegurancaPage() {
       ) : undefined}>
 
       {/* ── 2FA do admin logado ── */}
-      <Card className="p-5 mb-5" style={{
+      <Card className="p-4 sm:p-5 mb-5" style={{
         border: '1px solid ' + (tfStatus?.enabled ? 'rgba(33, 217, 122, 0.3)' : 'rgba(255, 176, 40, 0.3)'),
         background: tfStatus?.enabled ? 'rgba(33, 217, 122, 0.04)' : 'rgba(255, 176, 40, 0.04)',
       }}>
@@ -288,7 +288,7 @@ export default function SegurancaPage() {
                   <div className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] mb-1">Confirme com o primeiro código</div>
                   <input className="input text-center font-mono text-[18px] tracking-widest" value={tfVerifyCode} onChange={(e) => setTfVerifyCode(e.target.value)} placeholder="123456" inputMode="numeric"/>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button onClick={confirmTfSetup} disabled={tfBusy || !tfVerifyCode.trim()} className="btn btn-primary"><I.Check size={14}/> Confirmar e ativar</button>
                   <button onClick={() => { setTfSetup(null); setTfVerifyCode(''); }} className="btn btn-ghost">Cancelar</button>
                 </div>
@@ -311,7 +311,7 @@ export default function SegurancaPage() {
                 <div key={c} className="rounded-[8px] px-2 py-1.5 font-mono text-center text-[12px]" style={{ background: 'var(--surface-2)' }}>{c}</div>
               ))}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button onClick={() => navigator.clipboard.writeText(tfBackupCodes.join('\n'))} className="btn btn-ghost"><I.Download size={14}/> Copiar todos</button>
               <button onClick={() => setTfBackupCodes(null)} className="btn btn-primary"><I.Check size={14}/> Já salvei</button>
             </div>
@@ -323,7 +323,7 @@ export default function SegurancaPage() {
             <div>
               <div className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] mb-2">Regenerar backup codes</div>
               <div className="flex gap-2">
-                <input className="input flex-1" value={tfRegenCode} onChange={(e) => setTfRegenCode(e.target.value)} placeholder="Código TOTP atual" inputMode="numeric"/>
+                <input className="input flex-1 min-w-0" value={tfRegenCode} onChange={(e) => setTfRegenCode(e.target.value)} placeholder="Código TOTP atual" inputMode="numeric"/>
                 <button onClick={regenBackupCodes} disabled={tfBusy || !tfRegenCode.trim()} className="btn btn-ghost">Regenerar</button>
               </div>
             </div>
@@ -332,7 +332,7 @@ export default function SegurancaPage() {
               <div className="flex flex-col gap-2">
                 <input type="password" className="input" value={tfDisablePassword} onChange={(e) => setTfDisablePassword(e.target.value)} placeholder="Sua senha"/>
                 <div className="flex gap-2">
-                  <input className="input flex-1" value={tfDisableCode} onChange={(e) => setTfDisableCode(e.target.value)} placeholder="Código TOTP" inputMode="numeric"/>
+                  <input className="input flex-1 min-w-0" value={tfDisableCode} onChange={(e) => setTfDisableCode(e.target.value)} placeholder="Código TOTP" inputMode="numeric"/>
                   <button onClick={disableTf} disabled={tfBusy || !tfDisablePassword || !tfDisableCode} className="btn"
                     style={{ background: 'var(--rose-soft)', color: 'var(--rose)' }}>
                     Desativar
@@ -347,12 +347,12 @@ export default function SegurancaPage() {
       <div className="grid grid-cols-12 gap-5">
         {/* ── Políticas (esquerda) ── */}
         <div className="col-span-12 lg:col-span-7 space-y-5">
-          <Card className="p-5">
+          <Card className="p-4 sm:p-5">
             <SectionTitle
               title="Políticas de segurança"
               sub={isSuperAdmin ? 'Aplicam para todo o time admin' : 'Apenas Super Admin pode editar'}
               action={policyDirty ? (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button className="btn btn-ghost" onClick={() => policies && setPolicyDraft(policies)} disabled={policyBusy}>
                     Descartar
                   </button>
@@ -416,7 +416,7 @@ export default function SegurancaPage() {
           </Card>
 
           {/* ── Sessões ativas ── */}
-          <Card className="p-5">
+          <Card className="p-4 sm:p-5">
             <SectionTitle
               title="Sessões ativas"
               sub={`${(sessionsTab === 'mine' ? mySessions.length : allSessions.length)} ${sessionsTab === 'mine' ? 'da sua conta' : 'da equipe admin'}`}
@@ -462,7 +462,7 @@ export default function SegurancaPage() {
 
         {/* ── Tentativas de login (direita) ── */}
         <div className="col-span-12 lg:col-span-5 space-y-5">
-          <Card className="p-5">
+          <Card className="p-4 sm:p-5">
             <SectionTitle
               title="Tentativas de login"
               sub={attemptsSummary

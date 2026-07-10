@@ -1351,11 +1351,9 @@ export class ArmageddonService {
           });
         }
 
-        await tx.duelPoolState.upsert({
-          where: { duelId },
-          create: { duelId, leftPool: 0, rightPool: 0, leftTickets: 0, rightTickets: 0 },
-          update: { leftPool: 0, rightPool: 0, leftTickets: 0, rightTickets: 0 },
-        });
+        // Pote recomputado das apostas OPEN — reabrir mercado NÃO pode zerar
+        // dinheiro em jogo (fechar não reembolsa nada).
+        await this.settlementService.recomputeDuelPoolState(tx, duelId);
 
         // 4. Market + Odds
         const existingMarket = await tx.market.findFirst({ where: { duelId } });
@@ -1598,6 +1596,145 @@ export class ArmageddonService {
 
       return result;
     });
+  }
+
+  /**
+   * REABRE uma bateria já auditada (Modo Pista → "Reembolsar e reabrir").
+   *
+   * Reverte a auditoria EM CASCATA: como o vencedor desta bateria já foi
+   * escrito no slot da próxima (e o perdedor no 3º lugar), reabrir precisa
+   * desfazer esse avanço. Ordem:
+   *   1. Para cada bateria de baixo que recebeu este resultado:
+   *      - se ela já foi auditada, reabre-a primeiro (recursivo);
+   *      - remove o piloto que ESTA bateria colocou no slot dela;
+   *      - anula (refund das apostas abertas) e fecha o mercado dela — fica
+   *        incompleta, não pode receber apostas.
+   *   2. Reverte ESTA bateria via refundSettledMarket (refund dos stakes,
+   *      estorno dos pagamentos, mercado volta a OPEN, matchup volta a
+   *      não-auditado).
+   *   3. Desfaz o swap de roster do LADDER legado, se houve.
+   *   4. Se era a final, reabre o evento (FINISHED → IN_PROGRESS).
+   *
+   * Não é uma única transação: cada refund/void é atômico e idempotente
+   * (refundSettledMarket pula mercado não-SETTLED), então um retry após falha
+   * parcial completa com segurança. Escolha do dono: cascata destrutiva
+   * (estorna apostas das baterias seguintes).
+   */
+  async reopenSettledMatchup(matchupId: string, audit: AuditContext): Promise<{
+    matchupId: string; reopened: boolean; cascade: string[]; refundedMarketIds: string[];
+  }> {
+    const m = await this.prisma.armageddonMatchup.findUnique({
+      where: { id: matchupId },
+      include: { event: { select: { id: true, bracketType: true } } },
+    });
+    if (!m) throw new NotFoundException('Confronto não encontrado');
+    if (!m.settledAt && !m.winnerSide) {
+      return { matchupId, reopened: false, cascade: [], refundedMarketIds: [] };
+    }
+
+    const winnerDriverId = m.winnerSide === MatchupSide.LEFT ? m.leftDriverId : m.rightDriverId;
+    const loserDriverId = m.winnerSide === MatchupSide.LEFT ? m.rightDriverId : m.leftDriverId;
+    const cascade: string[] = [];
+    const refundedMarketIds: string[] = [];
+
+    // 1) Cascata: reverte o avanço nas baterias de baixo
+    const downstream: Array<{ id: string | null; slot: MatchupSide | null; driverId: string | null }> = [
+      { id: m.nextMatchupId, slot: m.nextSlotSide, driverId: winnerDriverId },
+      { id: m.loserToMatchupId, slot: m.loserToSlotSide, driverId: loserDriverId },
+    ];
+    for (const d of downstream) {
+      if (!d.id || !d.slot || !d.driverId) continue;
+      const down = await this.prisma.armageddonMatchup.findUnique({
+        where: { id: d.id },
+        select: { id: true, leftDriverId: true, rightDriverId: true, duelId: true, settledAt: true, winnerSide: true },
+      });
+      if (!down) continue;
+      // 1a) se a de baixo já foi auditada, reverte ela primeiro (recursivo)
+      if (down.settledAt || down.winnerSide) {
+        const r = await this.reopenSettledMatchup(d.id, audit);
+        cascade.push(d.id, ...r.cascade);
+        refundedMarketIds.push(...r.refundedMarketIds);
+      }
+      // 1b) só age se o slot ainda tem o piloto que ESTA bateria colocou
+      const slotDriver = d.slot === MatchupSide.LEFT ? down.leftDriverId : down.rightDriverId;
+      if (slotDriver && slotDriver === d.driverId) {
+        // 1c) mercado da de baixo (auto-aberto) fica inválido → void (refund) + fecha
+        if (down.duelId) {
+          const dm = await this.prisma.market.findFirst({
+            where: { duelId: down.duelId, status: { in: [MarketStatus.OPEN, MarketStatus.CLOSED, MarketStatus.SUSPENDED] } },
+            select: { id: true },
+          });
+          if (dm) {
+            await this.settlementService.voidMarket(dm.id, audit);
+            refundedMarketIds.push(dm.id);
+          }
+        }
+        await this.prisma.armageddonMatchup.update({
+          where: { id: d.id },
+          data: { [d.slot === MatchupSide.LEFT ? 'leftDriverId' : 'rightDriverId']: null, marketOpen: false },
+        });
+      }
+    }
+
+    // 2) Reverte ESTA bateria (refund + reabre mercado + limpa winnerSide)
+    if (m.duelId) {
+      const myMarket = await this.prisma.market.findFirst({
+        where: { duelId: m.duelId, status: MarketStatus.SETTLED },
+        select: { id: true },
+      });
+      if (myMarket) {
+        await this.settlementService.refundSettledMarket(myMarket.id, audit);
+        refundedMarketIds.push(myMarket.id);
+      } else {
+        await this.prisma.armageddonMatchup.update({
+          where: { id: matchupId },
+          data: { winnerSide: null, settledAt: null, marketOpen: true },
+        });
+      }
+    } else {
+      await this.prisma.armageddonMatchup.update({
+        where: { id: matchupId },
+        data: { winnerSide: null, settledAt: null },
+      });
+    }
+
+    // 3) LADDER legado: desfaz o swap de posições do roster
+    if (
+      m.event.bracketType !== ArmageddonBracketType.ELIMINATION_144 &&
+      m.winnerSide === MatchupSide.LEFT &&
+      m.leftPosition && m.rightPosition && m.leftDriverId && m.rightDriverId &&
+      m.roundType !== 'SHARK_TANK'
+    ) {
+      const challengerPos = m.leftPosition, defenderPos = m.rightPosition;
+      const challengerDriverId = m.leftDriverId, defenderDriverId = m.rightDriverId;
+      await this.prisma.$transaction(async (tx) => {
+        await tx.armageddonRoster.updateMany({ where: { eventId: m.eventId, driverId: challengerDriverId }, data: { position: -1 } });
+        await tx.armageddonRoster.updateMany({ where: { eventId: m.eventId, driverId: defenderDriverId }, data: { position: defenderPos, isKing: defenderPos === 1 } });
+        await tx.armageddonRoster.updateMany({ where: { eventId: m.eventId, driverId: challengerDriverId }, data: { position: challengerPos, isKing: challengerPos === 1 } });
+      });
+    }
+
+    // 4) Final reaberta → evento volta a IN_PROGRESS
+    if (m.isFinal) {
+      await this.prisma.armageddonEvent.updateMany({
+        where: { id: m.eventId, status: ArmageddonStatus.FINISHED },
+        data: { status: ArmageddonStatus.IN_PROGRESS },
+      });
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: audit.actorUserId,
+        action: 'ARMAGEDDON_MATCHUP_REOPEN',
+        entity: 'ArmageddonMatchup',
+        entityId: matchupId,
+        payload: { cascade, refundedMarketIds } as Prisma.InputJsonValue,
+        ipAddress: audit.ipAddress,
+        userAgent: audit.userAgent,
+      },
+    }).catch(() => undefined);
+
+    return { matchupId, reopened: true, cascade, refundedMarketIds };
   }
 
   async adminDeleteMatchup(matchupId: string, audit: AuditContext) {

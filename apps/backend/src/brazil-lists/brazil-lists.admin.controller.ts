@@ -214,6 +214,8 @@ export class BrazilListEventsAdminController {
     return this.service.adminUpdateMatchup(matchupId, dto, this.auditFromReq(req));
   }
 
+  // Modo Pista: AUDITOR/OPERATOR auditam e abrem/fecham mercados da cabeceira.
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Post('matchups/:matchupId/settle')
   settleMatchup(
     @Param('matchupId') matchupId: string,
@@ -223,6 +225,7 @@ export class BrazilListEventsAdminController {
     return this.service.adminSettleMatchup(matchupId, dto, this.auditFromReq(req));
   }
 
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Patch('matchups/:matchupId/market')
   toggleMatchupMarket(
     @Param('matchupId') matchupId: string,

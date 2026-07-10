@@ -354,13 +354,13 @@ function BracketPanel({
   }
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <SectionTitle
         title={`Categoria — ${meta?.label ?? bracket.category}`}
         sub={`${bracket.competitors.length} inscritos · ${bracket.size} pilotos · ${rounds} rodada${rounds !== 1 ? 's' : ''}`}
         action={
           <div className="flex gap-2 flex-wrap">
-            <select className="input" style={{ width: 130 }} value={bracket.size} onChange={(e) => void onChangeSize(Number(e.target.value))} disabled={busy === bracket.id}>
+            <select className="input max-w-full" style={{ width: 130 }} value={bracket.size} onChange={(e) => void onChangeSize(Number(e.target.value))} disabled={busy === bracket.id}>
               {[4, 8, 16, 32, 64, 128].map((s) => <option key={s} value={s}>{s} pilotos</option>)}
             </select>
             <button className="btn btn-ghost focusable" onClick={onShowSuperFinal} title="Super Final">
@@ -406,7 +406,7 @@ function BracketPanel({
         </div>
 
         <div className="col-span-12 md:col-span-8">
-          <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${rounds}, minmax(0, 1fr))` }}>
+          <div className="grid gap-3 grid-cols-1 md:grid-cols-[repeat(var(--bracket-rounds),minmax(0,1fr))]" style={{ '--bracket-rounds': rounds } as React.CSSProperties}>
             {Array.from({ length: rounds }, (_, ri) => {
               const r = ri + 1;
               const roundSlots = slots.filter((s) => s.roundNumber === r).sort((a, b) => a.position - b.position);
@@ -415,7 +415,7 @@ function BracketPanel({
                   <div className="text-[10px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] mb-2">
                     {r === rounds ? '🏆 Final' : `Rodada ${r}`}
                   </div>
-                  <div className="space-y-2" style={{ paddingTop: r === 1 ? 0 : 16 * r }}>
+                  <div className="space-y-2 md:pt-[var(--round-offset)]" style={{ '--round-offset': r === 1 ? '0px' : `${16 * r}px` } as React.CSSProperties}>
                     {roundSlots.map((slot) => {
                       const matchup = bracket.matchups.find((m) => !m.isSuperFinal && m.roundNumber === slot.roundNumber && m.position === slot.position);
                       return (
@@ -566,7 +566,7 @@ function AddCategoryModal({ existingCategories, onClose, onSubmit, busy }: {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-md">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md">
         <div className="font-display text-[18px] font-bold mb-2">Adicionar categoria</div>
         <div className="text-[12px] text-[color:var(--text-3)] mb-4">Cada categoria vira uma chave independente.</div>
 
@@ -644,7 +644,7 @@ function SuperFinalModal({ bracket, onClose, onChanged }: {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-lg max-h-[90dvh] overflow-y-auto">
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
             <I.Trophy size={18}/>
@@ -740,7 +740,7 @@ function AuditMatchupModal({ matchup, bracket, winnerSide, setWinnerSide, onSubm
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-md">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md">
         <div className="font-display text-[18px] font-bold mb-1">Auditar vencedor</div>
         <div className="text-[12px] text-[color:var(--text-3)] mb-4">{matchup.isSuperFinal ? '🏆 Super Final' : `Rodada ${matchup.roundNumber} · Posição ${matchup.position}`}</div>
 

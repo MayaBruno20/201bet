@@ -64,7 +64,7 @@ export const CmdK: React.FC<Props> = ({ open, setOpen }) => {
           <input ref={inputRef} value={q} onChange={(e) => { setQ(e.target.value); setSel(0); }}
             placeholder="Buscar telas, ações, pilotos, eventos…"
             className="flex-1 bg-transparent outline-none text-[14px] text-[color:var(--text)]"/>
-          <kbd>esc</kbd>
+          <kbd className="sm-up">esc</kbd>
         </div>
         <div className="max-h-[360px] overflow-auto p-2">
           {items.length === 0 && <div className="px-4 py-10 text-center text-sm text-[color:var(--text-3)]">Nenhum resultado.</div>}
@@ -77,15 +77,15 @@ export const CmdK: React.FC<Props> = ({ open, setOpen }) => {
                   <Ico size={15}/>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-medium">{it.label}</div>
-                  <div className="text-[11px] text-[color:var(--text-3)]">{it.kind === 'nav' ? `Ir para · ${it.hint}` : it.hint}</div>
+                  <div className="text-[13px] font-medium truncate">{it.label}</div>
+                  <div className="text-[11px] text-[color:var(--text-3)] truncate">{it.kind === 'nav' ? `Ir para · ${it.hint}` : it.hint}</div>
                 </div>
-                <kbd>↵</kbd>
+                <kbd className="sm-up">↵</kbd>
               </div>
             );
           })}
         </div>
-        <div className="flex items-center gap-3 px-4 py-2 text-[11px] text-[color:var(--text-3)]" style={{ borderTop: '1px solid var(--border)' }}>
+        <div className="hidden sm:flex items-center gap-3 px-4 py-2 text-[11px] text-[color:var(--text-3)]" style={{ borderTop: '1px solid var(--border)' }}>
           <span className="flex items-center gap-1"><kbd>↑</kbd><kbd>↓</kbd> navegar</span>
           <span className="flex items-center gap-1"><kbd>↵</kbd> abrir</span>
           <span className="flex items-center gap-1"><kbd>esc</kbd> fechar</span>

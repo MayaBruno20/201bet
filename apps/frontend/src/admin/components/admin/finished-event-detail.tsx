@@ -107,7 +107,7 @@ export function FinishedEventDetail({
       <div className="min-h-full flex items-start justify-center p-4 py-10">
         <div className="surface-elev w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
           {/* Header */}
-          <div className="p-5 flex items-start gap-4 flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="p-4 sm:p-5 flex items-start gap-4 flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
             <div
               className="w-12 h-12 rounded-[14px] grid place-items-center shrink-0"
               style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
@@ -131,7 +131,7 @@ export function FinishedEventDetail({
           </div>
 
           {/* Resumo Financeiro */}
-          <div className="p-5" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="p-4 sm:p-5" style={{ borderBottom: '1px solid var(--border)' }}>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="surface-2 p-4">
                 <div className="text-[10.5px] tracking-[0.14em] uppercase text-[color:var(--text-3)] font-semibold">
@@ -165,7 +165,7 @@ export function FinishedEventDetail({
           </div>
 
           {/* Passadas por rodada */}
-          <div className="p-5">
+          <div className="p-4 sm:p-5">
             {rounds.length === 0 ? (
               <Card className="p-12 text-center text-[13px] text-[color:var(--text-3)]">
                 Nenhuma passada registrada neste evento.
@@ -222,8 +222,8 @@ function PassadaCard({ matchup: m }: { matchup: MatchupWithPool }) {
         <div className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] shrink-0">
           #{m.order}
         </div>
-        <div className="flex-1 min-w-0 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-          <div className="flex items-center gap-2 justify-end text-right" style={{ opacity: rightWon ? 0.4 : 1 }}>
+        <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] items-center gap-2 md:gap-3">
+          <div className="flex items-center gap-2 md:justify-end md:text-right" style={{ opacity: rightWon ? 0.4 : 1 }}>
             <div className="min-w-0">
               <div className="font-semibold text-[13.5px] truncate">{m.leftDriver?.name ?? 'A definir'}</div>
               {m.leftPosition && (
@@ -267,7 +267,7 @@ function PassadaCard({ matchup: m }: { matchup: MatchupWithPool }) {
 
       {/* Distribuição do pot — barra dupla */}
       <div className="space-y-1.5">
-        <div className="flex justify-between items-center text-[10.5px] tabular-nums">
+        <div className="flex flex-wrap justify-between items-center gap-x-2 text-[10.5px] tabular-nums">
           <span style={{ color: leftWon ? 'var(--emerald)' : 'var(--text-2)' }}>
             {fmtBRL(m.pool.leftPool)} <span className="text-[color:var(--text-3)]">· {leftPct}%</span>
           </span>

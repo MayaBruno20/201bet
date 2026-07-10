@@ -187,7 +187,7 @@ export default function PromocoesPage() {
       {/* ── Modal: criar/editar campanha ── */}
       {showForm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-          <div className="surface-elev p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-md max-h-[90dvh] overflow-y-auto">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}><I.Dollar size={18}/></div>
               <div className="flex-1">
@@ -206,7 +206,7 @@ export default function PromocoesPage() {
                 <input className="input mt-1 font-mono" value={form.code} placeholder="panfleto-armageddon" onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}/>
                 <div className="text-[11px] text-[color:var(--text-4)] mt-1">Vira <span className="font-mono">/login?promo={(form.code.trim() || '…').toLowerCase()}</span></div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Saldo bônus (R$) *</label>
                   <input className="input mt-1" type="number" min={0} step="0.01" value={form.bonusAmount} onChange={(e) => setForm((f) => ({ ...f, bonusAmount: Number(e.target.value) }))}/>
@@ -222,7 +222,7 @@ export default function PromocoesPage() {
               </label>
             </div>
 
-            <div className="flex justify-end gap-2 mt-6">
+            <div className="flex flex-wrap justify-end gap-2 mt-6">
               <button className="btn btn-ghost focusable" onClick={() => { setEditing(null); setCreateOpen(false); setForm(emptyForm); }} disabled={busy}>Cancelar</button>
               <button className="btn btn-primary focusable" onClick={submit} disabled={busy}>{busy ? 'Salvando…' : (editing ? 'Salvar' : 'Criar campanha')}</button>
             </div>
@@ -233,7 +233,7 @@ export default function PromocoesPage() {
       {/* ── Modal: link & QR ── */}
       {linkCampaign && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4" onClick={() => setLinkCampaign(null)}>
-          <div className="surface-elev p-6 w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-md max-h-[90dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}><I.Globe size={18}/></div>
               <div className="flex-1">
@@ -268,7 +268,7 @@ export default function PromocoesPage() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 mt-6">
+            <div className="flex flex-wrap justify-end gap-2 mt-6">
               <a className="btn btn-ghost focusable" href={qrSrc(promoLink(linkCampaign.code))} target="_blank" rel="noreferrer"><I.Download size={14}/> Baixar QR</a>
               <button className="btn btn-primary focusable" onClick={() => setLinkCampaign(null)}>Fechar</button>
             </div>
@@ -279,7 +279,7 @@ export default function PromocoesPage() {
       {/* ── Modal: inscritos ── */}
       {enrollCampaign && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4" onClick={() => setEnrollCampaign(null)}>
-          <div className="surface-elev p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-2xl max-h-[90dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}><I.Users size={18}/></div>
               <div className="flex-1">
@@ -292,8 +292,9 @@ export default function PromocoesPage() {
             {!enrollLoading && enrollments.length === 0 && <div className="p-8 text-center text-[13px] text-[color:var(--text-3)]">Ninguém se cadastrou por essa campanha ainda.</div>}
 
             {!enrollLoading && enrollments.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-[12.5px]">
+              <div className="table-wrap">
+                {/* minWidth < 624px (largura útil do modal 2xl) pra não criar scroll no desktop */}
+                <table className="w-full text-[12.5px]" style={{ minWidth: 560 }}>
                   <thead>
                     <tr className="text-left text-[10.5px] uppercase tracking-[0.12em] text-[color:var(--text-4)]">
                       <th className="py-2 pr-3 font-semibold">Usuário</th>

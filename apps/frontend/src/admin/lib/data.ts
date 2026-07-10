@@ -57,6 +57,7 @@ export const NAV: NavItem[] = [
   { id: 'embates-rapidos', label: 'Embates rápidos', icon: 'Bolt', group: 'Operação', href: '/embates-rapidos' },
   { id: 'personalizados', label: 'Embates personalizados', icon: 'Sparkles', group: 'Operação', href: '/personalizados' },
   { id: 'market-control', label: 'Mercados ao vivo', icon: 'Bolt', group: 'Operação', href: '/market-control' },
+  { id: 'pista', label: 'Modo Pista', icon: 'Target', group: 'Operação', href: '/pista' },
   { id: 'pilotos', label: 'Pilotos', icon: 'Users', group: 'Cadastros', href: '/pilotos' },
   { id: 'carros', label: 'Carros', icon: 'Bolt', group: 'Cadastros', href: '/carros' },
   { id: 'usuarios', label: 'Usuários', icon: 'Users', group: 'Cadastros', href: '/usuarios' },
@@ -320,15 +321,22 @@ export async function fetchEventTypes(days = 30): Promise<EventTypeSlice[]> {
 /* ─── Mercados (admin/markets) ─── */
 
 export type MatchupOrigin = {
-  type: 'LIST' | 'ARMAGEDDON';
+  type: 'LIST' | 'ARMAGEDDON' | 'CATEGORY';
+  // Id do matchup de origem — alvo dos endpoints de abrir/fechar/auditar.
+  matchupId: string;
   leftPosition: number | null;
   rightPosition: number | null;
+  // Localização legível ("Chave B · R2", "9s · Super Final").
+  context: string | null;
 };
 
 export type MarketRow = {
   id: string;
   eventId: string;
   eventName: string;
+  // Status do EVENTO pai (não do mercado) — usado para esconder eventos
+  // encerrados/cancelados no Modo Pista.
+  eventStatus: 'SCHEDULED' | 'LIVE' | 'FINISHED' | 'CANCELED' | null;
   name: string;
   type: string;
   status: 'OPEN' | 'CLOSED' | 'SUSPENDED' | 'SETTLED';
@@ -343,22 +351,29 @@ export type MarketRow = {
   // (para DUEL continuam 0 — o pote deles vem do DuelPoolState).
   odds: Array<{ id: string; label: string; value: number; status: string; pool: number; tickets: number }>;
   matchupOrigin: MatchupOrigin | null;
+  // true quando o duelo veio do painel "Embates personalizados" (sem matchup
+  // de origem, distingue de embate rápido).
+  duelIsCustom: boolean;
 };
 
 type BackendMarket = {
   id: string; eventId: string; name: string; type: string; status: MarketRow['status'];
   rakePercent?: string | number | null; bookingCloseAt?: string | null;
   duelId?: string | null; winnerOddId?: string | null;
-  event: { name: string };
-  duel?: { poolState?: { leftPool?: string | number; rightPool?: string | number } | null } | null;
+  event: { name: string; status?: MarketRow['eventStatus'] };
+  duel?: { isCustom?: boolean; poolState?: { leftPool?: string | number; rightPool?: string | number } | null } | null;
   odds: Array<{ id: string; label: string; value: string | number; status: string; pool?: string | number; tickets?: number }>;
   matchupOrigin?: MatchupOrigin | null;
 };
 
-/** Lista todos os mercados ao vivo (admin) — TODOS os tipos, status não-SETTLED. */
-export async function fetchMarkets(): Promise<MarketRow[]> {
+/** Lista todos os mercados ao vivo (admin) — TODOS os tipos, status não-SETTLED.
+ *  `settledWithinHours` inclui também os auditados recentes (Modo Pista).
+ *  `throwOnError` propaga a falha em vez de devolver [] — quem faz polling
+ *  precisa distinguir "sem mercados" de "sem conexão". */
+export async function fetchMarkets(opts: { settledWithinHours?: number; throwOnError?: boolean } = {}): Promise<MarketRow[]> {
   try {
-    const list = await api.get<BackendMarket[]>(ENDPOINTS.MARKETS.live);
+    const qs = opts.settledWithinHours ? `?settledWithinHours=${opts.settledWithinHours}` : '';
+    const list = await api.get<BackendMarket[]>(`${ENDPOINTS.MARKETS.live}${qs}`);
     return list.map((m) => {
       const left = Number(m.duel?.poolState?.leftPool ?? 0);
       const right = Number(m.duel?.poolState?.rightPool ?? 0);
@@ -376,6 +391,7 @@ export async function fetchMarkets(): Promise<MarketRow[]> {
         id: m.id,
         eventId: m.eventId,
         eventName: m.event?.name ?? '—',
+        eventStatus: m.event?.status ?? null,
         name: m.name,
         type: m.type,
         status: m.status,
@@ -388,9 +404,13 @@ export async function fetchMarkets(): Promise<MarketRow[]> {
         rightPool: right,
         odds,
         matchupOrigin: m.matchupOrigin ?? null,
+        duelIsCustom: m.duel?.isCustom ?? false,
       };
     });
-  } catch { return []; }
+  } catch (e) {
+    if (opts.throwOnError) throw e;
+    return [];
+  }
 }
 
 /** Eventos vivos — usa o admin/events real, filtrando ativos. */

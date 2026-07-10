@@ -10,6 +10,7 @@ import { BetStatus, MarketStatus, MarketType, OddStatus, Prisma, WalletTransacti
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from './database/prisma.service';
 import { ActivityService } from './common/activity.service';
+import { isValidCpf } from './common/validators/cpf.validator';
 import { HOUSE_MARGIN_PERCENT } from './market.service';
 import { aggregatePoolsByOdd } from './multi-market-financials';
 import { FIRST_DRAW_KEYS } from './armageddon/armageddon-bracket.util';
@@ -129,6 +130,12 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
     if (!prof?.cpf || !prof?.birthDate) {
       throw new BadRequestException(
         'Conclua CPF e data de nascimento (Completar cadastro) antes de apostar.',
+      );
+    }
+    // CPF precisa ser VÁLIDO (dígito verificador) para apostar.
+    if (!isValidCpf(prof.cpf)) {
+      throw new BadRequestException(
+        'Seu CPF é inválido. Corrija em Minha Conta para voltar a apostar.',
       );
     }
 

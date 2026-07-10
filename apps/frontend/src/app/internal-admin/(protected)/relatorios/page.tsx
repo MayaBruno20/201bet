@@ -56,15 +56,15 @@ export default function RelatoriosPage() {
         ] as const).map((r) => {
           const Ico = I[r.icon];
           return (
-            <Card key={r.type} className="p-5">
+            <Card key={r.type} className="p-4 sm:p-5">
               <div className="flex items-start gap-3">
                 <div className="w-11 h-11 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--surface-2)', color: r.tone }}>
                   <Ico size={20}/>
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="font-display text-[16px] font-bold">{r.title}</div>
                   <div className="text-[12px] text-[color:var(--text-3)] mt-1">{r.desc}</div>
-                  <div className="flex gap-2 mt-3">
+                  <div className="flex flex-wrap gap-2 mt-3">
                     <button className="btn btn-ghost" onClick={() => exportData(r.type, 'csv')} disabled={!!busy}>
                       <I.Download size={13}/> {busy === `${r.type}-csv` ? 'Exportando…' : 'CSV'}
                     </button>
@@ -83,7 +83,7 @@ export default function RelatoriosPage() {
         <EventClosingSection />
       </div>
 
-      <Card className="p-8 text-center mt-6">
+      <Card className="p-6 sm:p-8 text-center mt-6">
         <div className="w-12 h-12 rounded-[12px] grid place-items-center mx-auto" style={{ background: 'var(--surface-2)' }}>
           <I.Chart size={20} style={{ color: 'var(--text-3)' }}/>
         </div>
@@ -122,7 +122,7 @@ function EventClosingSection() {
 
   return (
     <Card className="p-0 overflow-hidden">
-      <div className="p-5" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="p-4 sm:p-5" style={{ borderBottom: '1px solid var(--border)' }}>
         <SectionTitle
           title="Evento"
           sub="Fechamento financeiro detalhado por evento (Listas e Armageddon). Selecione um para ver totais e exportar."
@@ -135,7 +135,7 @@ function EventClosingSection() {
             value={selectedId}
             onChange={(e) => setSelectedId(e.target.value)}
             disabled={loading || events.length === 0}
-            className="flex-1 min-w-[280px] h-9 rounded-[10px] px-3 text-[13px] font-medium"
+            className="flex-1 min-w-[240px] max-w-full h-9 rounded-[10px] px-3 text-[13px] font-medium"
             style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
           >
             <option value="">
@@ -156,7 +156,7 @@ function EventClosingSection() {
       {selected ? (
         <FinancialClosingPanel eventId={selected.id} source={selected.source} />
       ) : (
-        <div className="p-10 text-center text-[13px] text-[color:var(--text-3)]">
+        <div className="p-6 sm:p-10 text-center text-[13px] text-[color:var(--text-3)]">
           {loading ? 'Carregando…' : 'Escolha um evento acima para ver o fechamento e exportar.'}
         </div>
       )}

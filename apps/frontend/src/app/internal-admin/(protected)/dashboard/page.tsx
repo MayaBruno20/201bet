@@ -23,7 +23,7 @@ const KpiCard: React.FC<{ kpi: Kpi }> = ({ kpi }) => {
   const color = colorMap[kpi.tone] || 'var(--accent)';
   const up = kpi.delta >= 0;
   return (
-    <Card className="p-5 flex flex-col gap-3 relative overflow-hidden">
+    <Card className="p-4 sm:p-5 flex flex-col gap-3 relative overflow-hidden">
       <div className="absolute -top-10 -right-10 w-36 h-36 rounded-full opacity-[0.06]" style={{ background: color }}/>
       <div className="flex items-center justify-between">
         <div className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">{kpi.label}</div>
@@ -112,7 +112,7 @@ export default function DashboardPage() {
           </button>
           {periodOpen && (
             <div
-              className="absolute right-0 mt-2 z-50 surface-elev p-1.5 min-w-[180px]"
+              className="absolute right-0 mt-2 z-50 surface-elev p-1.5 min-w-[180px] max-w-[calc(100vw-24px)]"
               style={{ borderRadius: 12 }}
             >
               {PERIOD_OPTIONS.map((opt) => (
@@ -133,7 +133,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
         {loading && kpis.length === 0
           ? Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i} className="p-5 h-[148px] flex items-center justify-center">
+              <Card key={i} className="p-4 sm:p-5 h-[148px] flex items-center justify-center">
                 <span className="text-[12px] text-[color:var(--text-3)]">Carregando…</span>
               </Card>
             ))
@@ -141,9 +141,9 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
-        <Card className="xl:col-span-2 p-5">
+        <Card className="xl:col-span-2 p-4 sm:p-5">
           <SectionTitle title="Receita & Apostas" sub="Volume mensal em milhares de R$"
-            action={<div className="flex items-center gap-3 text-[12px] text-[color:var(--text-2)]">
+            action={<div className="flex flex-wrap items-center gap-3 text-[12px] text-[color:var(--text-2)]">
               <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: '#ffb028' }}/> Receita</span>
               <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: '#a78bfa' }}/> Apostas</span>
               <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: '#3ee093' }}/> GGR</span>
@@ -157,7 +157,7 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        <Card className="p-5 flex flex-col">
+        <Card className="p-4 sm:p-5 flex flex-col">
           <SectionTitle title="Eventos por tipo" sub="Distribuição últimos 30 dias"/>
           {eventTypes.length > 0 ? (
             <div className="flex items-center gap-5 my-2">
@@ -170,7 +170,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex-1 space-y-2.5">
+              <div className="flex-1 min-w-0 space-y-2.5">
                 {eventTypes.map((t) => (
                   <div key={t.name} className="flex items-center gap-2 text-[13px]">
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ background: t.color }}/>
@@ -190,51 +190,53 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <Card className="xl:col-span-2 p-0 overflow-hidden">
-          <div className="flex items-center justify-between p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 p-4 sm:p-5">
             <SectionTitle title="Eventos recentes" sub="Operação ao vivo e agendados"/>
             <Link href="/eventos" className="btn btn-ghost focusable">Ver todos <I.ChevronRight size={14}/></Link>
           </div>
           <div className="divider"/>
-          <table>
-            <thead>
-              <tr>
-                <th style={{ paddingLeft: 20 }}>Evento</th>
-                <th>Categoria</th>
-                <th>Status</th>
-                <th className="text-right">Apostas</th>
-                <th className="text-right" style={{ paddingRight: 20 }}>Volume</th>
-              </tr>
-            </thead>
-            <tbody>
-              {liveEvents.length === 0 && (
-                <tr><td colSpan={5} className="text-center py-8 text-[12.5px] text-[color:var(--text-3)]" style={{ paddingLeft: 20 }}>
-                  {loading ? 'Carregando…' : 'Nenhum evento ativo.'}
-                </td></tr>
-              )}
-              {liveEvents.map((e) => (
-                <tr key={e.id} className="cursor-pointer">
-                  <td style={{ paddingLeft: 20 }}>
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-[10px] grid place-items-center" style={{ background: 'var(--surface-2)' }}>
-                        <I.Trophy size={16} style={{ color: 'var(--accent)' }}/>
-                      </div>
-                      <div>
-                        <div className="font-semibold text-[13.5px]">{e.name}</div>
-                        <div className="text-[11.5px] text-[color:var(--text-3)]">{e.region}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="text-[color:var(--text-2)]">{e.cat}</td>
-                  <td><StatusChip status={e.status}/></td>
-                  <td className="text-right tabular-nums font-medium">{e.bets}</td>
-                  <td className="text-right tabular-nums font-semibold" style={{ paddingRight: 20 }}><Money value={e.total}/></td>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ paddingLeft: 20 }}>Evento</th>
+                  <th className="hidden md:table-cell">Categoria</th>
+                  <th>Status</th>
+                  <th className="text-right">Apostas</th>
+                  <th className="text-right" style={{ paddingRight: 20 }}>Volume</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {liveEvents.length === 0 && (
+                  <tr><td colSpan={5} className="text-center py-8 text-[12.5px] text-[color:var(--text-3)]" style={{ paddingLeft: 20 }}>
+                    {loading ? 'Carregando…' : 'Nenhum evento ativo.'}
+                  </td></tr>
+                )}
+                {liveEvents.map((e) => (
+                  <tr key={e.id} className="cursor-pointer">
+                    <td style={{ paddingLeft: 20 }}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-[10px] grid place-items-center" style={{ background: 'var(--surface-2)' }}>
+                          <I.Trophy size={16} style={{ color: 'var(--accent)' }}/>
+                        </div>
+                        <div>
+                          <div className="font-semibold text-[13.5px]">{e.name}</div>
+                          <div className="text-[11.5px] text-[color:var(--text-3)]">{e.region}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="hidden md:table-cell text-[color:var(--text-2)]">{e.cat}</td>
+                    <td><StatusChip status={e.status}/></td>
+                    <td className="text-right tabular-nums font-medium">{e.bets}</td>
+                    <td className="text-right tabular-nums font-semibold" style={{ paddingRight: 20 }}><Money value={e.total}/></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
 
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <SectionTitle title="Atividade recente" sub="Últimas operações administrativas"/>
           <div className="space-y-3.5">
             {activity.length === 0 && (

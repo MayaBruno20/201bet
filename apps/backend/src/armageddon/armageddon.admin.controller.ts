@@ -200,6 +200,8 @@ export class ArmageddonAdminController {
     return this.service.settleQualifyMarketsForEvent(id, this.audit(req));
   }
 
+  // Modo Pista: AUDITOR/OPERATOR auditam e abrem/fecham mercados da cabeceira.
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Patch('matchups/:matchupId/market')
   toggleMarket(
     @Param('matchupId') matchupId: string,
@@ -209,6 +211,7 @@ export class ArmageddonAdminController {
     return this.service.adminToggleMatchupMarket(matchupId, !!dto.open, this.audit(req));
   }
 
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Post('matchups/:matchupId/settle')
   settle(
     @Param('matchupId') matchupId: string,
@@ -216,6 +219,14 @@ export class ArmageddonAdminController {
     @Req() req: ReqUser,
   ) {
     return this.service.adminSettleMatchup(matchupId, dto, this.audit(req));
+  }
+
+  /** Reabre uma bateria já auditada, revertendo o avanço de chave EM CASCATA
+   *  (estorna as apostas das baterias seguintes). Modo Pista. */
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
+  @Post('matchups/:matchupId/reopen')
+  reopen(@Param('matchupId') matchupId: string, @Req() req: ReqUser) {
+    return this.service.reopenSettledMatchup(matchupId, this.audit(req));
   }
 
   @Delete('matchups/:matchupId')

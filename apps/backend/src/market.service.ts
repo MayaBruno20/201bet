@@ -16,6 +16,7 @@ import {
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from './database/prisma.service';
 import { ActivityService } from './common/activity.service';
+import { isValidCpf } from './common/validators/cpf.validator';
 
 type Side = 'LEFT' | 'RIGHT';
 
@@ -414,6 +415,13 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
     if (!prof?.cpf || !prof?.birthDate) {
       throw new BadRequestException(
         'Conclua CPF e data de nascimento (Completar cadastro) antes de apostar.',
+      );
+    }
+    // CPF precisa ser VÁLIDO (dígito verificador) para apostar. Usuários com CPF
+    // inválido ficam inaptos até corrigir em Minha Conta.
+    if (!isValidCpf(prof.cpf)) {
+      throw new BadRequestException(
+        'Seu CPF é inválido. Corrija em Minha Conta para voltar a apostar.',
       );
     }
 

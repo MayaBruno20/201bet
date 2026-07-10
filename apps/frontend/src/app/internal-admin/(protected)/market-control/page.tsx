@@ -184,7 +184,7 @@ export default function MarketControlPage() {
         <div className="px-4 py-3 flex items-center gap-2 flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
           {events.map((e) => (
             <button key={e} onClick={() => setEventFilter(e)}
-              className="px-3 py-1.5 text-[12px] font-semibold rounded-[10px]"
+              className="px-3 py-1.5 text-[12px] font-semibold rounded-[10px] max-w-full truncate"
               style={{ background: eventFilter === e ? 'var(--accent-soft)' : 'var(--surface-2)', color: eventFilter === e ? 'var(--accent)' : 'var(--text-2)' }}>
               {e === 'all' ? `Todos (${openMarkets.length})` : e}
             </button>
@@ -208,7 +208,7 @@ export default function MarketControlPage() {
                 <div className="text-[10.5px] tracking-[0.14em] uppercase font-semibold text-[color:var(--text-3)]">Evento</div>
                 <div className="font-display text-[15px] font-bold truncate">{group.eventName}</div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <div className="text-right">
                   <div className="text-[10px] uppercase tracking-[0.14em] text-[color:var(--text-3)] font-semibold">Pote total</div>
                   <div className="font-mono font-bold text-[14px]" style={{ color: '#7cd0ff' }}>
@@ -298,7 +298,7 @@ export default function MarketControlPage() {
                   </div>
                 )}
 
-                <div className="flex gap-2 mt-3">
+                <div className="flex flex-wrap gap-2 mt-3">
                   {canSettle && (
                     <button className="btn btn-primary flex-1 justify-center"
                       onClick={() => { setAuditModal(m); setSelectedWinnerOdd(m.odds[0]?.id ?? ''); }}
@@ -341,7 +341,7 @@ export default function MarketControlPage() {
       {/* ── Modal de auditoria do vencedor ── */}
       {auditModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-          <div className="surface-elev p-6 w-full max-w-md">
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-md">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--emerald-soft)', color: 'var(--emerald)' }}>
                 <I.Trophy size={18}/>
@@ -369,13 +369,13 @@ export default function MarketControlPage() {
                   <button key={o.id} type="button" onClick={() => setSelectedWinnerOdd(o.id)}
                     className="w-full surface-2 p-3 flex items-center justify-between gap-3"
                     style={{ border: '1px solid ' + (selectedWinnerOdd === o.id ? 'var(--emerald)' : 'var(--border)'), background: selectedWinnerOdd === o.id ? 'var(--emerald-soft)' : undefined }}>
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded-full grid place-items-center" style={{ border: '2px solid ' + (selectedWinnerOdd === o.id ? 'var(--emerald)' : 'var(--text-3)') }}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-4 h-4 rounded-full grid place-items-center flex-shrink-0" style={{ border: '2px solid ' + (selectedWinnerOdd === o.id ? 'var(--emerald)' : 'var(--text-3)') }}>
                         {selectedWinnerOdd === o.id && <div className="w-2 h-2 rounded-full" style={{ background: 'var(--emerald)' }}/>}
                       </div>
-                      <div className="font-semibold text-[13px]">{o.label}</div>
+                      <div className="font-semibold text-[13px] truncate">{o.label}</div>
                     </div>
-                    <div className="text-right leading-tight">
+                    <div className="text-right leading-tight flex-shrink-0">
                       <div className="font-mono font-bold text-[13px]" style={{ color: '#7cd0ff' }}>{sideShare.toFixed(0)}%</div>
                       <div className="font-mono text-[10px]" style={{ color: 'var(--text-3)' }}>
                         R$ {sidePool.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}

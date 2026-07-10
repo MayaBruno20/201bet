@@ -22,7 +22,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return (
     <ToastCtx.Provider value={{ push }}>
       {children}
-      <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 w-[340px]">
+      <div className="fixed bottom-5 left-4 right-4 sm:left-auto sm:right-5 z-50 flex flex-col gap-2 sm:w-[340px]">
         {toasts.map((t) => {
           const tone = t.tone || 'amber';
           return (

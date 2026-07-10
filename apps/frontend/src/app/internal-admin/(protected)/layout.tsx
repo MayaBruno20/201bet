@@ -11,6 +11,7 @@ import { useAdminSession } from '@admin/lib/use-admin-session';
 
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = React.useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [cmdkOpen, setCmdkOpen] = React.useState(false);
   const { ready } = useAdminSession();
 
@@ -38,10 +39,12 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     <ToastProvider>
       <ConfirmProvider>
         <DrawerProvider>
-          <div className="flex h-screen overflow-hidden">
-            <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} openCmdK={() => setCmdkOpen(true)}/>
+          <div className="flex h-dvh overflow-hidden">
+            <Sidebar collapsed={collapsed} setCollapsed={setCollapsed}
+              mobileOpen={mobileNavOpen} setMobileOpen={setMobileNavOpen}
+              openCmdK={() => setCmdkOpen(true)}/>
             <div className="flex-1 flex flex-col min-w-0">
-              <Topbar openCmdK={() => setCmdkOpen(true)}/>
+              <Topbar openCmdK={() => setCmdkOpen(true)} openMobileNav={() => setMobileNavOpen(true)}/>
               <main className="flex-1 overflow-auto">{children}</main>
             </div>
             <CmdK open={cmdkOpen} setOpen={setCmdkOpen}/>

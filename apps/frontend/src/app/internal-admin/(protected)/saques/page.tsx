@@ -14,7 +14,7 @@ export default function SaquesRedirectPage() {
     router.replace('/financeiro');
   }, [router]);
   return (
-    <div className="min-h-screen grid place-items-center text-[13px] text-[color:var(--text-3)]">
+    <div className="min-h-dvh grid place-items-center text-[13px] text-[color:var(--text-3)]">
       <div className="flex items-center gap-3">
         <span className="pulse-dot"/>
         Redirecionando para Financeiro…

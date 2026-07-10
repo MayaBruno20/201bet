@@ -72,10 +72,10 @@ export default function ApostasPage() {
             <I.Search size={15} style={{ position: 'absolute', left: 12, top: 11, color: 'var(--text-3)' }}/>
             <input className="input pl-9" placeholder="Buscar usuário, evento, piloto…" value={q} onChange={(e) => setQ(e.target.value)}/>
           </div>
-          <div className="flex items-center gap-1 surface-2 rounded-[12px] p-1">
+          <div className="flex items-center gap-1 surface-2 rounded-[12px] p-1 max-w-full overflow-x-auto no-scrollbar">
             {(['all','Pendente','Ganhou','Perdeu','Cancelada'] as const).map((f) => (
               <button key={f} onClick={() => setFilter(f)}
-                className="px-3 py-1.5 text-[12.5px] font-semibold rounded-[8px]"
+                className="px-3 py-1.5 text-[12.5px] font-semibold rounded-[8px] whitespace-nowrap shrink-0"
                 style={{ background: filter === f ? 'var(--surface-3)' : 'transparent', color: filter === f ? 'var(--text)' : 'var(--text-3)' }}>
                 {f === 'all' ? 'Todas' : f}
               </button>
@@ -87,7 +87,8 @@ export default function ApostasPage() {
         {!loading && filtered.length === 0 && <div className="p-8 text-center text-[13px] text-[color:var(--text-3)]">Nenhuma aposta encontrada.</div>}
 
         {!loading && filtered.length > 0 && (
-          <table>
+          <div className="table-wrap">
+          <table style={{ minWidth: 760 }}>
             <thead>
               <tr><th style={{ paddingLeft: 20 }}>Usuário</th><th>Evento</th><th>Mercado</th><th className="text-right">Valor</th><th className="text-right">Odd</th><th className="text-right">Potencial</th><th>Status</th><th style={{ paddingRight: 20 }}>Quando</th></tr>
             </thead>
@@ -114,6 +115,7 @@ export default function ApostasPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </Page>

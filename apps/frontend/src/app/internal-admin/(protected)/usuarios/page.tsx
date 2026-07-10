@@ -181,11 +181,11 @@ export default function UsuariosPage() {
 
       <Card className="p-0 overflow-hidden">
         <div className="flex items-center gap-3 p-4 flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
-          <div className="flex-1 relative min-w-[260px]">
+          <div className="flex-1 relative min-w-full sm:min-w-[260px]">
             <I.Search size={15} style={{ position: 'absolute', left: 12, top: 11, color: 'var(--text-3)' }}/>
             <input className="input pl-9" placeholder="Buscar nome, e-mail, CPF…" value={q} onChange={(e) => setQ(e.target.value)}/>
           </div>
-          <div className="flex items-center gap-1 surface-2 rounded-[12px] p-1">
+          <div className="flex items-center gap-1 surface-2 rounded-[12px] p-1 max-w-full overflow-x-auto no-scrollbar">
             {[
               { id: 'all' as const, label: 'Todos' },
               { id: 'active' as const, label: 'Ativos' },
@@ -193,7 +193,7 @@ export default function UsuariosPage() {
               { id: 'staff' as const, label: 'Equipe' },
             ].map((f) => (
               <button key={f.id} onClick={() => setFilter(f.id)}
-                className="px-3 py-1.5 text-[12.5px] font-semibold rounded-[8px]"
+                className="px-3 py-1.5 text-[12.5px] font-semibold rounded-[8px] shrink-0 whitespace-nowrap"
                 style={{ background: filter === f.id ? 'var(--surface-3)' : 'transparent', color: filter === f.id ? 'var(--text)' : 'var(--text-3)' }}>
                 {f.label}
               </button>
@@ -205,13 +205,14 @@ export default function UsuariosPage() {
         {!loading && filtered.length === 0 && <div className="p-8 text-center text-[13px] text-[color:var(--text-3)]">Nenhum usuário encontrado.</div>}
 
         {!loading && filtered.length > 0 && (
-          <table>
+          <div className="table-wrap">
+          <table style={{ minWidth: 760 }}>
             <thead>
               <tr>
                 <th style={{ paddingLeft: 20 }}>Usuário</th>
                 <th>E-mail</th>
                 <th>Role</th>
-                <th>Documento</th>
+                <th className="hidden md:table-cell">Documento</th>
                 <th className="text-right">Saldo</th>
                 <th>Status</th>
                 <th style={{ paddingRight: 20 }}/>
@@ -232,7 +233,7 @@ export default function UsuariosPage() {
                     <td>
                       <span className="chip" style={{ background: ROLE_TONE[role] + '22', color: ROLE_TONE[role], fontWeight: 700 }}>{role}</span>
                     </td>
-                    <td className="text-[color:var(--text-2)] font-mono text-[11.5px]">{u.region}</td>
+                    <td className="hidden md:table-cell text-[color:var(--text-2)] font-mono text-[11.5px]">{u.region}</td>
                     <td className="text-right tabular-nums font-semibold">R$ {u.points.toFixed(2)}</td>
                     <td><StatusChip status={u.status}/></td>
                     <td className="text-right" style={{ paddingRight: 20 }}>
@@ -255,25 +256,26 @@ export default function UsuariosPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 
       {/* ── Modal Criar Conta (admin/operator/auditor) ── */}
       {createOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-          <div className="surface-elev p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-lg max-h-[90dvh] overflow-y-auto">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
                 <I.Plus size={18}/>
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <div className="font-display text-[18px] font-bold">Nova conta administrativa</div>
                 <div className="text-[12px] text-[color:var(--text-3)]">Crie ADMIN/OPERATOR/AUDITOR. Apostadores se cadastram pelo site público.</div>
               </div>
             </div>
 
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Nome *</label>
                   <input className="input mt-1" autoFocus value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}/>
@@ -344,12 +346,12 @@ export default function UsuariosPage() {
       {/* ── Modal Editar Usuário ── */}
       {editUser && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-          <div className="surface-elev p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-lg max-h-[90dvh] overflow-y-auto">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
                 <I.Edit size={18}/>
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <div className="font-display text-[18px] font-bold">Editar usuário</div>
                 <div className="text-[12px] text-[color:var(--text-3)] truncate">{editUser.tag}</div>
               </div>
@@ -364,7 +366,7 @@ export default function UsuariosPage() {
 
               <div>
                 <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] block mb-2">Permissão (role) *</label>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {(['USER', 'ADMIN', 'OPERATOR', 'AUDITOR'] as const).map((r) => (
                     <button key={r} type="button" onClick={() => setEditForm((f) => ({ ...f, role: r }))}
                       className="rounded-[10px] px-3 py-2 text-[12px] font-bold"
@@ -387,7 +389,7 @@ export default function UsuariosPage() {
 
               <div>
                 <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] block mb-2">Status</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {([
                     { v: 'ACTIVE' as const, label: 'Ativo', tone: 'var(--emerald)' },
                     { v: 'BLOCKED' as const, label: 'Bloqueado', tone: '#ff7585' },
@@ -435,12 +437,12 @@ export default function UsuariosPage() {
       {/* ── Modal Ajustar Saldo ── */}
       {adjustUser && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-          <div className="surface-elev p-6 w-full max-w-md">
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-md max-h-[90dvh] overflow-y-auto">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
                 <I.Wallet size={18}/>
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <div className="font-display text-[18px] font-bold">Ajustar saldo</div>
                 <div className="text-[12px] text-[color:var(--text-3)] truncate">{adjustUser.name} · {adjustUser.tag}</div>
                 <div className="text-[11px] mt-1">Saldo atual: <strong>R$ {adjustUser.points.toFixed(2)}</strong></div>

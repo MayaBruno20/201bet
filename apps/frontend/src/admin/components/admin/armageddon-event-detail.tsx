@@ -157,14 +157,14 @@ export function ArmageddonEventDetail({ eventId, onChanged }: { eventId: string;
   return (
     <div className="space-y-4">
       <Card className="p-3">
-        <div className="flex items-center gap-2">
-          <button onClick={() => setTab('roster')} className={`tab ${tab === 'roster' ? 'active' : ''}`}>
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <button onClick={() => setTab('roster')} className={`tab shrink-0 whitespace-nowrap ${tab === 'roster' ? 'active' : ''}`}>
             Inscritos <span className="text-[color:var(--text-4)]">({detail.roster.length})</span>
           </button>
-          <button onClick={() => setTab('matchups')} className={`tab ${tab === 'matchups' ? 'active' : ''}`}>
+          <button onClick={() => setTab('matchups')} className={`tab shrink-0 whitespace-nowrap ${tab === 'matchups' ? 'active' : ''}`}>
             Embates <span className="text-[color:var(--text-4)]">({detail.matchups.length})</span>
           </button>
-          <button onClick={() => setTab('mercados')} className={`tab ${tab === 'mercados' ? 'active' : ''}`}>
+          <button onClick={() => setTab('mercados')} className={`tab shrink-0 whitespace-nowrap ${tab === 'mercados' ? 'active' : ''}`}>
             Multi-Mercados
           </button>
         </div>
@@ -182,9 +182,9 @@ export function ArmageddonEventDetail({ eventId, onChanged }: { eventId: string;
       )}
 
       {tab === 'roster' && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <SectionTitle title="Inscritos no Armageddon" sub="Pilotos importados das Listas Brasil ou adicionados manualmente."
-            action={<>
+            action={<div className="flex flex-wrap items-center justify-end gap-2 md:contents">
               <button className="btn btn-ghost focusable" onClick={() => setImportOpen(true)}>
                 <I.Upload size={14}/> Importar das Listas
               </button>
@@ -196,7 +196,7 @@ export function ArmageddonEventDetail({ eventId, onChanged }: { eventId: string;
                   <I.Trash size={15}/>
                 </button>
               )}
-            </>}/>
+            </div>}/>
 
           {detail.roster.length === 0 ? (
             <div className="p-8 text-center">
@@ -229,7 +229,7 @@ export function ArmageddonEventDetail({ eventId, onChanged }: { eventId: string;
       )}
 
       {tab === 'matchups' && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <SectionTitle title="Embates por rodada" sub="Abra/feche mercado e audite vencedores." action={
             <button className="btn btn-primary" onClick={generateMatchups} disabled={busy === 'generate'}>
               <I.Plus size={14}/> Gerar próxima rodada
@@ -301,7 +301,7 @@ export function ArmageddonEventDetail({ eventId, onChanged }: { eventId: string;
 
       {auditMatchup && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-          <div className="surface-elev p-6 w-full max-w-md">
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-md">
             <div className="font-display text-[18px] font-bold mb-1">Auditar vencedor</div>
             <div className="text-[12px] text-[color:var(--text-3)] mb-4">Rodada {auditMatchup.roundNumber} · Posição {auditMatchup.position}</div>
             <div className="rounded-[10px] p-3 mb-4 text-[12px]" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
@@ -359,7 +359,7 @@ function ImportFromListsModal({ eventId, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-md">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md">
         <div className="font-display text-[18px] font-bold mb-1">Importar das Listas Brasil</div>
         <div className="text-[12px] text-[color:var(--text-3)] mb-4">
           Pilotos do TOP 10/20 das listas serão inscritos no Armageddon.

@@ -1358,23 +1358,9 @@ export class BrazilListsService {
           });
         }
 
-        // Pool sempre começa zerado em cada abertura de mercado.
-        await tx.duelPoolState.upsert({
-          where: { duelId },
-          create: {
-            duelId,
-            leftPool: 0,
-            rightPool: 0,
-            leftTickets: 0,
-            rightTickets: 0,
-          },
-          update: {
-            leftPool: 0,
-            rightPool: 0,
-            leftTickets: 0,
-            rightTickets: 0,
-          },
-        });
+        // Pote recomputado das apostas OPEN — reabrir mercado NÃO pode zerar
+        // dinheiro em jogo (fechar não reembolsa nada).
+        await this.settlementService.recomputeDuelPoolState(tx, duelId);
 
         // 4. Market + Odds — cria se não há mercado do duelo
         const existingMarket = await tx.market.findFirst({
