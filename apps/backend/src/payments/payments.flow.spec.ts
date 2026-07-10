@@ -412,7 +412,9 @@ describe('Payments flow (unit)', () => {
           findMany: jest.fn()
             // deposits
             .mockResolvedValueOnce([{ id: 'd1', type: PaymentType.DEPOSIT, status: PaymentStatus.PENDING, provider: 'VALUT_PIX', providerRef: 'pix_in_1' }])
-            // withdrawals
+            // withdrawals com providerRef
+            .mockResolvedValueOnce([])
+            // orphan UNKNOWN sem providerRef
             .mockResolvedValueOnce([]),
         },
       };
@@ -435,7 +437,9 @@ describe('Payments flow (unit)', () => {
             // deposits
             .mockResolvedValueOnce([])
             // withdrawals
-            .mockResolvedValueOnce([{ id: 'w1', userId: 'u1', type: PaymentType.WITHDRAW, status: PaymentStatus.UNKNOWN, provider: 'VALUT_PIX', providerRef: 'pix_out_1', amount: dec(200) }]),
+            .mockResolvedValueOnce([{ id: 'w1', userId: 'u1', type: PaymentType.WITHDRAW, status: PaymentStatus.UNKNOWN, provider: 'VALUT_PIX', providerRef: 'pix_out_1', amount: dec(200) }])
+            // orphan UNKNOWN sem providerRef
+            .mockResolvedValueOnce([]),
           updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
       };
@@ -472,7 +476,8 @@ describe('Payments flow (unit)', () => {
         payment: {
           findMany: jest.fn()
             .mockResolvedValueOnce([]) // deposits
-            .mockResolvedValueOnce([{ id: 'w1', userId: 'u1', type: PaymentType.WITHDRAW, status: PaymentStatus.UNKNOWN, provider: 'VALUT_PIX', providerRef: 'pix_out_1', amount: dec(200) }]),
+            .mockResolvedValueOnce([{ id: 'w1', userId: 'u1', type: PaymentType.WITHDRAW, status: PaymentStatus.UNKNOWN, provider: 'VALUT_PIX', providerRef: 'pix_out_1', amount: dec(200) }])
+            .mockResolvedValueOnce([]), // orphan UNKNOWN sem providerRef
         },
         $transaction: jest.fn(async (cb: any) => cb(tx)),
       };
@@ -487,6 +492,44 @@ describe('Payments flow (unit)', () => {
       expect(tx.walletTransaction.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ type: WalletTransactionType.ADJUSTMENT }),
+        }),
+      );
+    });
+
+    it('reconciles orphan UNKNOWN withdrawal (sem providerRef) re-disparando idempotente', async () => {
+      const prisma = {
+        payment: {
+          findMany: jest.fn()
+            .mockResolvedValueOnce([]) // deposits
+            .mockResolvedValueOnce([]) // withdrawals com providerRef
+            // orphan: UNKNOWN, providerRef null, holdReason null — o beco sem saída
+            .mockResolvedValueOnce([{
+              id: 'wd9', userId: 'u1', type: PaymentType.WITHDRAW, status: PaymentStatus.UNKNOWN,
+              provider: 'VALUT_PIX', providerRef: null, holdReason: null,
+              pixKey: '12345678901', pixKeyType: 'document', amount: dec(136.1),
+              user: { cpf: '12345678901' },
+            }]),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+      };
+      const valut = {
+        getPixQrCode: jest.fn(),
+        getPixCashout: jest.fn(),
+        performPixCashout: jest.fn().mockResolvedValue({ pix_id: 'pix_out_9', status: 'processing', receiver: { document: '12345678901' } }),
+      };
+      const service = new PaymentsService(prisma as unknown as PrismaService, valut as unknown as ValutService);
+
+      await (service as any).reconcileOnce();
+
+      // Re-disparo usa a MESMA chave de idempotência original (wd-<id>) → sem duplo envio.
+      expect(valut.performPixCashout).toHaveBeenCalledWith(
+        expect.objectContaining({ externalId: 'wd9', idempotencyKey: 'wd-wd9', documentValidation: '12345678901' }),
+      );
+      // Adota o pix_id e tira o saque do estado órfão (UNKNOWN + providerRef null).
+      expect(prisma.payment.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'wd9', status: PaymentStatus.UNKNOWN, providerRef: null },
+          data: expect.objectContaining({ providerRef: 'pix_out_9', status: PaymentStatus.PENDING }),
         }),
       );
     });

@@ -15,6 +15,8 @@ export type SessionUser = {
   emailVerified: boolean;
   /** Só true após CPF + data (cadastro clássico ou “Completar cadastro” pós-Google). */
   profileComplete?: boolean;
+  /** false = CPF inválido — usuário fica inapto a apostar até corrigir no perfil. */
+  cpfValid?: boolean;
   avatarUrl?: string | null;
 };
 

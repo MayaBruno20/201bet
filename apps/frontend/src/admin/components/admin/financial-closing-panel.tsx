@@ -118,7 +118,7 @@ export function FinancialClosingPanel({ eventId, source }: { eventId: string; so
   }
 
   return (
-    <div className="p-5 space-y-5 financial-closing-print-root">
+    <div className="p-4 sm:p-5 space-y-5 financial-closing-print-root">
       <style>{`
         @media print {
           body * { visibility: hidden; }
@@ -134,7 +134,7 @@ export function FinancialClosingPanel({ eventId, source }: { eventId: string; so
         sub={`Resumo agregado de apostas, ganhos, perdas e fluxo de caixa do evento. Janela: ${new Date(data.window.start).toLocaleString('pt-BR')} → ${new Date(data.window.end).toLocaleString('pt-BR')}. ${data.window.note}`}
       />
 
-      <div className="flex justify-end gap-2 no-print">
+      <div className="flex flex-wrap justify-end gap-2 no-print">
         <button className="btn btn-ghost" onClick={() => downloadCsv(data)}>
           <I.Download size={13}/> Exportar CSV
         </button>

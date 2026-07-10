@@ -1,5 +1,5 @@
 import { BadRequestException, forwardRef, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
-import { BetStatus, DuelStatus, MarketStatus, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
+import { BetStatus, CategoryMatchupStatus, DuelStatus, MarketStatus, OddStatus, Prisma, WalletTransactionType } from '@prisma/client';
 import { PrismaService } from './database/prisma.service';
 import { MarketGateway } from './market.gateway';
 import { HOUSE_MARGIN_PERCENT } from './market.service';
@@ -530,6 +530,53 @@ export class SettlementService {
     return this.settleMarket(market.id, winnerOddId, audit);
   }
 
+  /**
+   * Recalcula o DuelPoolState a partir das apostas OPEN do mercado do duelo.
+   * Usado na (re)abertura de mercado de matchup (Listas/Copa/Armageddon):
+   * zerar incondicionalmente apagava pote com dinheiro em jogo — as apostas
+   * continuavam OPEN e a liquidação pagava certo, mas pote exibido, preview
+   * de payout e motor de odds ficavam corrompidos. Recomputar cobre os dois
+   * casos: reabertura com apostas vivas (restaura o pote real) e reabertura
+   * pós-anulação (apostas REFUNDED somam zero, pote zera naturalmente).
+   */
+  async recomputeDuelPoolState(tx: Prisma.TransactionClient, duelId: string) {
+    // odds[0] = LEFT, odds[1] = RIGHT (ordem de criação — mesma convenção do
+    // resolveOddIdForSide do motor de apostas).
+    const market = await tx.market.findFirst({
+      where: { duelId },
+      orderBy: { createdAt: 'asc' },
+      include: { odds: { orderBy: { createdAt: 'asc' } } },
+    });
+
+    let leftPool = new Prisma.Decimal(0);
+    let rightPool = new Prisma.Decimal(0);
+    let leftTickets = 0;
+    let rightTickets = 0;
+
+    if (market && market.odds.length >= 2) {
+      const [leftOdd, rightOdd] = market.odds;
+      const items = await tx.betItem.findMany({
+        where: { oddId: { in: [leftOdd.id, rightOdd.id] }, bet: { status: BetStatus.OPEN } },
+        include: { bet: { select: { stake: true } } },
+      });
+      for (const item of items) {
+        if (item.oddId === leftOdd.id) {
+          leftPool = leftPool.add(item.bet.stake);
+          leftTickets += 1;
+        } else {
+          rightPool = rightPool.add(item.bet.stake);
+          rightTickets += 1;
+        }
+      }
+    }
+
+    await tx.duelPoolState.upsert({
+      where: { duelId },
+      create: { duelId, leftPool, rightPool, leftTickets, rightTickets },
+      update: { leftPool, rightPool, leftTickets, rightTickets },
+    });
+  }
+
   async voidMarket(marketId: string, audit: AuditContext = {}) {
     const market = await this.prisma.market.findUnique({
       where: { id: marketId },
@@ -687,7 +734,7 @@ export class SettlementService {
       await tx.market.update({ where: { id: marketId }, data: { status: MarketStatus.OPEN, winnerOddId: null, settledAt: null } });
       await tx.odd.updateMany({ where: { marketId }, data: { status: OddStatus.ACTIVE } });
 
-      // 5) reseta pool e reverte a propagação do vencedor no matchup (lista/armageddon)
+      // 5) reseta pool e reverte a liquidação do matchup (lista/armageddon/copa)
       if (market.duelId) {
         // Des-liquidar reabre o embate: espelho do fechamento feito no settleMarket.
         // updateMany gated em FINISHED → só reabre o que estava de fato fechado por
@@ -698,8 +745,38 @@ export class SettlementService {
           data: { status: DuelStatus.BOOKING_OPEN },
         });
         await tx.duelPoolState.updateMany({ where: { duelId: market.duelId }, data: { leftPool: 0, rightPool: 0, leftTickets: 0, rightTickets: 0 } });
-        await tx.armageddonMatchup.updateMany({ where: { duelId: market.duelId, winnerSide: { not: null } }, data: { winnerSide: null, settledAt: null } });
-        await tx.listMatchup.updateMany({ where: { duelId: market.duelId, winnerSide: { not: null } }, data: { winnerSide: null, settledAt: null } });
+
+        // Lista: desfaz o swap de posições do roster (se o desafiante venceu e
+        // trocou de lugar com o defensor) ANTES de limpar o winnerSide. Restaura
+        // desafiante e defensor às posições originais gravadas no matchup.
+        const listMatchup = await tx.listMatchup.findFirst({
+          where: { duelId: market.duelId, winnerSide: { not: null } },
+          include: { listEvent: { select: { listId: true } } },
+        });
+        if (listMatchup && shouldSwapOnSettle(listMatchup, listMatchup.winnerSide)) {
+          const challengerPos = listMatchup.leftPosition!;
+          const defenderPos = listMatchup.rightPosition!;
+          const challengerDriverId = listMatchup.leftDriverId!;
+          const defenderDriverId = listMatchup.rightDriverId!;
+          const listId = listMatchup.listEvent.listId;
+          // 3 passos (evita colidir no @@unique([listId, position])): estaciona o
+          // desafiante em -1, devolve o defensor pra defenderPos, devolve o
+          // desafiante pra challengerPos.
+          await tx.listRoster.updateMany({ where: { listId, driverId: challengerDriverId }, data: { position: -1 } });
+          await tx.listRoster.updateMany({ where: { listId, driverId: defenderDriverId }, data: { position: defenderPos, isKing: defenderPos === 1 } });
+          await tx.listRoster.updateMany({ where: { listId, driverId: challengerDriverId }, data: { position: challengerPos, isKing: challengerPos === 1 } });
+        }
+
+        // Volta o matchup para "não auditado" e reabre o mercado dele (marketOpen).
+        // O avanço de chave do Armageddon NÃO é desfeito aqui — o reopen do
+        // Armageddon (armageddon.service) orquestra a reversão em cascata.
+        await tx.armageddonMatchup.updateMany({ where: { duelId: market.duelId, winnerSide: { not: null } }, data: { winnerSide: null, settledAt: null, marketOpen: true } });
+        await tx.listMatchup.updateMany({ where: { duelId: market.duelId, winnerSide: { not: null } }, data: { winnerSide: null, settledAt: null, marketOpen: true } });
+        // Copa: não tem avanço de chave por slot, então o revert do matchup basta.
+        await tx.categoryMatchup.updateMany({
+          where: { duelId: market.duelId, OR: [{ winnerSide: { not: null } }, { settledAt: { not: null } }] },
+          data: { winnerSide: null, settledAt: null, status: CategoryMatchupStatus.PENDING, marketOpen: true },
+        });
       }
 
       await tx.auditLog.create({

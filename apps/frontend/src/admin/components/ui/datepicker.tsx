@@ -66,13 +66,13 @@ export const DatePicker: React.FC<Props> = ({ value, onChange, withTime = true, 
       <button type="button" disabled={disabled} onClick={() => setOpen(true)} className="input flex items-center gap-2 text-left"
         style={{ paddingTop: compact ? 7 : 10, paddingBottom: compact ? 7 : 10, opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}>
         <I.Calendar size={14} style={{ color: 'var(--text-3)', flexShrink: 0 }}/>
-        <span style={{ color: display ? 'var(--text)' : 'var(--text-4)', flex: 1 }}>{display || placeholder}</span>
+        <span className="truncate" style={{ color: display ? 'var(--text)' : 'var(--text-4)', flex: 1 }}>{display || placeholder}</span>
         <I.ChevronDown size={13} style={{ color: 'var(--text-3)' }}/>
       </button>
       {open && (
         <div onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
           style={{ position: 'fixed', inset: 0, zIndex: 2147483640, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)', display: 'grid', placeItems: 'center', padding: 16 }}>
-          <div className="surface-elev" style={{ width: 360, padding: 18 }}>
+          <div className="surface-elev max-w-full" style={{ width: 360, padding: 18 }}>
             <div className="flex items-center justify-between mb-3">
               <button className="btn-icon focusable" onClick={() => setView(new Date(view.getFullYear(), view.getMonth()-1, 1))}><I.ChevronLeft size={15}/></button>
               <div className="font-display text-[14.5px] font-bold">{MONTHS_PT[view.getMonth()]} {view.getFullYear()}</div>
@@ -112,7 +112,7 @@ export const DatePicker: React.FC<Props> = ({ value, onChange, withTime = true, 
                 <button key={q.label} onClick={() => setQuick(q.mins)} className="chip" style={{ background: 'var(--surface-2)', color: 'var(--text-2)', cursor: 'pointer' }}>{q.label}</button>
               ))}
             </div>
-            <div className="flex items-center gap-2 mt-4">
+            <div className="flex flex-wrap items-center gap-2 mt-4">
               <button className="btn btn-ghost flex-1 justify-center" onClick={clear}>Limpar</button>
               <button className="btn btn-ghost flex-1 justify-center" onClick={() => setOpen(false)}>Cancelar</button>
               <button className="btn btn-primary flex-1 justify-center" onClick={apply} disabled={!selected}><I.Check size={14}/> Aplicar</button>

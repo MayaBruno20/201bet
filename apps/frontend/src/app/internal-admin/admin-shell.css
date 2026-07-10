@@ -385,3 +385,55 @@
 .admin-shell .no-scrollbar {
   scrollbar-width: none;
 }
+
+/* ---------------------------------------------------------------------------
+   Responsividade.
+   Este arquivo é CSS sem layer, então vence as utilities do Tailwind v4
+   (@layer utilities) — `hidden`/`max-sm:hidden` NÃO funcionam em elementos
+   estilizados por classes do shell que setam display (.btn, .btn-icon, .chip,
+   .nav-item, .tab, kbd, .cmdk-item). Nesses casos use os helpers abaixo:
+   `*-up` = visível do breakpoint pra cima; `*-down` = visível abaixo dele.
+--------------------------------------------------------------------------- */
+@media (max-width: 639.98px) {
+  .admin-shell .sm-up { display: none !important; }
+}
+@media (min-width: 640px) {
+  .admin-shell .sm-down { display: none !important; }
+}
+@media (max-width: 767.98px) {
+  .admin-shell .md-up { display: none !important; }
+}
+@media (min-width: 768px) {
+  .admin-shell .md-down { display: none !important; }
+}
+@media (max-width: 1023.98px) {
+  .admin-shell .lg-up { display: none !important; }
+}
+@media (min-width: 1024px) {
+  .admin-shell .lg-down { display: none !important; }
+}
+
+/* Wrapper padrão para tabelas largas: rolagem horizontal no celular sem
+   quebrar o layout da página. */
+.admin-shell .table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.admin-shell .table-wrap > table {
+  min-width: 640px;
+}
+
+@media (max-width: 639.98px) {
+  /* 16px evita o auto-zoom do iOS Safari ao focar campos. */
+  .admin-shell .input,
+  .admin-shell select,
+  .admin-shell textarea {
+    font-size: 16px;
+  }
+  .admin-shell th {
+    padding: 8px 10px;
+  }
+  .admin-shell td {
+    padding: 10px;
+  }
+}

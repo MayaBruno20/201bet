@@ -24,6 +24,7 @@ type MeResponse = {
   id: string;
   name: string;
   email: string;
+  cpfValid?: boolean;
   wallet?: { balance: number | string; currency: string };
 };
 
@@ -407,6 +408,7 @@ export function BettingExperience({
   async function submitCart() {
     if (!cart.length || cartSubmitting) return;
     if (!me) { setMessage('Faça login para apostar.'); return; }
+    if (me.cpfValid === false) { setMessage('Seu CPF é inválido. Corrija em Minha Conta para voltar a apostar.'); return; }
     if (cartTotalStake > currentBalance) {
       setMessage('Saldo insuficiente para o bilhete inteiro.');
       return;
@@ -459,6 +461,7 @@ export function BettingExperience({
     const mrId = currentMRSnapshot?.marketId;
     if (!mrId) return;
     if (!me) { setMessage('Faça login para apostar.'); return; }
+    if (me.cpfValid === false) { setMessage('Seu CPF é inválido. Corrija em Minha Conta para voltar a apostar.'); return; }
     setMessage('');
     try {
       const response = await apiFetch(`${apiUrl}/market/multi-runner/bet`, {

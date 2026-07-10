@@ -181,7 +181,7 @@ export default function CarrosPage() {
             <I.Search size={15} style={{ position: 'absolute', left: 12, top: 11, color: 'var(--text-3)' }}/>
             <input className="input pl-9" placeholder="Buscar carro, piloto, categoria, número…" value={q} onChange={(e) => setQ(e.target.value)}/>
           </div>
-          <div className="flex items-center gap-1 surface-2 rounded-[12px] p-1">
+          <div className="flex items-center gap-1 surface-2 rounded-[12px] p-1 max-w-full overflow-x-auto no-scrollbar">
             {[
               { id: 'all' as const, label: 'Todos' },
               { id: 'active' as const, label: 'Ativos' },
@@ -189,7 +189,7 @@ export default function CarrosPage() {
               { id: 'no-photo' as const, label: 'Sem foto' },
             ].map((f) => (
               <button key={f.id} onClick={() => setFilter(f.id)}
-                className="px-3 py-1.5 text-[12.5px] font-semibold rounded-[8px]"
+                className="px-3 py-1.5 text-[12.5px] font-semibold rounded-[8px] whitespace-nowrap"
                 style={{ background: filter === f.id ? 'var(--surface-3)' : 'transparent', color: filter === f.id ? 'var(--text)' : 'var(--text-3)' }}>
                 {f.label}
               </button>
@@ -257,7 +257,7 @@ export default function CarrosPage() {
 
       {createOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-          <div className="surface-elev p-6 w-full max-w-md">
+          <div className="surface-elev p-5 sm:p-6 w-full max-w-md">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
                 <I.Plus size={18}/>

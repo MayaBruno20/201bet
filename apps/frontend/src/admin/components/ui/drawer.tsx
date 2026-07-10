@@ -20,8 +20,8 @@ export const Drawer: React.FC<DrawerProps> = ({ open, onClose, title, children, 
         style={{ background: 'rgba(0,0,0,0.5)', opacity: open ? 1 : 0 }} onClick={onClose}/>
       <div className="absolute right-0 top-0 bottom-0 transition-transform duration-300 flex flex-col"
         style={{ width, maxWidth: '100vw', background: 'var(--bg-2)', borderLeft: '1px solid var(--border)', transform: open ? 'translateX(0)' : 'translateX(100%)' }}>
-        <div className="h-[68px] px-5 flex items-center justify-between shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
-          <div className="font-display text-[16px] font-semibold">{title}</div>
+        <div className="h-[68px] px-4 sm:px-5 flex items-center justify-between shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="font-display text-[16px] font-semibold min-w-0 truncate">{title}</div>
           <button className="btn-icon focusable" onClick={onClose}><I.X size={17}/></button>
         </div>
         <div className="flex-1 overflow-auto">{children}</div>
@@ -60,11 +60,11 @@ export const DrawerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       {children}
       <Drawer open={isOpen} onClose={close} title={p ? 'Detalhes do piloto' : ''} width={460}>
         {p && (
-          <div className="p-5 space-y-5">
+          <div className="p-4 sm:p-5 space-y-5">
             <div className="flex items-center gap-3">
               <Avatar initials={p.avatar} size={56} tone="amber"/>
-              <div>
-                <div className="font-display text-[18px] font-bold">{p.name}</div>
+              <div className="min-w-0">
+                <div className="font-display text-[18px] font-bold truncate">{p.name}</div>
                 <div className="text-[12px] text-[color:var(--text-3)] font-mono">{p.tag}</div>
                 <div className="mt-1.5"><StatusChip status={p.status}/></div>
               </div>

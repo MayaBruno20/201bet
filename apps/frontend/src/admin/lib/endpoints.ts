@@ -100,6 +100,9 @@ export const ENDPOINTS = {
     summary: (id: string) => `/admin/markets/${id}/summary`,
     settle: (id: string) => `/admin/markets/${id}/settle`,
     void: (id: string) => `/admin/markets/${id}/void`,
+    // Reabre um mercado JÁ AUDITADO (estorna a liquidação). Rápido/personalizado/
+    // multi/Copa/Lista. Armageddon usa ARMAGEDDON.matchups.reopen (cascata).
+    reopen: (id: string) => `/admin/markets/${id}/reopen`,
     restartEvent: (eventId: string) => `/admin/events/${eventId}/restart`,
   },
 
@@ -196,6 +199,8 @@ export const ENDPOINTS = {
       generate: (eventId: string) => `/admin/armageddon/${eventId}/generate-matchups`,
       toggleMarket: (matchupId: string) => `/admin/armageddon/matchups/${matchupId}/market`,
       settle: (matchupId: string) => `/admin/armageddon/matchups/${matchupId}/settle`,
+      // Reabre bateria auditada revertendo o avanço de chave em cascata.
+      reopen: (matchupId: string) => `/admin/armageddon/matchups/${matchupId}/reopen`,
       delete: (matchupId: string) => `/admin/armageddon/matchups/${matchupId}`,
     },
     // Multi-mercados (campeão / reação / queimada) sobre o Event vinculado.

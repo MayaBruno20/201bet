@@ -928,9 +928,85 @@ export class PaymentsService {
       }
     }
 
+    // 3) Saques travados em UNKNOWN SEM providerRef e SEM hold de review manual.
+    //    Acontece quando `performPixCashout` erra (timeout/5xx/rede) ANTES de
+    //    devolver o pix_id: o saque vira UNKNOWN com providerRef=null. Esse estado
+    //    era um beco sem saída — invisível ao passo (2) (que exige providerRef),
+    //    não-aprovável (adminApproveWithdraw exige holdReason) e não-rejeitável
+    //    (adminRejectWithdraw exige PENDING). Ficava congelando o saldo do usuário
+    //    e bloqueando novos saques para sempre.
+    //    Resolução: re-dispara o cashout com a MESMA chave de idempotência original
+    //    (`wd-<id>`). A idempotência do gateway devolve o cashout já criado se a 1ª
+    //    tentativa chegou até ele (SEM duplo envio) ou executa o pretendido agora.
+    //    Rejeição definitiva por documento → vira review manual; outra rejeição
+    //    definitiva → o cashout não ocorreu → reembolsa.
+    const orphanUnknownWithdrawals = await this.prisma.payment.findMany({
+      where: {
+        type: PaymentType.WITHDRAW,
+        status: PaymentStatus.UNKNOWN,
+        provider: 'VALUT_PIX',
+        providerRef: null,
+        holdReason: null,
+        pixKey: { not: null },
+        pixKeyType: { not: null },
+      },
+      include: { user: { select: { cpf: true } } },
+      orderBy: { createdAt: 'asc' },
+      take: 20,
+    });
+
+    for (const p of orphanUnknownWithdrawals) {
+      if (!p.pixKey || !p.pixKeyType) continue;
+      try {
+        const pixKeyResolved =
+          p.pixKeyType === 'phone' ? normalizeBrazilPixPhoneKey(p.pixKey) : p.pixKey.trim();
+        const pix = await this.valut.performPixCashout({
+          amountCents: Math.round(Number(p.amount) * 100),
+          keyType: p.pixKeyType as 'document' | 'phone' | 'email' | 'evp',
+          key: pixKeyResolved,
+          externalId: p.id,
+          documentValidation: p.user.cpf ?? undefined,
+          idempotencyKey: `wd-${p.id}`,
+        });
+        const st = (pix.status || '').toLowerCase();
+        await this.prisma.payment.updateMany({
+          where: { id: p.id, status: PaymentStatus.UNKNOWN, providerRef: null },
+          data: {
+            providerRef: pix.pix_id,
+            receiverDocument: pix.receiver?.document ?? null,
+            status:
+              st === 'paid' || st === 'completed'
+                ? PaymentStatus.APPROVED
+                : PaymentStatus.PENDING,
+          },
+        });
+        this.logger.log(`Reconcile: saque órfão ${p.id} re-disparado (pix=${pix.pix_id} status=${st || 'pending'}).`);
+      } catch (err) {
+        if (err instanceof ValutRejectedError) {
+          const msg = String(err.message ?? '').toLowerCase();
+          const looksLikeDocMismatch =
+            /document|cpf|cnpj|titular|holder|divergent|mismatch|owner/i.test(msg);
+          if (looksLikeDocMismatch) {
+            // Chave em nome de outro CPF → move para review manual (admin decide).
+            await this.prisma.payment
+              .update({ where: { id: p.id }, data: { holdReason: WithdrawHoldReason.CPF_MISMATCH } })
+              .catch(() => undefined);
+          } else {
+            // Rejeição definitiva por outro motivo → cashout não ocorreu → reembolsa.
+            await this.refundFailedWithdraw(p.id, 'reconcile-orphan-rejected');
+          }
+          continue;
+        }
+        // network/timeout/5xx → mantém UNKNOWN e tenta no próximo tick.
+      }
+    }
+
     // Só dorme quando a checagem confirmou ZERO pendências (deposito e saque).
     // Se ainda há algo pendente, mantém ativo para tentar de novo no próximo tick.
-    this.mayHavePending = pendingDeposits.length > 0 || pendingWithdrawals.length > 0;
+    this.mayHavePending =
+      pendingDeposits.length > 0 ||
+      pendingWithdrawals.length > 0 ||
+      orphanUnknownWithdrawals.length > 0;
   }
 
   private async refundFailedWithdraw(paymentId: string, reason: string) {

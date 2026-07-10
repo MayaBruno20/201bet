@@ -256,10 +256,10 @@ export function ListEventDetail({ eventId, onClose, onChanged }: {
 
   return (
     <div className="fixed inset-0 z-[150] cmdk-overlay overflow-y-auto" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="min-h-full flex items-start justify-center p-4 py-10">
+      <div className="min-h-full flex items-start justify-center p-4 py-6 sm:py-10">
         <div className="surface-elev w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
           {/* Header */}
-          <div className="p-5 flex items-start gap-4 flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="p-4 sm:p-5 flex items-start gap-4 flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
             <div className="w-12 h-12 rounded-[14px] grid place-items-center shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
               <I.Trophy size={20}/>
             </div>
@@ -281,10 +281,10 @@ export function ListEventDetail({ eventId, onClose, onChanged }: {
           </div>
 
           {/* Tabs */}
-          <div className="px-5 pt-4 flex items-center gap-1 surface-2 mx-5 mt-4 rounded-[12px] p-1 w-fit" style={{ background: 'var(--surface-2)' }}>
+          <div className="px-5 pt-4 flex items-center gap-1 surface-2 mx-4 sm:mx-5 mt-4 rounded-[12px] p-1 w-fit max-w-[calc(100%-32px)] sm:max-w-[calc(100%-40px)] overflow-x-auto no-scrollbar" style={{ background: 'var(--surface-2)' }}>
             <button
               onClick={() => setTab('bracket')}
-              className="px-3 py-1.5 text-[12.5px] font-semibold rounded-[8px] flex items-center gap-1.5"
+              className="px-3 py-1.5 text-[12.5px] font-semibold rounded-[8px] flex items-center gap-1.5 whitespace-nowrap shrink-0"
               style={{
                 background: tab === 'bracket' ? 'var(--surface-3)' : 'transparent',
                 color: tab === 'bracket' ? 'var(--text)' : 'var(--text-3)',
@@ -295,7 +295,7 @@ export function ListEventDetail({ eventId, onClose, onChanged }: {
             </button>
             <button
               onClick={() => setTab('shark-tank')}
-              className="px-3 py-1.5 text-[12.5px] font-semibold rounded-[8px] flex items-center gap-1.5"
+              className="px-3 py-1.5 text-[12.5px] font-semibold rounded-[8px] flex items-center gap-1.5 whitespace-nowrap shrink-0"
               style={{
                 background: tab === 'shark-tank' ? 'var(--surface-3)' : 'transparent',
                 color: tab === 'shark-tank' ? (detail.type === 'SHARK_TANK' ? 'var(--accent)' : 'var(--text)') : 'var(--text-3)',
@@ -308,7 +308,7 @@ export function ListEventDetail({ eventId, onClose, onChanged }: {
 
           {tab === 'bracket' && <>
           {/* Generate matchups */}
-          <div className="p-5" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="p-4 sm:p-5" style={{ borderBottom: '1px solid var(--border)' }}>
             <SectionTitle title="Gerar rodada"
               sub={
                 <>
@@ -349,9 +349,9 @@ export function ListEventDetail({ eventId, onClose, onChanged }: {
           </div>
 
           {/* Rounds */}
-          <div className="p-5">
+          <div className="p-4 sm:p-5">
             {rounds.length === 0 ? (
-              <Card className="p-12 text-center">
+              <Card className="p-8 sm:p-12 text-center">
                 <div className="w-14 h-14 rounded-[14px] grid place-items-center mx-auto" style={{ background: 'var(--surface-2)' }}>
                   <I.Layers size={22} style={{ color: 'var(--text-3)' }}/>
                 </div>
@@ -508,7 +508,7 @@ const MatchupRow: React.FC<{
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1 shrink-0 flex-wrap">
           {!settled && (
             <>
               <button
@@ -566,7 +566,7 @@ function SettleMatchupModal({ matchup, onClose, onSaved }: { matchup: Matchup; o
 
   return (
     <div className="fixed inset-0 z-[200] cmdk-overlay flex items-center justify-center p-4" onClick={onClose}>
-      <div className="surface-elev p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--emerald-soft)', color: 'var(--emerald)' }}>
             <I.Check size={18}/>
@@ -659,12 +659,12 @@ function ManualMatchupModal({ eventId, roster, defaultRoundNumber, defaultRoundT
 
   return (
     <div className="fixed inset-0 z-[200] cmdk-overlay flex items-center justify-center p-4" onClick={onClose}>
-      <div className="surface-elev p-6 w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md max-h-[90dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="font-display text-[18px] font-bold mb-1">Embate manual</div>
         <div className="text-[12px] text-[color:var(--text-3)] mb-4">Cria um embate fora do bracket auto-gerado (ex: rodada extra, desempate).</div>
 
         <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div>
               <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Rodada</label>
               <input type="number" min={1} className="input mt-1" value={roundNumber} onChange={(e) => setRoundNumber(Math.max(1, Number(e.target.value) || 1))}/>
@@ -738,7 +738,7 @@ const SharkTankPanel: React.FC<{
   const byStatus = (s: SharkTankEntry['status']) => entries.filter((e) => e.status === s).length;
 
   return (
-    <div className="p-5">
+    <div className="p-4 sm:p-5">
       <div className="mb-4">
         <SectionTitle
           title="Shark Tank"
@@ -774,7 +774,7 @@ const SharkTankPanel: React.FC<{
       </div>
 
       {entries.length === 0 ? (
-        <Card className="p-12 text-center">
+        <Card className="p-8 sm:p-12 text-center">
           <div className="w-14 h-14 rounded-[14px] grid place-items-center mx-auto" style={{ background: 'var(--surface-2)' }}>
             <I.Flame size={22} style={{ color: 'var(--text-3)' }}/>
           </div>
@@ -807,9 +807,9 @@ const SharkTankPanel: React.FC<{
                     {entry.driver.team ?? '—'}{entry.driver.nickname ? ` · "${entry.driver.nickname}"` : ''}{entry.notes ? ` · ${entry.notes}` : ''}
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
                   <select
-                    className="input"
+                    className="input max-w-full"
                     style={{ width: 140 }}
                     value={entry.status}
                     onChange={(e) => onUpdateStatus(entry, e.target.value as SharkTankEntry['status'])}
@@ -884,7 +884,7 @@ function AddSharkTankEntryModal({ eventId, drivers, existingDriverIds, onClose, 
 
   return (
     <div className="fixed inset-0 z-[200] cmdk-overlay flex items-center justify-center p-4" onClick={onClose}>
-      <div className="surface-elev p-6 w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md max-h-[90dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
             <I.Flame size={18}/>

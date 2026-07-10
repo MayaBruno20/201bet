@@ -207,10 +207,10 @@ export default function EventosPage() {
         <div className="col-span-12 lg:col-span-8">
           {selected ? (
             <div className="space-y-5">
-              <Card className="p-5">
+              <Card className="p-4 sm:p-5">
                 <div className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] mb-1">Evento</div>
                 <div className="flex items-end justify-between gap-4 flex-wrap">
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-display text-[24px] font-bold">{selected.name}</div>
                     <div className="text-[12.5px] text-[color:var(--text-3)] mt-1">
                       {new Date(selected.scheduledAt).toLocaleString('pt-BR')}
@@ -247,7 +247,7 @@ export default function EventosPage() {
               <CopaEventDetail key={selected.id} eventId={selected.id} onChanged={load}/>
             </div>
           ) : (
-            <Card className="p-16 text-center">
+            <Card className="p-8 sm:p-16 text-center">
               <div className="w-14 h-14 rounded-[14px] grid place-items-center mx-auto" style={{ background: 'var(--surface-2)' }}>
                 <I.Trophy size={22} style={{ color: 'var(--text-3)' }}/>
               </div>
@@ -261,7 +261,7 @@ export default function EventosPage() {
       {/* ── Modal Criar Evento ── */}
       {createOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-          <div className="surface-elev p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-lg max-h-[90dvh] overflow-y-auto">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
                 <I.Trophy size={18}/>
@@ -281,7 +281,7 @@ export default function EventosPage() {
                 <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Descrição</label>
                 <textarea className="input mt-1" rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}/>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Início *</label>
                   <div className="mt-1">

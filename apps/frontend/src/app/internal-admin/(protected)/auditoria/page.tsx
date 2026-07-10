@@ -107,7 +107,7 @@ export default function AuditoriaPage() {
             <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: 'var(--emerald)' }}/>
             {lastUpdate.toLocaleTimeString('pt-BR')}
           </span>
-          <select className="input" style={{ width: 180 }} value={hours} onChange={(e) => setHours(Number(e.target.value))}>
+          <select className="input max-w-full" style={{ width: 180 }} value={hours} onChange={(e) => setHours(Number(e.target.value))}>
             {RANGE_OPTIONS.map((r) => (
               <option key={r.id} value={r.id}>{r.label}</option>
             ))}
@@ -139,10 +139,10 @@ export default function AuditoriaPage() {
             <I.Search size={15} style={{ position: 'absolute', left: 12, top: 11, color: 'var(--text-3)' }}/>
             <input className="input pl-9" placeholder="Buscar ator, ação, entidade…" value={q} onChange={(e) => setQ(e.target.value)}/>
           </div>
-          <div className="flex items-center gap-1 surface-2 rounded-[12px] p-1">
+          <div className="flex items-center gap-1 surface-2 rounded-[12px] p-1 max-w-full overflow-x-auto no-scrollbar">
             {(['all', 'info', 'warn', 'error'] as const).map((s) => (
               <button key={s} onClick={() => setSev(s)}
-                className="px-3 py-1.5 text-[12px] font-semibold rounded-[8px]"
+                className="px-3 py-1.5 text-[12px] font-semibold rounded-[8px] whitespace-nowrap shrink-0"
                 style={{ background: sev === s ? 'var(--surface-3)' : 'transparent', color: sev === s ? 'var(--text)' : 'var(--text-3)' }}>
                 {s === 'all' ? `Todos (${counts.all})` : `${TONE[s].label} (${counts[s as 'info' | 'warn' | 'error']})`}
               </button>
@@ -151,11 +151,11 @@ export default function AuditoriaPage() {
         </div>
 
         {loading && entries.length === 0 && (
-          <div className="p-12 text-center text-[13px] text-[color:var(--text-3)]">Carregando logs…</div>
+          <div className="p-8 sm:p-12 text-center text-[13px] text-[color:var(--text-3)]">Carregando logs…</div>
         )}
 
         {error && entries.length === 0 && (
-          <div className="p-12 text-center">
+          <div className="p-8 sm:p-12 text-center">
             <div className="w-12 h-12 rounded-[12px] grid place-items-center mx-auto" style={{ background: 'var(--rose-soft)', color: 'var(--rose)' }}>
               <I.AlertTriangle size={20}/>
             </div>
@@ -168,7 +168,7 @@ export default function AuditoriaPage() {
         )}
 
         {!loading && !error && filtered.length === 0 && entries.length === 0 && (
-          <div className="p-12 text-center">
+          <div className="p-8 sm:p-12 text-center">
             <div className="w-12 h-12 rounded-[12px] grid place-items-center mx-auto" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>
               <I.Shield size={20}/>
             </div>
@@ -178,7 +178,7 @@ export default function AuditoriaPage() {
         )}
 
         {!loading && !error && filtered.length === 0 && entries.length > 0 && (
-          <div className="p-8 text-center text-[12.5px] text-[color:var(--text-3)]">
+          <div className="p-6 sm:p-8 text-center text-[12.5px] text-[color:var(--text-3)]">
             Nenhum log bate com os filtros. Limpe a busca ou troque a severidade.
           </div>
         )}
@@ -186,7 +186,7 @@ export default function AuditoriaPage() {
         {filtered.length > 0 && (
           <div>
             {filtered.map((a) => (
-              <div key={a.id} className="px-5 py-3.5 flex items-center gap-4 hover:bg-[color:var(--surface)]" style={{ borderBottom: '1px solid var(--border)' }}>
+              <div key={a.id} className="px-4 sm:px-5 py-3.5 flex items-center gap-3 sm:gap-4 hover:bg-[color:var(--surface)]" style={{ borderBottom: '1px solid var(--border)' }}>
                 <div className="w-9 h-9 rounded-[10px] grid place-items-center shrink-0" style={{ background: TONE[a.severity].bg, color: TONE[a.severity].fg }}>
                   <I.Shield size={14}/>
                 </div>
@@ -200,7 +200,7 @@ export default function AuditoriaPage() {
                   </div>
                   <div className="text-[11px] text-[color:var(--text-3)] mt-1 font-mono">{a.when} · IP {a.ip}</div>
                 </div>
-                <span className="chip" style={{ background: TONE[a.severity].bg, color: TONE[a.severity].fg, fontWeight: 700, letterSpacing: '0.06em' }}>
+                <span className="chip shrink-0" style={{ background: TONE[a.severity].bg, color: TONE[a.severity].fg, fontWeight: 700, letterSpacing: '0.06em' }}>
                   {TONE[a.severity].label}
                 </span>
               </div>

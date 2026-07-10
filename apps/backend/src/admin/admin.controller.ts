@@ -309,10 +309,14 @@ export class AdminController {
     return this.adminService.listMultiRunnerMarkets(eventId);
   }
 
-  /** Lista TODOS os mercados ao vivo (qualquer tipo, status não-SETTLED). */
+  /** Lista TODOS os mercados ao vivo (qualquer tipo, status não-SETTLED).
+   *  `settledWithinHours` (opcional, cap 72) inclui também os auditados recentes. */
+  // Modo Pista: AUDITOR também enxerga e opera mercados da cabeceira da pista.
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Get('markets/live')
-  listLiveMarkets(@Query('eventId') eventId?: string) {
-    return this.adminService.listLiveMarkets(eventId);
+  listLiveMarkets(@Query('eventId') eventId?: string, @Query('settledWithinHours') settledWithinHours?: string) {
+    const hours = settledWithinHours ? Number(settledWithinHours) : NaN;
+    return this.adminService.listLiveMarkets(eventId, Number.isFinite(hours) && hours > 0 ? hours : undefined);
   }
 
   /** Fechamento financeiro de um multi-mercado: potes por opção, projeções por cenário e, se liquidado, lista de ganhadores. */
@@ -335,6 +339,7 @@ export class AdminController {
     return this.adminService.createMultiRunnerMarket(payload, this.auditFromReq(req));
   }
 
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Patch('markets/:id')
   updateMarket(
     @Param('id', ParseUUIDPipe) id: string,
@@ -344,6 +349,7 @@ export class AdminController {
     return this.adminService.updateMultiRunnerMarket(id, payload, this.auditFromReq(req));
   }
 
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Post('markets/:id/settle')
   settleMarket(
     @Param('id', ParseUUIDPipe) id: string,
@@ -356,6 +362,14 @@ export class AdminController {
   @Post('markets/:id/void')
   voidMarket(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
     return this.adminService.voidMarket(id, this.auditFromReq(req));
+  }
+
+  /** Reabre um mercado JÁ AUDITADO (Modo Pista): estorna a liquidação e volta a OPEN.
+   *  Cobre rápido/personalizado/multi/Copa/Lista. Armageddon usa o reopen da origem. */
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
+  @Post('markets/:id/reopen')
+  reopenSettledMarket(@Param('id', ParseUUIDPipe) id: string, @Req() req: ReqUser) {
+    return this.adminService.reopenSettledMarket(id, this.auditFromReq(req));
   }
 
   @Post('duels/:id/settle')
@@ -379,11 +393,13 @@ export class AdminController {
     return this.quickDuels.create(dto, this.auditFromReq(req));
   }
 
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Post('quick-duels/:id/close-booking')
   closeQuickDuelBooking(@Param('id', ParseUUIDPipe) id: string) {
     return this.quickDuels.closeBooking(id);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Post('quick-duels/:id/settle')
   settleQuickDuel(
     @Param('id', ParseUUIDPipe) id: string,
@@ -422,11 +438,13 @@ export class AdminController {
     return this.customDuels.update(id, dto, this.auditFromReq(req));
   }
 
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Post('custom-duels/:id/close-booking')
   closeCustomDuelBooking(@Param('id', ParseUUIDPipe) id: string) {
     return this.customDuels.closeBooking(id);
   }
 
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Post('custom-duels/:id/settle')
   settleCustomDuel(
     @Param('id', ParseUUIDPipe) id: string,

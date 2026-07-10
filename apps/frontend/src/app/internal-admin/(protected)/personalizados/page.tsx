@@ -299,7 +299,7 @@ export default function PersonalizadosPage() {
                           href={buildShareLink(d)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="truncate font-mono"
+                          className="min-w-0 truncate font-mono"
                           style={{ color: 'var(--accent)' }}
                         >
                           {buildShareLink(d)}
@@ -470,7 +470,7 @@ function CreateCustomDuelModal({ onClose, onSaved }: { onClose: () => void; onSa
 
   return (
     <div className="fixed inset-0 z-[200] cmdk-overlay flex items-center justify-center p-4" onClick={onClose}>
-      <div className="surface-elev p-6 w-full max-w-3xl max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-3xl max-h-[92dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
             <I.Sparkles size={18}/>
@@ -501,7 +501,7 @@ function CreateCustomDuelModal({ onClose, onSaved }: { onClose: () => void; onSa
 
         <FeaturedToggle enabled={!!eventId} value={isFeatured} onChange={setIsFeatured}/>
 
-        <div className="grid grid-cols-2 gap-3 mt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
           <div>
             <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Início *</label>
             <div className="mt-1">
@@ -615,7 +615,7 @@ function EditCustomDuelModal({ duel, onClose, onSaved }: { duel: CustomDuel; onC
 
   return (
     <div className="fixed inset-0 z-[200] cmdk-overlay flex items-center justify-center p-4" onClick={onClose}>
-      <div className="surface-elev p-6 w-full max-w-3xl max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-3xl max-h-[92dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
             <I.Edit size={18}/>
@@ -649,7 +649,7 @@ function EditCustomDuelModal({ duel, onClose, onSaved }: { duel: CustomDuel; onC
 
         <FeaturedToggle enabled={!!eventId} value={isFeatured} onChange={setIsFeatured}/>
 
-        <div className="grid grid-cols-2 gap-3 mt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
           <div>
             <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Início</label>
             <div className="mt-1">
@@ -772,7 +772,7 @@ const BannerEditor: React.FC<{
           />
         </label>
         {file && (
-          <span className="text-[11.5px] text-[color:var(--text-3)] truncate flex-1">
+          <span className="text-[11.5px] text-[color:var(--text-3)] min-w-0 truncate flex-1">
             {file.name} · {(file.size / 1024).toFixed(0)} KB
           </span>
         )}
@@ -860,7 +860,7 @@ function SettleCustomDuelModal({ duel, onClose, onSaved }: { duel: CustomDuel; o
 
   return (
     <div className="fixed inset-0 z-[200] cmdk-overlay flex items-center justify-center p-4" onClick={onClose}>
-      <div className="surface-elev p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--emerald-soft)', color: 'var(--emerald)' }}>
             <I.Check size={18}/>

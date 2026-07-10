@@ -22,6 +22,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AdminSessionService } from './admin-session.service';
 import { LoginAttemptService } from './login-attempt.service';
 import { SecurityPolicyService } from './security-policy.service';
+import { isValidCpf } from '../common/validators/cpf.validator';
 import * as bcrypt from 'bcrypt';
 
 export type AdminLoginContext = {
@@ -480,6 +481,7 @@ export class AuthService {
     return {
       ...user,
       profileComplete: !!user.cpf && !!user.birthDate,
+      cpfValid: isValidCpf(user.cpf),
     };
   }
 
@@ -492,6 +494,13 @@ export class AuthService {
       if (row && !row.cpf) {
         throw new BadRequestException(
           'Use POST /api/auth/complete-profile para informar CPF e data de nascimento (primeiro cadastro).',
+        );
+      }
+      // CPF só é editável para CORRIGIR um CPF inválido. Uma vez válido, fica
+      // travado (alteração só via suporte/admin) — evita troca de identidade.
+      if (row?.cpf && isValidCpf(row.cpf)) {
+        throw new BadRequestException(
+          'Seu CPF já está validado e não pode ser alterado. Fale com o suporte se precisar corrigir.',
         );
       }
       const cpf = this.normalizeCpf(payload.cpf);
@@ -549,6 +558,7 @@ export class AuthService {
     return {
       ...updated,
       profileComplete: !!updated.cpf && !!updated.birthDate,
+      cpfValid: isValidCpf(updated.cpf),
     };
   }
 
@@ -705,6 +715,7 @@ export class AuthService {
       status: user.status,
       emailVerified: user.emailVerified,
       profileComplete: !!user.cpf && !!user.birthDate,
+      cpfValid: isValidCpf(user.cpf),
       walletBalance: b !== undefined && b !== null ? Number(b) : 0,
     };
   }
@@ -911,7 +922,8 @@ export class AuthService {
 
   private normalizeCpf(cpf: string) {
     const normalized = cpf.replace(/\D/g, '');
-    if (!/^\d{11}$/.test(normalized)) {
+    // isValidCpf cobre tamanho (11), sequência repetida e dígitos verificadores.
+    if (!isValidCpf(normalized)) {
       throw new BadRequestException('CPF inválido');
     }
     return normalized;

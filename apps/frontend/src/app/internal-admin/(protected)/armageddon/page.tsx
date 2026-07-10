@@ -28,7 +28,7 @@ function BannerField({ value, onChange, uploading, onUpload }: {
     <div>
       <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Banner do evento</label>
       <div className="flex items-center gap-2 mt-1">
-        <input className="input flex-1" value={value} placeholder="Cole uma URL ou envie um arquivo →" onChange={(e) => onChange(e.target.value)}/>
+        <input className="input flex-1 min-w-0" value={value} placeholder="Cole uma URL ou envie um arquivo →" onChange={(e) => onChange(e.target.value)}/>
         <label className="btn btn-ghost focusable shrink-0" style={{ cursor: uploading ? 'default' : 'pointer' }}>
           {uploading ? <><span className="pulse-dot"/> Enviando…</> : <><I.Upload size={14}/> Enviar imagem</>}
           <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploading}
@@ -223,10 +223,10 @@ export default function ArmageddonPage() {
         <div className="col-span-12 lg:col-span-8">
           {selected ? (
             <div className="space-y-5">
-              <Card className="p-5">
+              <Card className="p-4 sm:p-5">
                 <div className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] mb-1">Armageddon</div>
                 <div className="flex items-end justify-between gap-4 flex-wrap">
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-display text-[24px] font-bold">{selected.name}</div>
                     <div className="text-[12.5px] text-[color:var(--text-3)] mt-1">
                       {new Date(selected.scheduledAt).toLocaleString('pt-BR')}
@@ -265,7 +265,7 @@ export default function ArmageddonPage() {
                 : <ArmageddonEventDetail key={selected.id} eventId={selected.id} onChanged={load}/>}
             </div>
           ) : (
-            <Card className="p-16 text-center">
+            <Card className="p-8 sm:p-16 text-center">
               <div className="w-14 h-14 rounded-[14px] grid place-items-center mx-auto" style={{ background: 'var(--surface-2)' }}>
                 <I.Flame size={22} style={{ color: 'var(--text-3)' }}/>
               </div>
@@ -278,7 +278,7 @@ export default function ArmageddonPage() {
 
       {createOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-          <div className="surface-elev p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-lg max-h-[90dvh] overflow-y-auto">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--rose-soft)', color: '#ff7585' }}>
                 <I.Flame size={18}/>
@@ -292,7 +292,7 @@ export default function ArmageddonPage() {
             <div className="space-y-3">
               <div>
                 <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Formato</label>
-                <div className="grid grid-cols-2 gap-2 mt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
                   {([
                     { v: 'ELIMINATION_144', t: 'Eliminação 144', s: '5 chaves → Top 32 → campeão' },
                     { v: 'LADDER', t: 'Ladder (legado)', s: 'Escada rei do morro' },
@@ -322,7 +322,7 @@ export default function ArmageddonPage() {
                 <input type="checkbox" checked={form.featured} onChange={(e) => setForm((f) => ({ ...f, featured: e.target.checked }))}/>
                 Destacar o evento (featured)
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Início *</label>
                   <div className="mt-1">
@@ -354,7 +354,7 @@ export default function ArmageddonPage() {
 
       {editEvent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-          <div className="surface-elev p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-lg max-h-[90dvh] overflow-y-auto">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
                 <I.Edit size={18}/>
@@ -383,7 +383,7 @@ export default function ArmageddonPage() {
                 <input type="checkbox" checked={form.featured} onChange={(e) => setForm((f) => ({ ...f, featured: e.target.checked }))}/>
                 Destacar o evento (featured)
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Início</label>
                   <div className="mt-1"><DatePicker value={form.scheduledAt} onChange={(v) => setForm((f) => ({ ...f, scheduledAt: v }))} placeholder="Data e hora"/></div>

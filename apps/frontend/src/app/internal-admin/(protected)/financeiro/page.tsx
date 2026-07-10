@@ -166,7 +166,7 @@ export default function FinanceiroPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 surface-2 rounded-[12px] p-1 mb-5 w-fit">
+      <div className="flex items-center gap-1 surface-2 rounded-[12px] p-1 mb-5 w-fit max-w-full overflow-x-auto no-scrollbar">
         {([
           { id: 'pending' as const, label: 'Solicitações de saque', icon: <I.Shield size={13}/>, count: summary?.withdrawals.pendingCount },
           { id: 'withdrawals' as const, label: 'Saques (histórico)', icon: <I.Wallet size={13}/>, count: undefined },
@@ -175,7 +175,7 @@ export default function FinanceiroPage() {
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className="px-3 py-1.5 text-[12.5px] font-semibold rounded-[8px] flex items-center gap-1.5"
+            className="px-3 py-1.5 text-[12.5px] font-semibold rounded-[8px] flex items-center gap-1.5 whitespace-nowrap shrink-0"
             style={{
               background: tab === t.id ? 'var(--surface-3)' : 'transparent',
               color: tab === t.id ? 'var(--text)' : 'var(--text-3)',
@@ -259,12 +259,12 @@ const PendingApprovalsTab: React.FC<{ onAfterAction?: () => void }> = ({ onAfter
   };
 
   if (loading && list.length === 0) {
-    return <Card className="p-12 text-center text-[13px] text-[color:var(--text-3)]">Carregando…</Card>;
+    return <Card className="p-8 sm:p-12 text-center text-[13px] text-[color:var(--text-3)]">Carregando…</Card>;
   }
 
   if (list.length === 0) {
     return (
-      <Card className="p-12 text-center">
+      <Card className="p-8 sm:p-12 text-center">
         <div className="w-12 h-12 rounded-[12px] grid place-items-center mx-auto" style={{ background: 'var(--emerald-soft)', color: 'var(--emerald)' }}>
           <I.Check size={20}/>
         </div>
@@ -276,7 +276,8 @@ const PendingApprovalsTab: React.FC<{ onAfterAction?: () => void }> = ({ onAfter
 
   return (
     <Card className="p-0 overflow-hidden">
-      <table>
+      <div className="table-wrap">
+      <table style={{ minWidth: 760 }}>
         <thead>
           <tr>
             <th style={{ paddingLeft: 20 }}>Usuário</th>
@@ -349,10 +350,11 @@ const PendingApprovalsTab: React.FC<{ onAfterAction?: () => void }> = ({ onAfter
           })}
         </tbody>
       </table>
+      </div>
 
       {rejectFor && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-          <div className="surface-elev p-6 w-full max-w-md">
+          <div className="surface-elev p-4 sm:p-6 w-full max-w-md">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--rose-soft)', color: 'var(--rose)' }}>
                 <I.X size={18}/>
@@ -433,7 +435,7 @@ const PaymentsHistoryTab: React.FC<{ type: 'DEPOSIT' | 'WITHDRAW' }> = ({ type }
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="flex items-center gap-1 surface-2 rounded-[12px] p-1">
+        <div className="flex items-center gap-1 surface-2 rounded-[12px] p-1 max-w-full overflow-x-auto no-scrollbar">
           {([
             { id: 'all' as const, label: 'Todos' },
             { id: 'PENDING' as const, label: 'Pendentes' },
@@ -444,7 +446,7 @@ const PaymentsHistoryTab: React.FC<{ type: 'DEPOSIT' | 'WITHDRAW' }> = ({ type }
             <button
               key={f.id}
               onClick={() => setStatus(f.id)}
-              className="px-2.5 py-1.5 text-[12px] font-semibold rounded-[8px]"
+              className="px-2.5 py-1.5 text-[12px] font-semibold rounded-[8px] whitespace-nowrap shrink-0"
               style={{ background: status === f.id ? 'var(--surface-3)' : 'transparent', color: status === f.id ? 'var(--text)' : 'var(--text-3)' }}
             >
               {f.label}
@@ -456,7 +458,7 @@ const PaymentsHistoryTab: React.FC<{ type: 'DEPOSIT' | 'WITHDRAW' }> = ({ type }
       {loading && !list && <div className="p-8 text-center text-[13px] text-[color:var(--text-3)]">Carregando…</div>}
 
       {list && list.items.length === 0 && (
-        <div className="p-12 text-center">
+        <div className="p-8 sm:p-12 text-center">
           <div className="w-12 h-12 rounded-[12px] grid place-items-center mx-auto" style={{ background: 'var(--surface-2)' }}>
             <I.Receipt size={20} style={{ color: 'var(--text-3)' }}/>
           </div>
@@ -471,7 +473,8 @@ const PaymentsHistoryTab: React.FC<{ type: 'DEPOSIT' | 'WITHDRAW' }> = ({ type }
 
       {list && list.items.length > 0 && (
         <>
-          <table>
+          <div className="table-wrap">
+          <table style={{ minWidth: 700 }}>
             <thead>
               <tr>
                 <th style={{ paddingLeft: 20 }}>Usuário</th>
@@ -544,9 +547,10 @@ const PaymentsHistoryTab: React.FC<{ type: 'DEPOSIT' | 'WITHDRAW' }> = ({ type }
               })}
             </tbody>
           </table>
+          </div>
 
           {/* Footer / paginação */}
-          <div className="flex items-center justify-between p-4 text-[12px] text-[color:var(--text-3)]" style={{ borderTop: '1px solid var(--border)' }}>
+          <div className="flex items-center justify-between flex-wrap gap-2 p-4 text-[12px] text-[color:var(--text-3)]" style={{ borderTop: '1px solid var(--border)' }}>
             <div>
               Mostrando {list.offset + 1}–{list.offset + list.items.length} de {list.total}
             </div>

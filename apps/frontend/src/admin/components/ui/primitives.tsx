@@ -157,14 +157,14 @@ export const Money: React.FC<{ value: number | string }> = ({ value }) => {
 };
 
 export const Page: React.FC<{ eyebrow?: string; title: string; sub?: string; actions?: React.ReactNode; children: React.ReactNode }> = ({ eyebrow, title, sub, actions, children }) => (
-  <div className="px-7 py-6 max-w-[1480px] mx-auto">
-    <div className="flex items-end justify-between gap-6 flex-wrap mb-7">
-      <div>
+  <div className="px-4 sm:px-6 lg:px-7 py-5 sm:py-6 max-w-[1480px] mx-auto">
+    <div className="flex items-end justify-between gap-4 sm:gap-6 flex-wrap mb-5 sm:mb-7">
+      <div className="min-w-0">
         {eyebrow && <div className="text-[11px] font-semibold tracking-[0.16em] text-[color:var(--text-3)] uppercase">{eyebrow}</div>}
-        <h1 className="font-display text-[34px] leading-[1.05] font-bold mt-1">{title}</h1>
+        <h1 className="font-display text-[26px] sm:text-[34px] leading-[1.05] font-bold mt-1">{title}</h1>
         {sub && <p className="text-[color:var(--text-2)] text-sm mt-2 max-w-2xl">{sub}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
     </div>
     {children}
   </div>
@@ -175,7 +175,7 @@ export const Card: React.FC<{ children: React.ReactNode; className?: string; sty
 );
 
 export const SectionTitle: React.FC<{ title: string; sub?: React.ReactNode; action?: React.ReactNode }> = ({ title, sub, action }) => (
-  <div className="flex items-end justify-between gap-4 mb-3">
+  <div className="flex items-end justify-between gap-4 mb-3 flex-wrap">
     <div>
       <h3 className="font-display text-lg font-semibold">{title}</h3>
       {sub && <p className="text-xs text-[color:var(--text-3)] mt-0.5">{sub}</p>}

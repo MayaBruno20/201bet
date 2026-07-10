@@ -115,6 +115,8 @@ export default function CarteiraPage() {
     gender: '',
     avatarUrl: '',
   });
+  // Rascunho do CPF — o campo só é editável quando o CPF atual é inválido (cpfValid === false).
+  const [cpfDraft, setCpfDraft] = useState('');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -143,6 +145,7 @@ export default function CarteiraPage() {
 
         const me = (await meRes.json()) as MeResponse;
         setUser(me);
+        setCpfDraft((me.cpf ?? '').replace(/\D/g, ''));
         setStoredUser({
           id: me.id,
           email: me.email,
@@ -196,7 +199,15 @@ export default function CarteiraPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(profileForm),
+        body: JSON.stringify(
+          // CPF só vai no PATCH quando o atual é inválido E o usuário digitou um novo
+          // (11 dígitos, diferente do atual). Caso contrário, não mexe no CPF.
+          user?.cpfValid === false &&
+            cpfDraft.length === 11 &&
+            cpfDraft !== (user?.cpf ?? '').replace(/\D/g, '')
+            ? { ...profileForm, cpf: cpfDraft }
+            : profileForm,
+        ),
       });
 
       if (!res.ok) {
@@ -317,6 +328,26 @@ export default function CarteiraPage() {
         <MainNav />
 
         <VerificationBanner hidden={user?.emailVerified === true} />
+
+        {user?.cpfValid === false ? (
+          <div className='mb-6 rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100'>
+            <div className='flex flex-wrap items-center justify-between gap-3'>
+              <div>
+                <p className='font-medium'>Corrija seu CPF para voltar a apostar</p>
+                <p className='mt-1 text-rose-100/80'>
+                  Seu CPF está inválido. Atualize o campo CPF em Informações da Conta e salve para liberar as apostas.
+                </p>
+              </div>
+              <button
+                type='button'
+                onClick={() => setActiveTab('conta')}
+                className='rounded-xl bg-rose-400 px-4 py-2 text-sm font-semibold text-black transition-all hover:bg-rose-300'
+              >
+                Corrigir CPF
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <section className='rounded-3xl border border-white/10 bg-[#101525] p-5 backdrop-blur-md'>
           <div className='flex flex-wrap items-center gap-4'>
@@ -447,7 +478,17 @@ export default function CarteiraPage() {
                 </div>
 
                 <input className='field' placeholder='Gênero' value={profileForm.gender} onChange={(e) => setProfileForm((p) => ({ ...p, gender: e.target.value }))} />
-                <input className='field bg-white/[0.03] text-white/50 cursor-not-allowed' value={`CPF: ${user?.cpf ? maskCPF(user.cpf) : ''}`} readOnly />
+                {user?.cpfValid === false ? (
+                  <input
+                    className='field border border-rose-400/40 focus:border-rose-400'
+                    placeholder='CPF (corrija)'
+                    inputMode='numeric'
+                    value={maskCPF(cpfDraft)}
+                    onChange={(e) => setCpfDraft(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                  />
+                ) : (
+                  <input className='field bg-white/[0.03] text-white/50 cursor-not-allowed' value={`CPF: ${user?.cpf ? maskCPF(user.cpf) : ''}`} readOnly />
+                )}
                 <input className='field bg-white/[0.03] text-white/50 cursor-not-allowed' value={`Nascimento: ${user?.birthDate ? new Date(user.birthDate).toLocaleDateString('pt-BR') : ''}`} readOnly />
               </div>
               <button type='button' className='w-full sm:w-auto rounded-2xl bg-white px-6 py-3 text-sm font-bold text-black shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-all hover:shadow-[0_0_25px_rgba(255,255,255,0.2)] hover:scale-[1.01] disabled:opacity-50 mt-5' disabled={loading} onClick={saveProfile}>

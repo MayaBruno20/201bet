@@ -121,10 +121,10 @@ export default function EmbatesRapidosPage() {
         </Card>
       </div>
 
-      {loading && <Card className="p-12 text-center text-[13px] text-[color:var(--text-3)]">Carregando…</Card>}
+      {loading && <Card className="p-8 sm:p-12 text-center text-[13px] text-[color:var(--text-3)]">Carregando…</Card>}
 
       {!loading && duels.length === 0 && (
-        <Card className="p-16 text-center">
+        <Card className="p-10 sm:p-16 text-center">
           <div className="w-14 h-14 rounded-[14px] grid place-items-center mx-auto" style={{ background: 'var(--surface-2)' }}>
             <I.Bolt size={22} style={{ color: 'var(--text-3)' }}/>
           </div>
@@ -151,7 +151,7 @@ export default function EmbatesRapidosPage() {
                 <I.Bolt size={18}/>
               </div>
 
-              <div className="flex-1 min-w-[260px]">
+              <div className="flex-1 min-w-[min(260px,100%)]">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <StatusChip status={STATUS_LABEL[d.status]}/>
                   {d.market?.winnerOddId && (
@@ -174,7 +174,7 @@ export default function EmbatesRapidosPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
                 {d.status === 'BOOKING_OPEN' && (
                   <button className="btn" disabled={busy === d.id} onClick={() => void closeBooking(d)} style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
                     <I.Pause size={13}/> Fechar mercado
@@ -275,7 +275,7 @@ function CreateQuickDuelModal({ onClose, onSaved }: { onClose: () => void; onSav
 
   return (
     <div className="fixed inset-0 z-[200] cmdk-overlay flex items-center justify-center p-4" onClick={onClose}>
-      <div className="surface-elev p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-2xl max-h-[90dvh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
             <I.Bolt size={18}/>
@@ -303,7 +303,7 @@ function CreateQuickDuelModal({ onClose, onSaved }: { onClose: () => void; onSav
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mt-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
           <div>
             <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Início *</label>
             <div className="mt-1">
@@ -392,7 +392,7 @@ function SettleQuickDuelModal({ duel, onClose, onSaved }: { duel: QuickDuel; onC
 
   return (
     <div className="fixed inset-0 z-[200] cmdk-overlay flex items-center justify-center p-4" onClick={onClose}>
-      <div className="surface-elev p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--emerald-soft)', color: 'var(--emerald)' }}>
             <I.Check size={18}/>

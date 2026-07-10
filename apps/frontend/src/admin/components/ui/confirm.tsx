@@ -131,7 +131,7 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
             <div
               role="dialog"
               aria-modal="true"
-              className="surface-elev p-6 w-full max-w-md"
+              className="surface-elev p-5 sm:p-6 w-full max-w-md"
               style={{ borderRadius: 18 }}
               onMouseDown={(e) => e.stopPropagation()}
             >
@@ -174,7 +174,7 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 </div>
               )}
 
-              <div className="flex gap-2 mt-5 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+              <div className="flex flex-wrap gap-2 mt-5 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
                 <button
                   type="button"
                   className="btn btn-ghost flex-1 justify-center focusable"

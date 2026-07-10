@@ -180,62 +180,70 @@ export function BrazilListDetail({ listId, onChanged }: { listId: string; onChan
       </Card>
 
       {tab === 'roster' && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <SectionTitle title={`Roster ${detail.format}`} sub="Pilotos titulares da lista, ordenados por posição."
             action={<>
-              <button className="btn btn-ghost" onClick={() => setImportModalOpen(true)}>
+              <button className="btn btn-ghost sm-up" onClick={() => setImportModalOpen(true)}>
                 <I.Upload size={14}/> Importar PDF/DOCX
               </button>
-              <button className="btn btn-primary" onClick={() => setRosterModal({ newPosition: nextOpenPosition })} disabled={roster.length >= maxRoster}>
+              <button className="btn-icon sm-down" onClick={() => setImportModalOpen(true)} title="Importar PDF/DOCX">
+                <I.Upload size={15}/>
+              </button>
+              <button className="btn btn-primary sm-up" onClick={() => setRosterModal({ newPosition: nextOpenPosition })} disabled={roster.length >= maxRoster}>
                 <I.Plus size={14}/> Adicionar piloto
+              </button>
+              <button className="btn-icon sm-down" onClick={() => setRosterModal({ newPosition: nextOpenPosition })} disabled={roster.length >= maxRoster} title="Adicionar piloto">
+                <I.Plus size={15}/>
               </button>
             </>}/>
 
           {roster.length === 0 ? (
             <div className="p-6 text-center text-[12.5px] text-[color:var(--text-3)]">Nenhum piloto no roster ainda.</div>
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th style={{ paddingLeft: 8, width: 60 }}>#</th>
-                  <th>Piloto</th>
-                  <th>Equipe</th>
-                  <th>Nº</th>
-                  <th>Rei</th>
-                  <th style={{ paddingRight: 8 }}/>
-                </tr>
-              </thead>
-              <tbody>
-                {[...roster].sort((a, b) => a.position - b.position).map((r) => (
-                  <tr key={r.id}>
-                    <td style={{ paddingLeft: 8 }}>
-                      <span className="font-mono text-[13px] font-bold tabular-nums" style={{ color: r.isKing ? 'var(--accent)' : 'var(--text-2)' }}>
-                        {r.isKing && '👑 '}{r.position}º
-                      </span>
-                    </td>
-                    <td>
-                      <div className="font-semibold text-[13px]">{r.driverName ?? '—'}</div>
-                      {r.driverNickname && <div className="text-[10.5px] text-[color:var(--text-3)]">"{r.driverNickname}"</div>}
-                    </td>
-                    <td className="text-[12px] text-[color:var(--text-2)]">{r.driverTeam ?? '—'}</td>
-                    <td className="text-[12px] font-mono text-[color:var(--text-2)]">{r.driverCarNumber ?? '—'}</td>
-                    <td>{r.isKing ? <span className="chip" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>REI</span> : <span className="text-[color:var(--text-3)]">—</span>}</td>
-                    <td className="text-right" style={{ paddingRight: 8 }}>
-                      <div className="flex justify-end gap-1">
-                        <button className="btn-icon" onClick={() => setRosterModal(r)} title="Editar"><I.Edit size={15}/></button>
-                        <button className="btn-icon" onClick={() => void removeRoster(r)} title="Remover" style={{ color: '#ff7585' }} disabled={busy === r.id}><I.Trash size={15}/></button>
-                      </div>
-                    </td>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ paddingLeft: 8, width: 60 }}>#</th>
+                    <th>Piloto</th>
+                    <th>Equipe</th>
+                    <th>Nº</th>
+                    <th>Rei</th>
+                    <th style={{ paddingRight: 8 }}/>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {[...roster].sort((a, b) => a.position - b.position).map((r) => (
+                    <tr key={r.id}>
+                      <td style={{ paddingLeft: 8 }}>
+                        <span className="font-mono text-[13px] font-bold tabular-nums" style={{ color: r.isKing ? 'var(--accent)' : 'var(--text-2)' }}>
+                          {r.isKing && '👑 '}{r.position}º
+                        </span>
+                      </td>
+                      <td>
+                        <div className="font-semibold text-[13px]">{r.driverName ?? '—'}</div>
+                        {r.driverNickname && <div className="text-[10.5px] text-[color:var(--text-3)]">"{r.driverNickname}"</div>}
+                      </td>
+                      <td className="text-[12px] text-[color:var(--text-2)]">{r.driverTeam ?? '—'}</td>
+                      <td className="text-[12px] font-mono text-[color:var(--text-2)]">{r.driverCarNumber ?? '—'}</td>
+                      <td>{r.isKing ? <span className="chip" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>REI</span> : <span className="text-[color:var(--text-3)]">—</span>}</td>
+                      <td className="text-right" style={{ paddingRight: 8 }}>
+                        <div className="flex justify-end gap-1">
+                          <button className="btn-icon" onClick={() => setRosterModal(r)} title="Editar"><I.Edit size={15}/></button>
+                          <button className="btn-icon" onClick={() => void removeRoster(r)} title="Remover" style={{ color: '#ff7585' }} disabled={busy === r.id}><I.Trash size={15}/></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </Card>
       )}
 
       {tab === 'events' && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <SectionTitle title="Eventos da lista" sub="Eventos aparecem no /listas público após criados."
             action={
               <button className="btn btn-primary" onClick={() => setEventModal({ creating: true })} disabled={roster.length < 2}>
@@ -303,7 +311,7 @@ export function BrazilListDetail({ listId, onChanged }: { listId: string; onChan
       )}
 
       {tab === 'finished' && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <SectionTitle
             title="Eventos finalizados"
             sub="Eventos encerrados desta lista. Clique em 'Resumo' para ver as passadas, ganhadores e a distribuição do pot."
@@ -446,7 +454,7 @@ function RosterModal({ listId, maxPosition, existingPositions, entry, defaultPos
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md max-h-[90dvh] overflow-y-auto">
         <div className="font-display text-[18px] font-bold mb-1">{entry ? 'Editar piloto do roster' : 'Adicionar ao roster'}</div>
         <div className="text-[12px] text-[color:var(--text-3)] mb-4">
           {entry ? 'Mudanças em ranking ficam auditadas.' : 'Se o piloto ainda não existir, é criado automaticamente.'}
@@ -545,7 +553,7 @@ function EventModal({ listId, event, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-lg max-h-[90dvh] overflow-y-auto">
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
             <I.Trophy size={18}/>
@@ -565,7 +573,7 @@ function EventModal({ listId, event, onClose, onSaved }: {
             <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Nome do evento *</label>
             <input className="input mt-1" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: 1ª Etapa Lista 21"/>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Início *</label>
               <div className="mt-1">
@@ -579,7 +587,7 @@ function EventModal({ listId, event, onClose, onSaved }: {
               </div>
             </div>
           </div>
-          <div className={isEdit ? 'grid grid-cols-2 gap-3' : ''}>
+          <div className={isEdit ? 'grid grid-cols-1 sm:grid-cols-2 gap-3' : ''}>
             <div>
               <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">
                 Tipo {isEdit && <span className='text-[10px] normal-case font-normal text-[color:var(--text-3)]'>(não editável)</span>}
@@ -743,7 +751,7 @@ function ImportRosterModal({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-3xl max-h-[92vh] overflow-hidden flex flex-col">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-3xl max-h-[92dvh] overflow-hidden flex flex-col">
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-[12px] grid place-items-center shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
             <I.Upload size={18}/>
@@ -787,8 +795,8 @@ function ImportRosterModal({
             <div className="rounded-[10px] px-3 py-2 mb-3 text-[12px]" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
               ✓ {entries.length} piloto(s) reconhecido(s). Revise abaixo — ao aplicar, o roster atual da lista é substituído.
             </div>
-            <div className="overflow-y-auto flex-1 -mx-2 px-2">
-              <table className="w-full">
+            <div className="table-wrap overflow-y-auto flex-1 -mx-2 px-2">
+              <table className="w-full" style={{ minWidth: 700 }}>
                 <thead className="sticky top-0 z-10" style={{ background: 'var(--surface)' }}>
                   <tr>
                     <th style={{ paddingLeft: 8, width: 60 }}>#</th>
@@ -862,7 +870,7 @@ function ImportRosterModal({
           </>
         )}
 
-        <div className="flex gap-2 mt-5 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+        <div className="flex flex-wrap gap-2 mt-5 pt-4" style={{ borderTop: '1px solid var(--border)' }}>
           <button className="btn btn-ghost flex-1 justify-center" onClick={onClose} disabled={parsing || applying}>
             Cancelar
           </button>

@@ -43,7 +43,7 @@ export function PeriodFilter({
   return (
     <div ref={ref} className={`relative ${className}`}>
       <button type="button" className="btn btn-ghost focusable" onClick={() => setOpen((v) => !v)}>
-        <I.Calendar size={15}/> {current.label} <I.ChevronDown size={14}/>
+        <I.Calendar size={15}/> <span className="hidden sm:inline">{current.label}</span><span className="sm:hidden">{current.short}</span> <I.ChevronDown size={14}/>
       </button>
       {open && (
         <div className="absolute right-0 mt-2 z-50 surface-elev p-1.5 min-w-[180px]" style={{ borderRadius: 12 }}>

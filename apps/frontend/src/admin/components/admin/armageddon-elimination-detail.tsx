@@ -372,11 +372,11 @@ function CadastroTab({ detail, busy, firstDrawGenerated, onAdd, onImport, onRese
   const total = detail.roster.length;
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <SectionTitle
         title="Cadastro nas chaves" sub="Adicione os 144 pilotos nas chaves A–E. Clique numa posição vazia para cadastrar."
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button className="btn btn-ghost focusable" onClick={onImport}>
               <I.Upload size={14}/> Importar pilotos
             </button>
@@ -412,7 +412,7 @@ function CadastroTab({ detail, busy, firstDrawGenerated, onAdd, onImport, onRese
                   {filled}/{k.size} · classifica {k.qualifiers}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                 {Array.from({ length: k.size }, (_, i) => i + 1).map((pos) => {
                   const r = slots.get(pos);
                   return (
@@ -525,7 +525,7 @@ function AddPilotModal({ eventId, bracketKey, position, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-sm">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-sm">
         <div className="font-display text-[18px] font-bold mb-1">Cadastrar piloto</div>
         <div className="text-[12px] text-[color:var(--text-3)] mb-4">Chave {bracketKey} · posição {position}</div>
 
@@ -750,7 +750,7 @@ function ImportPilotsModal({ onClose, onSaved }: { onClose: () => void; onSaved:
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-xl">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="font-display text-[18px] font-bold mb-1">Importar pilotos</div>
         <div className="text-[12px] text-[color:var(--text-3)] mb-3">
           Cria os pilotos no <strong>pool</strong> (ficam disponíveis para o sorteio — não posiciona nas chaves).
@@ -767,7 +767,7 @@ function ImportPilotsModal({ onClose, onSaved }: { onClose: () => void; onSaved:
             {fileBusy ? <><span className="pulse-dot"/> Lendo…</> : <><I.Upload size={14}/> Escolher arquivo (PDF, Excel, CSV)</>}
           </button>
           {fileName && !fileBusy && (
-            <span className="text-[11.5px] text-[color:var(--text-4)] truncate">{fileName}</span>
+            <span className="text-[11.5px] text-[color:var(--text-4)] truncate min-w-0">{fileName}</span>
           )}
         </div>
 
@@ -786,7 +786,7 @@ function ImportPilotsModal({ onClose, onSaved }: { onClose: () => void; onSaved:
 
         {rows.length > 0 && (
           <div className="mt-3">
-            <div className="flex items-center gap-3 text-[11.5px] mb-1.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] mb-1.5">
               <span className="text-[color:var(--text-2)]"><strong>{valid.length}</strong> piloto(s)</span>
               <span className="text-[color:var(--text-4)]">{withNick} com apelido</span>
               {invalid > 0 && <span style={{ color: '#ff7585' }}>{invalid} linha(s) sem nome — ignorada(s)</span>}
@@ -864,7 +864,7 @@ function AuditoriaTab({ fin, finByMatchup, busy, firstDraw, secondDraw, onToggle
 
   return (
     <div className="space-y-4">
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <SectionTitle title="Sessão de auditoria" sub="Abra os mercados rodada a rodada (Chave A → E). Feche por chave quando precisar."/>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <StatCard label="Pote total (volume)" value={brl(fin?.totalPool ?? 0)} accent="emerald"/>
@@ -875,8 +875,8 @@ function AuditoriaTab({ fin, finByMatchup, busy, firstDraw, secondDraw, onToggle
       </Card>
 
       {chaves.length > 0 && (
-        <Card className="p-5">
-          <div className="flex items-center justify-between mb-3">
+        <Card className="p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <div className="font-display text-[15px] font-bold">1º Sorteio — 5 chaves</div>
             <div className="text-[11px] text-[color:var(--text-3)]">Fluxo: Chave A → B → C → D → E</div>
           </div>
@@ -887,7 +887,7 @@ function AuditoriaTab({ fin, finByMatchup, busy, firstDraw, secondDraw, onToggle
               const closeBusy = busy === `close-${k.key}`;
               return (
                 <div key={k.key} className="surface-2" style={{ borderRadius: 12, border: '1px solid ' + (st.done ? 'var(--emerald)' : st.open ? 'var(--accent)' : 'var(--border)') }}>
-                  <div className="flex items-center gap-2 px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
                     <button onClick={() => toggle(k.key)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
                       <I.ChevronRight size={15} style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform .15s', color: 'var(--text-3)' }}/>
                       <span className="font-display text-[14px] font-bold">Chave {k.key}</span>
@@ -921,10 +921,10 @@ function AuditoriaTab({ fin, finByMatchup, busy, firstDraw, secondDraw, onToggle
         const sd = keyStats(secondDraw);
         const closeBusy = busy === 'close-S';
         return (
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-3 gap-2">
+          <Card className="p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between mb-3 gap-2">
               <div className="font-display text-[15px] font-bold">2º Sorteio — Top 32</div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {sd.open > 0 && (
                   <button className="btn btn-ghost focusable text-[11px]" style={{ color: 'var(--accent)' }}
                     onClick={() => onClose({ stage: 'SECOND_DRAW' }, 'close-S')} disabled={closeBusy}>
@@ -988,7 +988,7 @@ function BracketKeyBlock({ title, scope, matchups, finByMatchup, busy, onToggleM
         const openBusy = busy === `open-${scope ?? '?'}-${rn}`;
         return (
           <div key={rn} className="mb-3">
-            <div className="flex items-center justify-between mb-1.5 gap-2">
+            <div className="flex flex-wrap items-center justify-between mb-1.5 gap-2">
               <div className="text-[10px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">
                 {roundLabel(ms[0])} <span className="text-[color:var(--text-4)] normal-case tracking-normal">· {settled}/{ms.length}</span>
               </div>
@@ -1071,7 +1071,7 @@ function SettleModal({ matchup, onClose, onSaved }: { matchup: Matchup; onClose:
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-md">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md">
         <div className="font-display text-[18px] font-bold mb-1">Auditar vencedor</div>
         <div className="text-[12px] text-[color:var(--text-3)] mb-3">{roundLabel(matchup)} · #{matchup.order}</div>
         <div className="rounded-[10px] p-3 mb-4 text-[12px]" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>

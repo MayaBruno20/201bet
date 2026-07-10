@@ -57,9 +57,28 @@ type AuditContext = {
 };
 
 type MatchupOrigin = {
-  type: 'LIST' | 'ARMAGEDDON';
+  type: 'LIST' | 'ARMAGEDDON' | 'CATEGORY';
+  // Id do matchup de origem — é ele que os endpoints de abrir/fechar/auditar
+  // recebem (PATCH matchups/:id/market, POST matchups/:id/settle).
+  matchupId: string;
   leftPosition: number | null;
   rightPosition: number | null;
+  // Localização legível pro operador/auditor ("Chave B · R2", "9s · Super Final").
+  context: string | null;
+};
+
+const TIME_CATEGORY_LABEL: Record<string, string> = {
+  ORIGINAL_10S: '10s',
+  CAT_9S: '9s',
+  CAT_8_5S: '8,5s',
+  CAT_8S: '8s',
+  CAT_7_5S: '7,5s',
+  CAT_7S: '7s',
+  CAT_6_5S: '6,5s',
+  CAT_6S: '6s',
+  CAT_5_5S: '5,5s',
+  TUDOKIDA: 'Tudokida',
+  APRESENTACAO: 'Apresentação',
 };
 
 const PRIVILEGED_ROLES: UserRole[] = [
@@ -1542,23 +1561,39 @@ export class AdminService {
    * `listMultiRunnerMarkets` (acima) é mantido só pra criação de mercados
    * multi-runner no admin de eventos.
    */
-  async listLiveMarkets(eventId?: string) {
+  async listLiveMarkets(eventId?: string, settledWithinHours?: number) {
+    // Opcionalmente inclui mercados AUDITADOS recentes (settledWithinHours,
+    // cap 72h) — o Modo Pista mostra pro auditor o que já foi liquidado hoje.
+    const liveStatuses = [MarketStatus.OPEN, MarketStatus.CLOSED, MarketStatus.SUSPENDED];
+    const hours = settledWithinHours && settledWithinHours > 0 ? Math.min(settledWithinHours, 72) : null;
+    const statusWhere: Prisma.MarketWhereInput = hours
+      ? {
+          OR: [
+            { status: { in: liveStatuses } },
+            { status: MarketStatus.SETTLED, updatedAt: { gte: new Date(Date.now() - hours * 3_600_000) } },
+          ],
+        }
+      : { status: { in: liveStatuses } };
+
     const markets = await this.prisma.market.findMany({
       where: {
-        status: { in: [MarketStatus.OPEN, MarketStatus.CLOSED, MarketStatus.SUSPENDED] },
+        ...statusWhere,
         ...(eventId ? { eventId } : {}),
       },
       orderBy: { createdAt: 'desc' },
       include: {
         event: { select: { id: true, name: true, startAt: true, status: true } },
         odds: { orderBy: { createdAt: 'asc' } },
-        duel: { select: { poolState: true } },
+        // isCustom permite o front distinguir embate personalizado de rápido
+        // quando o duelo não tem matchup de origem.
+        duel: { select: { poolState: true, isCustom: true } },
       },
     });
 
-    // Enriquece com origem (Lista/Armageddon) + posição dos pilotos pra ajudar
-    // a auditoria saber qual confronto de cada lista está vendo. Sem isso, o
-    // operador precisa abrir outra aba e cruzar manualmente.
+    // Enriquece com origem (Lista/Armageddon/Copa) + matchupId + posição dos
+    // pilotos + contexto legível ("Chave B · R2"). O matchupId é o que os
+    // endpoints de abrir/fechar/auditar da origem recebem — sem ele o auditor
+    // precisa abrir outra aba e cruzar manualmente.
     // Potes por opção dos mercados multi-runner (o pote dos DUEL vem do poolState).
     const withPools = await this.attachOddPools(markets);
 
@@ -1567,14 +1602,21 @@ export class AdminService {
       return withPools.map((m) => ({ ...m, matchupOrigin: null as MatchupOrigin | null }));
     }
 
-    const [listMatchups, armaMatchups] = await Promise.all([
+    const [listMatchups, armaMatchups, categoryMatchups] = await Promise.all([
       this.prisma.listMatchup.findMany({
         where: { duelId: { in: duelIds } },
-        select: { duelId: true, leftPosition: true, rightPosition: true },
+        select: { id: true, duelId: true, leftPosition: true, rightPosition: true, roundNumber: true, roundType: true },
       }),
       this.prisma.armageddonMatchup.findMany({
         where: { duelId: { in: duelIds } },
-        select: { duelId: true, leftPosition: true, rightPosition: true },
+        select: {
+          id: true, duelId: true, leftPosition: true, rightPosition: true,
+          roundNumber: true, stage: true, bracketKey: true, isFinal: true, isThirdPlace: true,
+        },
+      }),
+      this.prisma.categoryMatchup.findMany({
+        where: { duelId: { in: duelIds } },
+        select: { id: true, duelId: true, roundNumber: true, position: true, isSuperFinal: true, bracket: { select: { category: true } } },
       }),
     ]);
 
@@ -1583,17 +1625,39 @@ export class AdminService {
       if (m.duelId) {
         originByDuel.set(m.duelId, {
           type: 'LIST',
+          matchupId: m.id,
           leftPosition: m.leftPosition,
           rightPosition: m.rightPosition,
+          context: m.roundType === 'SHARK_TANK' ? 'Shark Tank' : `Rodada ${m.roundNumber}`,
         });
       }
     }
     for (const m of armaMatchups) {
       if (m.duelId) {
+        const context = m.isFinal ? 'Final'
+          : m.isThirdPlace ? '3º lugar'
+          : m.bracketKey ? `Chave ${m.bracketKey} · R${m.roundNumber}`
+          : m.stage === 'SECOND_DRAW' ? `Top 32 · R${m.roundNumber}`
+          : `R${m.roundNumber}`;
         originByDuel.set(m.duelId, {
           type: 'ARMAGEDDON',
+          matchupId: m.id,
           leftPosition: m.leftPosition,
           rightPosition: m.rightPosition,
+          context,
+        });
+      }
+    }
+    for (const m of categoryMatchups) {
+      if (m.duelId) {
+        const cat = m.bracket ? TIME_CATEGORY_LABEL[m.bracket.category] ?? m.bracket.category : null;
+        const stage = m.isSuperFinal ? 'Super Final' : `R${m.roundNumber} · Jogo ${m.position}`;
+        originByDuel.set(m.duelId, {
+          type: 'CATEGORY',
+          matchupId: m.id,
+          leftPosition: null,
+          rightPosition: null,
+          context: cat ? `${cat} · ${stage}` : stage,
         });
       }
     }
@@ -1957,6 +2021,23 @@ export class AdminService {
   async voidMarket(marketId: string, audit: AuditContext = {}) {
     const result = await this.settlementService.voidMarket(marketId, audit);
     this.multiRunnerService.removeMarket(marketId);
+    return result;
+  }
+
+  /**
+   * Reabre um mercado JÁ AUDITADO: estorna a liquidação (refund dos stakes,
+   * reversão dos pagamentos, mercado volta a OPEN). Cobre embate rápido,
+   * personalizado, multi-mercado, Copa e Lista (o refundSettledMarket também
+   * desfaz o swap de roster da Lista). Para Armageddon use o reopen da origem
+   * (armageddon/matchups/:id/reopen), que reverte o avanço de chave em cascata.
+   */
+  async reopenSettledMarket(marketId: string, audit: AuditContext = {}) {
+    const result = await this.settlementService.refundSettledMarket(marketId, audit);
+    // Recarrega os engines em memória para o mercado reaberto (agora OPEN) voltar
+    // ao ar no /apostas: drop do estado multi-runner liquidado + refresh dos
+    // duelos (o Modo Pista já lê do banco, então lá é imediato).
+    this.multiRunnerService.removeMarket(marketId);
+    await this.marketService.refreshNow().catch(() => undefined);
     return result;
   }
 

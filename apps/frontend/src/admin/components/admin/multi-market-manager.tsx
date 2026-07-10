@@ -259,7 +259,7 @@ export function MultiMarketManager({ armageddonEventId, roster, eventName }: {
                 return (
                   <div key={r.oddId} className="rounded-[10px] px-3 py-2 flex items-center justify-between gap-2"
                     style={{ background: isWinner ? 'rgba(33, 217, 122, 0.12)' : 'rgba(255,255,255,0.02)', border: '1px solid ' + (isWinner ? 'var(--emerald)' : 'var(--border)') }}>
-                    <div className="text-[12.5px] font-semibold truncate flex items-center gap-1.5">{isWinner && <I.Trophy size={13} style={{ color: 'var(--emerald)', flexShrink: 0 }} />}<span className="truncate">{r.label}</span></div>
+                    <div className="min-w-0 text-[12.5px] font-semibold truncate flex items-center gap-1.5">{isWinner && <I.Trophy size={13} style={{ color: 'var(--emerald)', flexShrink: 0 }} />}<span className="truncate">{r.label}</span></div>
                     <div className="text-right flex-shrink-0 leading-tight">
                       <div className="font-mono font-bold text-[12px]" style={{ color: '#7cd0ff' }}>
                         {r.pool > 0 ? `${r.projectedOdd.toFixed(2)}x` : '—'}
@@ -395,7 +395,7 @@ function CreateMultiMarketModal({ armageddonEventId, roster, eventName, onClose,
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-lg max-h-[90dvh] overflow-y-auto">
         <div className="font-display text-[18px] font-bold">Novo multi-mercado</div>
         <div className="text-[12px] text-[color:var(--text-3)] mt-0.5">
           As odds são dinâmicas: o pote é dividido entre quem acertar, proporcional ao valor apostado.
@@ -422,7 +422,7 @@ function CreateMultiMarketModal({ armageddonEventId, roster, eventName, onClose,
         <div className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] mt-4 mb-2">
           Pilotos do mercado ({selectedCount})
         </div>
-        <div className="flex gap-2 mb-2">
+        <div className="flex gap-2 mb-2 flex-wrap">
           <button type="button" className="btn btn-ghost flex-1 justify-center" onClick={() => setMode('all')}
             style={{ border: '1px solid ' + (mode === 'all' ? 'var(--accent)' : 'var(--border)'), color: mode === 'all' ? 'var(--accent)' : undefined }}>
             Todos do roster ({roster.length})
@@ -459,7 +459,7 @@ function CreateMultiMarketModal({ armageddonEventId, roster, eventName, onClose,
           realizada (pote − prêmios pagos) — a casa só sedia as apostas, nunca custeia prêmio.
         </div>
 
-        <div className="flex gap-2 mt-5">
+        <div className="flex gap-2 mt-5 flex-wrap">
           <button className="btn btn-ghost flex-1 justify-center" onClick={onClose} disabled={busy}>Cancelar</button>
           <button className="btn btn-primary flex-1 justify-center" onClick={submit} disabled={busy || (mode === 'pick' && picked.size < 2)}>
             {busy ? <><span className="pulse-dot"/> Criando…</> : <><I.Plus size={14}/> Criar e abrir apostas</>}
@@ -497,7 +497,7 @@ function SettleMultiMarketModal({ market, onClose, onSaved }: {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md max-h-[90dvh] overflow-y-auto">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-[12px] grid place-items-center" style={{ background: 'var(--emerald-soft)', color: 'var(--emerald)' }}>
             <I.Trophy size={18}/>
@@ -548,7 +548,7 @@ function SettleMultiMarketModal({ market, onClose, onSaved }: {
           </div>
         )}
 
-        <div className="flex gap-2 mt-5">
+        <div className="flex gap-2 mt-5 flex-wrap">
           <button className="btn btn-ghost flex-1 justify-center" onClick={onClose} disabled={busy}>Cancelar</button>
           <button className="btn btn-primary flex-1 justify-center" onClick={submit} disabled={!winnerOddId || busy}>
             {busy ? <><span className="pulse-dot"/> Auditando…</> : <><I.Check size={14}/> Confirmar e pagar</>}
@@ -579,7 +579,7 @@ function SettlementSummaryModal({ marketId, onClose }: { marketId: string; onClo
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
-      <div className="surface-elev p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-lg max-h-[90dvh] overflow-y-auto">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="font-display text-[18px] font-bold">Fechamento financeiro</div>

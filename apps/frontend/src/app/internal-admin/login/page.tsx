@@ -64,7 +64,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2" style={{ background: 'var(--bg)' }}>
+    <div className="min-h-dvh grid lg:grid-cols-2" style={{ background: 'var(--bg)' }}>
       <div className="hidden lg:flex relative items-center justify-center p-12 overflow-hidden"
         style={{
           background: 'radial-gradient(circle at 30% 20%, rgba(255,176,40,0.18), transparent 55%), radial-gradient(circle at 70% 80%, rgba(255,90,108,0.12), transparent 50%), var(--bg-2)',
@@ -170,8 +170,8 @@ export default function LoginPage() {
                     <input key={i} ref={(el) => { refs.current[i] = el; }} type="text" inputMode="numeric" maxLength={1} value={c}
                       onChange={(e) => setDigit(i, e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Backspace' && !code[i] && i > 0) refs.current[i - 1]?.focus(); }}
-                      className="font-display text-[22px] font-bold text-center"
-                      style={{ width: 48, height: 56, borderRadius: 12, background: 'var(--surface)', border: '1px solid ' + (c ? 'var(--accent-ring)' : 'var(--border-strong)'), color: 'var(--text)' }}/>
+                      className="font-display text-[22px] font-bold text-center flex-1 min-w-0 max-w-[48px]"
+                      style={{ height: 56, borderRadius: 12, background: 'var(--surface)', border: '1px solid ' + (c ? 'var(--accent-ring)' : 'var(--border-strong)'), color: 'var(--text)' }}/>
                   ))}
                 </div>
               ) : (

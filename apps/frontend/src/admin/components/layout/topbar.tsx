@@ -6,9 +6,9 @@ import { useRouter } from 'next/navigation';
 import { I } from '../ui/icons';
 import { getStoredAdminUser, logout } from '@admin/lib/auth';
 
-type Props = { openCmdK: () => void };
+type Props = { openCmdK: () => void; openMobileNav: () => void };
 
-export const Topbar: React.FC<Props> = ({ openCmdK }) => {
+export const Topbar: React.FC<Props> = ({ openCmdK, openMobileNav }) => {
   const router = useRouter();
   const [user, setUser] = React.useState<{ email: string; role: string } | null>(null);
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -33,26 +33,32 @@ export const Topbar: React.FC<Props> = ({ openCmdK }) => {
   };
 
   return (
-    <header className="h-[68px] flex items-center gap-3 px-7 shrink-0"
+    <header className="h-[68px] flex items-center gap-2 sm:gap-3 px-3 sm:px-5 lg:px-7 shrink-0"
       style={{ borderBottom: '1px solid var(--border)', background: 'rgba(7,8,12,0.7)', backdropFilter: 'blur(8px)' }}>
-      <div className="flex items-center gap-2 text-[12px] text-[color:var(--text-3)]">
+      <button onClick={openMobileNav} className="btn-icon focusable lg-down" title="Abrir menu" aria-label="Abrir menu">
+        <I.Menu size={18}/>
+      </button>
+      <div className="hidden md:flex items-center gap-2 text-[12px] text-[color:var(--text-3)]">
         <span className="text-[color:var(--text-2)]">Admin</span>
         <I.ChevronRight size={13}/>
         <span className="text-[color:var(--text)] font-medium">Visão geral</span>
       </div>
       <div className="flex-1"/>
-      <button onClick={openCmdK} className="btn btn-ghost focusable" style={{ paddingLeft: 12, paddingRight: 12 }}>
+      <button onClick={openCmdK} className="btn btn-ghost focusable md-up" style={{ paddingLeft: 12, paddingRight: 12 }}>
         <I.Search size={15}/>
         <span className="text-[color:var(--text-3)] font-medium">Buscar pilotos, eventos…</span>
-        <span className="flex items-center gap-1 ml-2"><kbd>⌘</kbd><kbd>K</kbd></span>
+        <span className="lg-up flex items-center gap-1 ml-2"><kbd>⌘</kbd><kbd>K</kbd></span>
       </button>
-      <div className="h-7 w-px" style={{ background: 'var(--border)' }}/>
+      <button onClick={openCmdK} className="btn-icon focusable md-down" title="Buscar" aria-label="Buscar">
+        <I.Search size={17}/>
+      </button>
+      <div className="h-7 w-px hidden sm:block" style={{ background: 'var(--border)' }}/>
       <button className="btn-icon focusable relative" title="Notificações">
         <I.Bell size={17}/>
         <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent)' }}/>
       </button>
       <Link href="/eventos" className="btn btn-primary focusable">
-        <I.Plus size={15}/> Novo evento
+        <I.Plus size={15}/> <span className="hidden sm:inline">Novo evento</span>
       </Link>
 
       {/* Avatar + menu de usuário (logado) */}

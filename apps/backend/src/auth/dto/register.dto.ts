@@ -3,9 +3,9 @@ import {
   IsEmail,
   IsOptional,
   IsString,
-  Matches,
   MinLength,
 } from 'class-validator';
+import { IsCPF } from '../../common/validators/cpf.validator';
 
 export class RegisterDto {
   @IsEmail()
@@ -27,7 +27,7 @@ export class RegisterDto {
   // antes de depositar/sacar/apostar (gated em profileComplete)
   @IsOptional()
   @IsString()
-  @Matches(/^\d{11}$/, { message: 'CPF deve conter 11 dígitos numéricos' })
+  @IsCPF()
   cpf?: string;
 
   @IsOptional()

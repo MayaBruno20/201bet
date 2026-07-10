@@ -116,12 +116,15 @@ export class CategoryEventsAdminController {
   }
 
   // Toggle market (abre/fecha apostas para o matchup)
+  // Modo Pista: AUDITOR também audita e abre/fecha mercados da cabeceira.
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Patch('matchups/:matchupId/market')
   toggleMarket(@Param('matchupId', ParseUUIDPipe) matchupId: string, @Body() body: { open: boolean }, @Req() req: ReqUser) {
     return this.svc.adminToggleMatchupMarket(matchupId, !!body.open, this.audit(req));
   }
 
   // Settle matchup
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Post('matchups/:matchupId/settle')
   settle(@Param('matchupId', ParseUUIDPipe) matchupId: string, @Body() dto: SettleCategoryMatchupDto, @Req() req: ReqUser) {
     return this.svc.adminSettleMatchup(matchupId, dto, this.audit(req));
