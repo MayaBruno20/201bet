@@ -22,6 +22,21 @@ const CATEGORY_MIN_TIME: Record<TimeCategory, number | null> = {
   CAT_5_5S: 5.5,
   TUDOKIDA: null,
   APRESENTACAO: null,
+  // Copa MT No Prep: categorias-pai (grupos unificados) sem índice único.
+  PRO: null,
+  RACING: null,
+  STREET: null,
+  // Subcategorias: Pro/Dragster sem índice; NoPrep X.X com o índice no nome.
+  BIG_TIRE_PRO: null,
+  SMALL_TIRE_PRO: null,
+  RADIAL_RACING: null,
+  NOPREP_70: 7.0,
+  NOPREP_80: 8.0,
+  NOPREP_90: 9.0,
+  NOPREP_95: 9.5,
+  NOPREP_10: 10.0,
+  NOPREP_11: 11.0,
+  DRAGSTER_JUNIOR: null,
 };
 
 @Injectable()

@@ -1,0 +1,12 @@
+-- Categorias Copa MT No Prep: adiciona os 10 valores ao enum TimeCategory
+-- (reaproveita o bracket de categoria da Copa Categorias). Aditivo e idempotente.
+ALTER TYPE "TimeCategory" ADD VALUE IF NOT EXISTS 'BIG_TIRE_PRO';
+ALTER TYPE "TimeCategory" ADD VALUE IF NOT EXISTS 'SMALL_TIRE_PRO';
+ALTER TYPE "TimeCategory" ADD VALUE IF NOT EXISTS 'RADIAL_RACING';
+ALTER TYPE "TimeCategory" ADD VALUE IF NOT EXISTS 'NOPREP_70';
+ALTER TYPE "TimeCategory" ADD VALUE IF NOT EXISTS 'NOPREP_80';
+ALTER TYPE "TimeCategory" ADD VALUE IF NOT EXISTS 'NOPREP_90';
+ALTER TYPE "TimeCategory" ADD VALUE IF NOT EXISTS 'NOPREP_95';
+ALTER TYPE "TimeCategory" ADD VALUE IF NOT EXISTS 'NOPREP_10';
+ALTER TYPE "TimeCategory" ADD VALUE IF NOT EXISTS 'NOPREP_11';
+ALTER TYPE "TimeCategory" ADD VALUE IF NOT EXISTS 'DRAGSTER_JUNIOR';

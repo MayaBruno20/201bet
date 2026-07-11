@@ -66,6 +66,19 @@ const CATEGORIES = [
   { value: 'CAT_5_5S', label: '5,5s' },
   { value: 'TUDOKIDA', label: 'TUDOKIDÁ' },
   { value: 'APRESENTACAO', label: 'Apresentação' },
+  { value: 'PRO', label: 'Pro' },
+  { value: 'RACING', label: 'Racing' },
+  { value: 'STREET', label: 'Street' },
+  { value: 'BIG_TIRE_PRO', label: 'Big Tire Pro' },
+  { value: 'SMALL_TIRE_PRO', label: 'Small Tire Pro' },
+  { value: 'RADIAL_RACING', label: 'Radial Racing' },
+  { value: 'NOPREP_70', label: 'No Prep 7.0s' },
+  { value: 'NOPREP_80', label: 'No Prep 8.0s' },
+  { value: 'NOPREP_90', label: 'No Prep 9.0s' },
+  { value: 'NOPREP_95', label: 'No Prep 9.5s' },
+  { value: 'NOPREP_10', label: 'No Prep 10s' },
+  { value: 'NOPREP_11', label: 'No Prep 11s' },
+  { value: 'DRAGSTER_JUNIOR', label: 'Dragster Junior' },
 ];
 
 const SUPER_FINAL_ROUND = 99;

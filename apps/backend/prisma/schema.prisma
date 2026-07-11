@@ -166,6 +166,22 @@ enum TimeCategory {
   CAT_5_5S
   TUDOKIDA
   APRESENTACAO
+  // Categorias Copa MT No Prep (usam o mesmo bracket de categoria da Copa).
+  // Categorias-pai usadas na 1ª Etapa (evento unificado por grupo):
+  PRO
+  RACING
+  STREET
+  // Subcategorias (disponíveis para etapas futuras que quiserem dividir):
+  BIG_TIRE_PRO
+  SMALL_TIRE_PRO
+  RADIAL_RACING
+  NOPREP_70
+  NOPREP_80
+  NOPREP_90
+  NOPREP_95
+  NOPREP_10
+  NOPREP_11
+  DRAGSTER_JUNIOR
 }
 
 enum CategoryMatchupStatus {
