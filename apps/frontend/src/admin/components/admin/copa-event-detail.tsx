@@ -325,7 +325,37 @@ function BracketPanel({
   busy: string | null;
 }) {
   const { push } = useToast();
+  const confirm = useConfirm();
   const [drag, setDrag] = React.useState<string | null>(null);
+  const [editing, setEditing] = React.useState<CategoryCompetitor | null>(null);
+  const [rowBusy, setRowBusy] = React.useState<string | null>(null);
+
+  const saveCompetitor = async (competitorId: string, data: { carName?: string; carNumber?: string }) => {
+    setRowBusy(competitorId);
+    try {
+      await api.patch(ENDPOINTS.CATEGORY_EVENTS.competitors.update(competitorId), data);
+      push({ title: 'Piloto atualizado', tone: 'emerald' });
+      setEditing(null);
+      await onChanged();
+    } catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
+    finally { setRowBusy(null); }
+  };
+
+  const removeCompetitor = async (c: CategoryCompetitor) => {
+    const ok = await confirm({
+      title: 'Remover piloto?',
+      body: <>Remove <strong>{c.driver.name}</strong> desta categoria.</>,
+      tone: 'danger', confirmLabel: 'Remover', icon: 'Trash',
+    });
+    if (!ok) return;
+    setRowBusy(c.id);
+    try {
+      await api.del(ENDPOINTS.CATEGORY_EVENTS.competitors.delete(c.id));
+      push({ title: 'Piloto removido', tone: 'amber' });
+      await onChanged();
+    } catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
+    finally { setRowBusy(null); }
+  };
 
   const meta = CATEGORIES.find((c) => c.value === bracket.category);
   const rounds = getRounds(bracket.size);
@@ -437,6 +467,16 @@ function BracketPanel({
                   <div className="text-[12.5px] font-medium truncate">{c.driver.name}</div>
                   {c.carName && <div className="text-[10.5px] text-[color:var(--text-3)] truncate">{c.carName}</div>}
                 </div>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button className="btn-icon focusable" style={{ width: 26, height: 26 }} title="Editar piloto"
+                    onClick={(e) => { e.stopPropagation(); setEditing(c); }} disabled={rowBusy === c.id}>
+                    <I.Edit size={13}/>
+                  </button>
+                  <button className="btn-icon focusable" style={{ width: 26, height: 26, color: '#ff7585' }} title="Remover piloto"
+                    onClick={(e) => { e.stopPropagation(); void removeCompetitor(c); }} disabled={rowBusy === c.id}>
+                    <I.Trash size={13}/>
+                  </button>
+                </div>
               </div>
             ))}
             {availableCompetitors.length === 0 && (
@@ -482,7 +522,53 @@ function BracketPanel({
           </div>
         </div>
       </div>
+
+      {editing && (
+        <EditCompetitorModal
+          competitor={editing}
+          onClose={() => setEditing(null)}
+          onSubmit={saveCompetitor}
+          busy={rowBusy === editing.id}
+        />
+      )}
     </Card>
+  );
+}
+
+/* ───── Modal: editar piloto (carro/número) ───── */
+
+function EditCompetitorModal({ competitor, onClose, onSubmit, busy }: {
+  competitor: CategoryCompetitor;
+  onClose: () => void;
+  onSubmit: (competitorId: string, data: { carName?: string; carNumber?: string }) => Promise<void>;
+  busy: boolean;
+}) {
+  const [car, setCar] = React.useState(competitor.carName ?? '');
+  const [number, setNumber] = React.useState(competitor.carNumber ?? '');
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md">
+        <div className="font-display text-[18px] font-bold mb-1">Editar piloto</div>
+        <div className="text-[12px] text-[color:var(--text-3)] mb-4">{competitor.driver.name}</div>
+
+        <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Carro</label>
+        <input className="input mt-1 mb-3" value={car} onChange={(e) => setCar(e.target.value)} placeholder="Modelo do carro" autoFocus />
+
+        <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Número</label>
+        <input className="input mt-1" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="Nº largada" inputMode="numeric" />
+
+        <div className="text-[10.5px] text-[color:var(--text-4)] mt-2">Para trocar o nome ou a categoria, remova e adicione o piloto de novo.</div>
+
+        <div className="flex gap-2 mt-5">
+          <button className="btn btn-ghost flex-1 justify-center" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button className="btn btn-primary flex-1 justify-center" disabled={busy}
+            onClick={() => onSubmit(competitor.id, { carName: car.trim() || undefined, carNumber: number.trim() || undefined })}>
+            {busy ? <><span className="pulse-dot"/> Salvando…</> : <><I.Save size={14}/> Salvar</>}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
