@@ -163,6 +163,19 @@ const TIME_CATEGORY_LABEL: Record<string, string> = {
   CAT_5_5S: '5,5s',
   TUDOKIDA: 'TUDOKIDÁ',
   APRESENTACAO: 'Apresentação',
+  PRO: 'Pro',
+  RACING: 'Racing',
+  STREET: 'Street',
+  BIG_TIRE_PRO: 'Big Tire Pro',
+  SMALL_TIRE_PRO: 'Small Tire Pro',
+  RADIAL_RACING: 'Radial Racing',
+  NOPREP_70: 'No Prep 7.0s',
+  NOPREP_80: 'No Prep 8.0s',
+  NOPREP_90: 'No Prep 9.0s',
+  NOPREP_95: 'No Prep 9.5s',
+  NOPREP_10: 'No Prep 10s',
+  NOPREP_11: 'No Prep 11s',
+  DRAGSTER_JUNIOR: 'Dragster Junior',
 };
 
 const LIST_ROUND_LABEL: Record<string, string> = {
