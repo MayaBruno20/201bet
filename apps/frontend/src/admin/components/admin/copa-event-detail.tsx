@@ -93,6 +93,7 @@ export function CopaEventDetail({ eventId, onChanged }: { eventId: string; onCha
   const [activeBracketId, setActiveBracketId] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [showAddCategory, setShowAddCategory] = React.useState(false);
+  const [showAddPilot, setShowAddPilot] = React.useState(false);
   const [showSuperFinal, setShowSuperFinal] = React.useState(false);
   const [auditMatchup, setAuditMatchup] = React.useState<CategoryMatchup | null>(null);
   const [auditWinnerSide, setAuditWinnerSide] = React.useState<'LEFT' | 'RIGHT'>('LEFT');
@@ -121,6 +122,18 @@ export function CopaEventDetail({ eventId, onChanged }: { eventId: string; onCha
       await api.post(ENDPOINTS.CATEGORY_EVENTS.brackets.create(eventId), { category, size });
       push({ title: 'Categoria adicionada', tone: 'emerald' });
       setShowAddCategory(false);
+      await load();
+      onChanged?.();
+    } catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
+    finally { setBusy(null); }
+  };
+
+  const addPilot = async (bracketId: string, data: { driverName: string; carName?: string; carNumber?: string }) => {
+    setBusy('add-pilot');
+    try {
+      await api.post(ENDPOINTS.CATEGORY_EVENTS.competitors.upsert(bracketId), data);
+      push({ title: 'Piloto adicionado', tone: 'emerald' });
+      setShowAddPilot(false);
       await load();
       onChanged?.();
     } catch (e) { push({ title: 'Erro', body: e instanceof Error ? e.message : '', tone: 'rose' }); }
@@ -216,6 +229,11 @@ export function CopaEventDetail({ eventId, onChanged }: { eventId: string; onCha
           <button className="tab" onClick={() => setShowAddCategory(true)}>
             <I.Plus size={12}/> Categoria
           </button>
+          {detail.brackets.length > 0 && (
+            <button className="btn btn-primary ml-auto" onClick={() => setShowAddPilot(true)}>
+              <I.Plus size={14}/> Adicionar piloto
+            </button>
+          )}
         </div>
       </Card>
 
@@ -251,6 +269,17 @@ export function CopaEventDetail({ eventId, onChanged }: { eventId: string; onCha
           existingCategories={detail.brackets.map((b) => b.category)}
           onSubmit={addCategory}
           busy={busy === 'add-cat'}
+        />
+      )}
+
+      {/* Modal: adicionar piloto */}
+      {showAddPilot && (
+        <AddPilotModal
+          brackets={detail.brackets}
+          defaultBracketId={activeBracketId}
+          onClose={() => setShowAddPilot(false)}
+          onSubmit={addPilot}
+          busy={busy === 'add-pilot'}
         />
       )}
 
@@ -597,6 +626,65 @@ function AddCategoryModal({ existingCategories, onClose, onSubmit, busy }: {
         <div className="flex gap-2 mt-5">
           <button className="btn btn-ghost flex-1 justify-center" onClick={onClose} disabled={busy}>Cancelar</button>
           <button className="btn btn-primary flex-1 justify-center" disabled={!category || busy} onClick={() => onSubmit(category, size)}>
+            {busy ? <><span className="pulse-dot"/> Adicionando…</> : <><I.Plus size={14}/> Adicionar</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ───── Modal: adicionar piloto ───── */
+
+function AddPilotModal({ brackets, defaultBracketId, onClose, onSubmit, busy }: {
+  brackets: CategoryBracket[];
+  defaultBracketId: string | null;
+  onClose: () => void;
+  onSubmit: (bracketId: string, data: { driverName: string; carName?: string; carNumber?: string }) => Promise<void>;
+  busy: boolean;
+}) {
+  const [name, setName] = React.useState('');
+  const [car, setCar] = React.useState('');
+  const [number, setNumber] = React.useState('');
+  const [bracketId, setBracketId] = React.useState(defaultBracketId ?? brackets[0]?.id ?? '');
+
+  const canSubmit = name.trim().length > 0 && !!bracketId && !busy;
+  const submit = () => onSubmit(bracketId, {
+    driverName: name.trim(),
+    carName: car.trim() || undefined,
+    carNumber: number.trim() || undefined,
+  });
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center cmdk-overlay p-4">
+      <div className="surface-elev p-4 sm:p-6 w-full max-w-md">
+        <div className="font-display text-[18px] font-bold mb-2">Adicionar piloto</div>
+        <div className="text-[12px] text-[color:var(--text-3)] mb-4">Inscreve um piloto numa categoria do evento.</div>
+
+        <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Nome do piloto</label>
+        <input className="input mt-1 mb-3" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: João Silva" autoFocus />
+
+        <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Carro</label>
+        <input className="input mt-1 mb-3" value={car} onChange={(e) => setCar(e.target.value)} placeholder="Ex.: Gol Turbo" />
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Categoria</label>
+            <select className="input mt-1 w-full" value={bracketId} onChange={(e) => setBracketId(e.target.value)}>
+              {brackets.map((b) => (
+                <option key={b.id} value={b.id}>{CATEGORIES.find((c) => c.value === b.category)?.label ?? b.category}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10.5px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)]">Número</label>
+            <input className="input mt-1" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="Nº largada" inputMode="numeric" />
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-5">
+          <button className="btn btn-ghost flex-1 justify-center" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button className="btn btn-primary flex-1 justify-center" disabled={!canSubmit} onClick={submit}>
             {busy ? <><span className="pulse-dot"/> Adicionando…</> : <><I.Plus size={14}/> Adicionar</>}
           </button>
         </div>
