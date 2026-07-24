@@ -258,6 +258,36 @@ const MarketCard: React.FC<CardProps> = ({ m, auditing, isBusy, onClose, onOpen,
   );
 };
 
+/* ─── Barra de controle do evento (abrir/fechar todos + gerar rodada) ─── */
+
+const EventControls: React.FC<{
+  ev: { originEventId: string; eventName: string };
+  busy: boolean;
+  onOpenAll: () => void;
+  onCloseAll: () => void;
+  onGenerate: (rt: 'ODD' | 'EVEN') => void;
+}> = ({ ev, busy, onOpenAll, onCloseAll, onGenerate }) => {
+  const [rt, setRt] = React.useState<'ODD' | 'EVEN'>('ODD');
+  return (
+    <div className="surface p-3 flex items-center gap-2 flex-wrap">
+      <div className="font-display text-[13px] font-bold flex-1 min-w-0 truncate">{ev.eventName}</div>
+      <select className="input" style={{ width: 96 }} value={rt} onChange={(e) => setRt(e.target.value as 'ODD' | 'EVEN')} disabled={busy}>
+        <option value="ODD">Ímpar</option>
+        <option value="EVEN">Par</option>
+      </select>
+      <button className="btn btn-ghost" style={{ paddingTop: 10, paddingBottom: 10 }} onClick={() => onGenerate(rt)} disabled={busy}>
+        <I.Plus size={14}/> Gerar rodada
+      </button>
+      <button className="btn btn-ghost" style={{ paddingTop: 10, paddingBottom: 10, color: '#3ee093' }} onClick={onOpenAll} disabled={busy}>
+        <I.Play size={14}/> Abrir todos
+      </button>
+      <button className="btn btn-ghost" style={{ paddingTop: 10, paddingBottom: 10, color: 'var(--accent)' }} onClick={onCloseAll} disabled={busy}>
+        <I.Pause size={14}/> Fechar todos
+      </button>
+    </div>
+  );
+};
+
 /* ─── Página ─── */
 
 export default function PistaPage() {
@@ -444,6 +474,27 @@ export default function PistaPage() {
     await run(m.id, () => api.post(ENDPOINTS.MARKETS.settle(m.id), { winnerOddId: oddId }), 'Auditado ✓', `${odd.label} venceu.`);
   };
 
+  /* ─── Controles em lote por evento (Listas Brasil) ─── */
+
+  const listEvents = React.useMemo(() => {
+    const map = new Map<string, { originEventId: string; eventName: string }>();
+    for (const m of markets) {
+      if (m.matchupOrigin?.type === 'LIST' && m.matchupOrigin.originEventId) {
+        map.set(m.matchupOrigin.originEventId, { originEventId: m.matchupOrigin.originEventId, eventName: m.eventName });
+      }
+    }
+    return Array.from(map.values());
+  }, [markets]);
+
+  type ListEvt = { originEventId: string; eventName: string };
+  const openAllRound = (ev: ListEvt) =>
+    run(ev.originEventId, () => api.post(ENDPOINTS.BRAZIL_LISTS.events.openAllMarkets(ev.originEventId)), 'Mercados abertos', ev.eventName);
+  const closeAllRound = (ev: ListEvt) =>
+    run(ev.originEventId, () => api.post(ENDPOINTS.BRAZIL_LISTS.events.closeAllMarkets(ev.originEventId)), 'Mercados fechados', ev.eventName);
+  const generateRound = (ev: ListEvt, roundType: 'ODD' | 'EVEN') =>
+    run(ev.originEventId, () => api.post(ENDPOINTS.BRAZIL_LISTS.events.generateMatchups(ev.originEventId), { roundType }),
+      'Rodada gerada', `${ev.eventName} · ${roundType === 'ODD' ? 'Ímpar' : 'Par'}`);
+
   /* ─── Filtros ─── */
 
   const counts = React.useMemo(() => ({
@@ -533,6 +584,18 @@ export default function PistaPage() {
           </span>
         </div>
       </div>
+
+      {listEvents.length > 0 && (
+        <div className="max-w-xl mx-auto space-y-2 mt-3">
+          <div className="text-[10.5px] font-semibold tracking-[0.14em] uppercase" style={{ color: 'var(--text-3)' }}>Controle do evento (Listas)</div>
+          {listEvents.map((ev) => (
+            <EventControls key={ev.originEventId} ev={ev} busy={busy.has(ev.originEventId)}
+              onOpenAll={() => void openAllRound(ev)}
+              onCloseAll={() => void closeAllRound(ev)}
+              onGenerate={(rt) => void generateRound(ev, rt)}/>
+          ))}
+        </div>
+      )}
 
       <div className="max-w-xl mx-auto space-y-3 mt-3">
         {loading && markets.length === 0 && (

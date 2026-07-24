@@ -324,6 +324,8 @@ export type MatchupOrigin = {
   type: 'LIST' | 'ARMAGEDDON' | 'CATEGORY';
   // Id do matchup de origem — alvo dos endpoints de abrir/fechar/auditar.
   matchupId: string;
+  // Id do evento de origem — alvo dos controles em lote (gerar rodada, abrir/fechar todos).
+  originEventId: string;
   leftPosition: number | null;
   rightPosition: number | null;
   // Localização legível ("Chave B · R2", "9s · Super Final").

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { I, type IconName } from '../ui/icons';
 import { Avatar } from '../ui/primitives';
 import { NAV } from '@admin/lib/data';
+import { getStoredAdminUser } from '@admin/lib/auth';
 
 type Props = {
   collapsed: boolean;
@@ -17,8 +18,13 @@ type Props = {
 
 export const Sidebar: React.FC<Props> = ({ collapsed, setCollapsed, mobileOpen, setMobileOpen, openCmdK }) => {
   const pathname = usePathname();
+  // Auditor só enxerga o Modo Pista na navegação (lido no cliente pra evitar
+  // mismatch de hidratação — no 1º render mostra tudo, depois filtra).
+  const [role, setRole] = React.useState<string | null>(null);
+  React.useEffect(() => { setRole(getStoredAdminUser()?.role ?? null); }, []);
+  const navItems = role === 'AUDITOR' ? NAV.filter((it) => it.id === 'pista') : NAV;
   const groups: Record<string, typeof NAV> = {};
-  NAV.forEach((it) => { (groups[it.group] ||= []).push(it); });
+  navItems.forEach((it) => { (groups[it.group] ||= []).push(it); });
 
   // Fecha o drawer mobile ao navegar.
   React.useEffect(() => { setMobileOpen(false); }, [pathname, setMobileOpen]);

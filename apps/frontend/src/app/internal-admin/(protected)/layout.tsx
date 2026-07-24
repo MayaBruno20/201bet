@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar } from '@admin/components/layout/sidebar';
 import { Topbar } from '@admin/components/layout/topbar';
 import { CmdK } from '@admin/components/ui/cmdk';
@@ -13,7 +14,15 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   const [collapsed, setCollapsed] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [cmdkOpen, setCmdkOpen] = React.useState(false);
-  const { ready } = useAdminSession();
+  const { ready, user } = useAdminSession();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  // Auditor só pode ver o Modo Pista — qualquer outra rota redireciona pra /pista.
+  const auditorLocked = ready && user?.role === 'AUDITOR' && !pathname.startsWith('/pista');
+  React.useEffect(() => {
+    if (auditorLocked) router.replace('/pista');
+  }, [auditorLocked, router]);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -23,8 +32,8 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Enquanto valida a sessão, mostra um placeholder mínimo (evita flash da UI antes do redirect).
-  if (!ready) {
+  // Enquanto valida a sessão (ou redireciona o auditor), mostra um placeholder mínimo.
+  if (!ready || auditorLocked) {
     return (
       <div className="min-h-screen grid place-items-center" style={{ background: 'var(--bg)' }}>
         <div className="flex items-center gap-3 text-[color:var(--text-3)] text-[13px]">

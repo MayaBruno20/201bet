@@ -1075,6 +1075,41 @@ export class BrazilListsService {
     };
   }
 
+  /** Fecha (suspende) TODOS os embates com mercado aberto do evento. Usado pelo
+   *  controle "Fechar todos" do Modo Pista. Não reembolsa — só encerra a aposta. */
+  async adminCloseAllMatchups(eventId: string, audit: AuditContext) {
+    const event = await this.prisma.listEvent.findUnique({ where: { id: eventId } });
+    if (!event) throw new NotFoundException('Evento de lista não encontrado');
+
+    const matchups = await this.prisma.listMatchup.findMany({
+      where: { listEventId: eventId, marketOpen: true, winnerSide: null },
+      orderBy: { order: 'asc' },
+    });
+
+    let closed = 0;
+    const failures: Array<{ id: string; error: string }> = [];
+    for (const m of matchups) {
+      try {
+        await this.adminToggleMatchupMarket(m.id, false, audit);
+        closed += 1;
+      } catch (e) {
+        failures.push({ id: m.id, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: audit.actorUserId,
+        action: 'BRAZIL_CLOSE_ALL_MATCHUPS',
+        entity: 'ListEvent',
+        entityId: eventId,
+        payload: { closed, total: matchups.length, failures } as Prisma.InputJsonValue,
+      },
+    }).catch(() => undefined);
+
+    return { closed, total: matchups.length, failures };
+  }
+
   async adminUpsertMatchup(eventId: string, dto: UpsertMatchupDto, audit: AuditContext) {
     const event = await this.prisma.listEvent.findUnique({
       where: { id: eventId },
@@ -1467,6 +1502,23 @@ export class BrazilListsService {
   async adminDeleteMatchup(matchupId: string, audit: AuditContext) {
     const matchup = await this.prisma.listMatchup.findUnique({ where: { id: matchupId } });
     if (!matchup) throw new NotFoundException('Confronto não encontrado');
+
+    // Se o embate já tinha mercado (duelId), anula ele ANTES de deletar —
+    // reembolsa as apostas em aberto. voidMarket abre transação própria, então
+    // roda fora do $transaction abaixo (não dá pra aninhar).
+    if (matchup.duelId) {
+      const market = await this.prisma.market.findFirst({
+        where: { duelId: matchup.duelId, status: { in: [MarketStatus.OPEN, MarketStatus.CLOSED, MarketStatus.SUSPENDED] } },
+        select: { id: true },
+      });
+      if (market) {
+        try {
+          await this.settlementService.voidMarket(market.id, audit);
+        } catch (e) {
+          this.logger.warn(`Falha ao anular mercado do embate ${matchupId}: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+    }
 
     return this.prisma.$transaction(async (tx) => {
       await tx.listMatchup.delete({ where: { id: matchupId } });
