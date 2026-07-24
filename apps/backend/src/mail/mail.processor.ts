@@ -66,13 +66,16 @@ export class MailProcessor extends WorkerHost {
   }
 
   private buildMessage(job: Job<AnyEmailJobData>): EmailMessage {
+    const fromEmail =
+      this.config.get('EMAIL_FROM_ADDRESS', { infer: true }) ||
+      'noreply@example.com';
     const from = {
-      email: this.config.get('EMAIL_FROM_ADDRESS', { infer: true }),
+      email: fromEmail,
       name: this.config.get('EMAIL_FROM_NAME', { infer: true }),
     };
     const replyToEmail = this.config.get('EMAIL_REPLY_TO', { infer: true });
     const replyTo = replyToEmail ? { email: replyToEmail } : undefined;
-    const supportEmail = replyToEmail ?? from.email;
+    const supportEmail = replyToEmail || from.email;
     const manageEmailPrefsUrl = this.buildManageUrl();
     const logoUrl = this.buildLogoUrl();
     const year = new Date().getUTCFullYear();

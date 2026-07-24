@@ -1,6 +1,8 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 
+RUN apk add --no-cache openssl
+
 # Dependência local "201bet": "file:../.." em apps/backend/package.json
 COPY package.json ./
 COPY apps/backend/package.json apps/backend/package-lock.json ./apps/backend/
@@ -10,8 +12,8 @@ WORKDIR /app/apps/backend
 RUN npm ci --include=dev
 
 COPY apps/backend ./
-RUN npx prisma generate \
-  && npx nest build
+RUN ./node_modules/.bin/prisma generate \
+  && ./node_modules/.bin/nest build
 
 FROM node:22-alpine
 WORKDIR /app/apps/backend
