@@ -5,7 +5,7 @@
 #   export NEON_DATABASE_URL='postgresql://...@ep-xxx.neon.tech/betdb?sslmode=require'
 #   export TARGET_DATABASE_URL='postgresql://betuser:PASS@127.0.0.1:5432/betdb?schema=public'
 #   # Se o Postgres da VPS só está na rede Docker:
-#   #   docker compose -f docker-compose.prod.yml exec -T postgres \
+#   #   docker compose -f docker-compose.yml exec -T postgres \
 #   #     pg_restore ...  (ver modo --via-docker abaixo)
 #
 #   ./infra/hostinger/scripts/migrate-from-neon.sh
@@ -54,7 +54,7 @@ pg_dump \
 
 echo "==> [2/3] pg_restore no alvo"
 if [[ "$VIA_DOCKER" -eq 1 ]]; then
-  COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/docker-compose.prod.yml}"
+  COMPOSE_FILE="${COMPOSE_FILE:-$ROOT_DIR/docker-compose.yml}"
   SERVICE="${POSTGRES_SERVICE:-postgres}"
   # Copia dump para o container e restaura (banco deve existir e estar vazio ou --clean).
   docker compose -f "$COMPOSE_FILE" cp "$DUMP_FILE" "${SERVICE}:/tmp/restore.dump"
@@ -83,7 +83,7 @@ echo "==> [3/3] prisma migrate deploy"
 if [[ "$VIA_DOCKER" -eq 1 ]]; then
   # URL interna vista pelo container backend
   MIGRATE_URL="${MIGRATE_DATABASE_URL:-postgresql://${POSTGRES_USER:-betuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-betdb}?schema=public}"
-  docker compose -f "${COMPOSE_FILE:-$ROOT_DIR/docker-compose.prod.yml}" run --rm --no-deps \
+  docker compose -f "${COMPOSE_FILE:-$ROOT_DIR/docker-compose.yml}" run --rm --no-deps \
     -e DATABASE_URL="$MIGRATE_URL" \
     backend \
     npx prisma migrate deploy --schema prisma/schema.prisma

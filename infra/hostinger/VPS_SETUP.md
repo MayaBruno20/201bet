@@ -44,7 +44,7 @@ sudo ufw enable
 1. Coolify → **Sources** → GitHub (App ou Deploy Key).
 2. **New Resource** → **Docker Compose**.
 3. Selecione o repo `201bet`.
-4. Compose file: `docker-compose.prod.yml` (raiz do monorepo).
+4. Compose file: `docker-compose.yml` (raiz do monorepo).
 5. Branch: `main` (prod) ou `development` (staging).
 
 ## 5) Domínios
@@ -104,7 +104,7 @@ Secrets no GitHub:
 
 - [ ] Coolify acessível
 - [ ] Firewall só 22/80/443 (+ painel)
-- [ ] Repo ligado + `docker-compose.prod.yml`
+- [ ] Repo ligado + `docker-compose.yml`
 - [ ] Domínios A apontando para a VPS
 - [ ] Env preenchido (sem Upstash obrigatório)
 - [ ] Webhook no GitHub Secrets

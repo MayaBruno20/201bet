@@ -69,7 +69,7 @@ jobs:
               exit 1
             fi
             cd "$COMPOSE_DIR"
-            docker compose -f docker-compose.prod.yml run --rm --no-deps backend \
+            docker compose -f docker-compose.yml run --rm --no-deps backend \
               npx prisma migrate deploy --schema prisma/schema.prisma
 
       - name: Deploy Coolify (Production)

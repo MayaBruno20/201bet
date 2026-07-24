@@ -5,7 +5,7 @@
 # para este serviço nos domínios do site e do admin.
 #
 # Uso local de teste (sem Coolify):
-#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#   docker compose --env-file .env.production up -d --build
 
 name: bet-prod
 

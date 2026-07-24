@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # Backup Postgres interno do compose → /backups
-# Usado pelo serviço `backup` (profile) em docker-compose.prod.yml
+# Usado pelo serviço `backup` (profile) em docker-compose.yml
 set -eu
 
 HOST="${POSTGRES_HOST:-postgres}"

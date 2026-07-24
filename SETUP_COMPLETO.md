@@ -6,7 +6,7 @@ Deploy alvo: **Ubuntu + Coolify + Docker Compose** na VPS. Neon/Upstash/Vercel/R
 
 1. Provisionar VPS + Coolify → [`infra/hostinger/VPS_SETUP.md`](infra/hostinger/VPS_SETUP.md)
 2. Env → copiar [`.env.production.example`](.env.production.example) para a Coolify
-3. Deploy do [`docker-compose.prod.yml`](docker-compose.prod.yml)
+3. Deploy do [`docker-compose.yml`](docker-compose.yml)
 4. Migrar dados Neon → VPS → [`infra/hostinger/scripts/migrate-from-neon.sh`](infra/hostinger/scripts/migrate-from-neon.sh)
 5. Cutover DNS → [`infra/hostinger/CUTOVER.md`](infra/hostinger/CUTOVER.md)
 6. Secrets GitHub + webhooks Coolify (abaixo)

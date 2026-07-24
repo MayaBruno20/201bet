@@ -4,7 +4,7 @@ Checklist da Fase 3. Não faça cutover sem smoke em domínio de teste.
 
 ## Pré-requisitos
 
-- [ ] Coolify + stack `docker-compose.prod.yml` saudável ([VPS_SETUP.md](VPS_SETUP.md))
+- [ ] Coolify + stack `docker-compose.yml` saudável ([VPS_SETUP.md](VPS_SETUP.md))
 - [ ] Restore do Neon feito ([scripts/migrate-from-neon.sh](scripts/migrate-from-neon.sh))
 - [ ] Contagens OK ([scripts/validate-db-counts.sh](scripts/validate-db-counts.sh))
 - [ ] Env de produção preenchido (ver [`.env.production.example`](../../.env.production.example))
@@ -62,5 +62,5 @@ Rebuild do **frontend** é obrigatório se mudar qualquer `NEXT_PUBLIC_*`.
 ## Pós-cutover
 
 - [ ] Webhook Coolify nos GitHub Actions (`COOLIFY_WEBHOOK_PROD`)
-- [ ] Profile `backup` ligado: `docker compose -f docker-compose.prod.yml --profile backup up -d`
+- [ ] Profile `backup` ligado: `docker compose -f docker-compose.yml --profile backup up -d`
 - [ ] Copiar dumps de `/backups` offsite (S3/Backblaze/rclone) — ver [scripts/rclone-offsite.example.sh](scripts/rclone-offsite.example.sh)

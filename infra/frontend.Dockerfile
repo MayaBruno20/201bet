@@ -1,5 +1,5 @@
 FROM node:22-alpine AS build
-WORKDIR /app/apps/frontend
+WORKDIR /app
 
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_WS_URL
@@ -15,8 +15,12 @@ ENV NEXT_PUBLIC_ADMIN_SITE_HOST=$NEXT_PUBLIC_ADMIN_SITE_HOST
 ENV NEXT_PUBLIC_PUBLIC_SITE_URL=$NEXT_PUBLIC_PUBLIC_SITE_URL
 ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
 
-COPY apps/frontend/package*.json ./
-RUN npm install
+# Dependência local "201bet": "file:../.." em apps/frontend/package.json
+COPY package.json ./
+COPY apps/frontend/package.json apps/frontend/package-lock.json ./apps/frontend/
+
+WORKDIR /app/apps/frontend
+RUN npm ci
 
 COPY apps/frontend ./
 RUN npm run build
@@ -28,8 +32,9 @@ ENV NODE_ENV=production
 ENV PORT=3501
 ENV HOSTNAME=0.0.0.0
 
-COPY --from=build /app/apps/frontend/package*.json ./
-RUN npm install --omit=dev
+COPY --from=build /app/package.json /app/package.json
+COPY --from=build /app/apps/frontend/package.json /app/apps/frontend/package-lock.json ./
+RUN npm ci --omit=dev
 
 COPY --from=build /app/apps/frontend/.next ./.next
 COPY --from=build /app/apps/frontend/public ./public
