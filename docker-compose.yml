@@ -127,8 +127,8 @@ services:
         condition: service_started
       frontend:
         condition: service_started
-    # NÃO publicar :80 no host — a Coolify/Traefik já usa 80/443 e faz proxy
-    # para este container (Domains → serviço nginx, porta 80 interna).
+    # NÃO publicar :80 no host — a Coolify/Traefik já usa 80/443.
+    # Rede coolify: Traefik alcança o nginx. Rede internal: nginx → apps.
     expose:
       - '80'
     healthcheck:
@@ -138,6 +138,7 @@ services:
       retries: 5
     networks:
       - internal
+      - coolify
 
   # Backup diário do Postgres → volume `backups`.
   # $$ = escape para o Compose não interpolar variáveis do shell.
@@ -195,3 +196,7 @@ volumes:
 networks:
   internal:
     driver: bridge
+  # Rede do proxy Coolify/Traefik (já existe no host).
+  coolify:
+    external: true
+    name: coolify
