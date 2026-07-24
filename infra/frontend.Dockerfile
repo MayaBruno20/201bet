@@ -20,7 +20,8 @@ COPY package.json ./
 COPY apps/frontend/package.json apps/frontend/package-lock.json ./apps/frontend/
 
 WORKDIR /app/apps/frontend
-RUN npm ci
+# Coolify pode injetar NODE_ENV=production no build; forçamos devDeps se forem precisas.
+RUN npm ci --include=dev
 
 COPY apps/frontend ./
 RUN npm run build

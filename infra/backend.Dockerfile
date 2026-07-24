@@ -6,7 +6,8 @@ COPY package.json ./
 COPY apps/backend/package.json apps/backend/package-lock.json ./apps/backend/
 
 WORKDIR /app/apps/backend
-RUN npm ci
+# Coolify passa NODE_ENV=production como build-arg → npm saltaria devDeps (@nestjs/cli).
+RUN npm ci --include=dev
 
 COPY apps/backend ./
 RUN npx prisma generate \
