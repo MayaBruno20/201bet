@@ -76,7 +76,9 @@ export class DailyRateLimiter implements OnModuleDestroy {
     this.client = new Redis({
       host: this.config.get('REDIS_HOST', { infer: true }),
       port: this.config.get('REDIS_PORT', { infer: true }),
-      username: this.config.get('REDIS_USERNAME', { infer: true }) || 'default',
+      ...(this.config.get('REDIS_USERNAME', { infer: true })
+        ? { username: this.config.get('REDIS_USERNAME', { infer: true }) }
+        : {}),
       password: this.config.get('REDIS_PASSWORD', { infer: true }) || undefined,
       tls:
         this.config.get('REDIS_TLS', { infer: true }) === 'true' ? {} : undefined,

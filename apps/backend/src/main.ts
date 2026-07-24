@@ -37,14 +37,14 @@ async function probeRedisConnection(): Promise<void> {
   const logger = new Logger('RedisProbe');
   const host = process.env.REDIS_HOST || 'localhost';
   const port = Number(process.env.REDIS_PORT || 3505);
-  const username = process.env.REDIS_USERNAME || 'default';
+  const username = process.env.REDIS_USERNAME?.trim() || undefined;
   const password = process.env.REDIS_PASSWORD || undefined;
   const tls = process.env.REDIS_TLS === 'true' ? {} : undefined;
 
   const client = new Redis({
     host,
     port,
-    username,
+    ...(username ? { username } : {}),
     password,
     tls,
     lazyConnect: false,

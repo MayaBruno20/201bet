@@ -12,8 +12,11 @@ import type { AppEnv } from '../config/env.validation';
         connection: {
           host: config.get('REDIS_HOST', { infer: true }),
           port: config.get('REDIS_PORT', { infer: true }),
-          username:
-            config.get('REDIS_USERNAME', { infer: true }) || 'default',
+          // Redis local (Docker) sem ACL: não enviar username.
+          // Redis Cloud / Upstash TCP: defina REDIS_USERNAME explicitamente.
+          ...(config.get('REDIS_USERNAME', { infer: true })
+            ? { username: config.get('REDIS_USERNAME', { infer: true }) }
+            : {}),
           password: config.get('REDIS_PASSWORD', { infer: true }) || undefined,
           tls:
             config.get('REDIS_TLS', { infer: true }) === 'true'

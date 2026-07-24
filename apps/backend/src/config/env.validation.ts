@@ -38,9 +38,14 @@ export const envValidationSchema = Joi.object({
   EMAIL_PROVIDER: Joi.string()
     .valid('brevo', 'mailtrap', 'noop')
     .default('noop'),
-  EMAIL_FROM_ADDRESS: Joi.string().email().required(),
+  // noop: permite vazio na VPS; brevo/mailtrap exigem e-mail válido.
+  EMAIL_FROM_ADDRESS: Joi.alternatives().conditional('EMAIL_PROVIDER', {
+    is: 'noop',
+    then: Joi.string().email().allow('').optional(),
+    otherwise: Joi.string().email().required(),
+  }),
   EMAIL_FROM_NAME: Joi.string().default('Palpite201'),
-  EMAIL_REPLY_TO: Joi.string().email().optional(),
+  EMAIL_REPLY_TO: Joi.string().email().allow('').optional(),
   EMAIL_DAILY_LIMIT: Joi.number().integer().min(1).max(100000).default(10000),
   EMAIL_VERIFICATION_TTL_HOURS: Joi.number().integer().min(1).max(168).default(24),
   PASSWORD_RESET_TTL_MINUTES: Joi.number().integer().min(5).max(120).default(30),
@@ -100,7 +105,7 @@ export interface AppEnv {
   REDIS_TLS: 'true' | 'false';
 
   EMAIL_PROVIDER: 'brevo' | 'mailtrap' | 'noop';
-  EMAIL_FROM_ADDRESS: string;
+  EMAIL_FROM_ADDRESS?: string;
   EMAIL_FROM_NAME: string;
   EMAIL_REPLY_TO?: string;
   EMAIL_DAILY_LIMIT: number;

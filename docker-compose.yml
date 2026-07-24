@@ -69,8 +69,8 @@ services:
       REDIS_TLS: 'false'
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-noop}
-      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-}
-      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-noreply@example.com}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-201Bet}
       EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-}
       EMAIL_DAILY_LIMIT: ${EMAIL_DAILY_LIMIT:-200}
       EMAIL_VERIFICATION_TTL_HOURS: ${EMAIL_VERIFICATION_TTL_HOURS:-24}
@@ -89,15 +89,13 @@ services:
     healthcheck:
       test:
         [
-          'CMD',
-          'wget',
-          '-qO-',
-          'http://127.0.0.1:3502/api/health',
+          'CMD-SHELL',
+          'wget -qO- http://127.0.0.1:3502/api/health || exit 1',
         ]
-      interval: 15s
+      interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 40s
+      retries: 18
+      start_period: 90s
     networks:
       - internal
 
@@ -115,7 +113,7 @@ services:
     restart: unless-stopped
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     networks:
       - internal
 
@@ -123,8 +121,10 @@ services:
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_started
+      frontend:
+        condition: service_started
     ports:
       - '${NGINX_PUBLISH_PORT:-80}:80'
     volumes:
