@@ -304,3 +304,13 @@ npm run db:generate     # prisma generate
 npm run db:push         # aplica schema
 npm run db:seed         # dados iniciais
 ```
+
+## 16) Produção (Hostinger VPS + Coolify)
+
+Ver guia completo: [`SETUP_COMPLETO.md`](SETUP_COMPLETO.md) e [`infra/hostinger/VPS_SETUP.md`](infra/hostinger/VPS_SETUP.md).
+
+```bash
+cp .env.production.example .env.production   # edite segredos e domínios
+npm run prod:up                              # stack completa (teste local)
+npm run prod:backup:up                       # liga container de backup diário
+```

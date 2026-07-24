@@ -1,4 +1,4 @@
-name: Deploy Production
+# Deploy Production → Coolify (Hostinger VPS)
 
 on:
   push:
@@ -9,6 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
+    env:
+      VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+      COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK_PROD }}
+      HEALTH_URL: ${{ secrets.BACKEND_PROD_HEALTH_URL }}
 
     steps:
       - name: Checkout
@@ -48,34 +52,39 @@ jobs:
       - name: Build Frontend
         run: npm --prefix apps/frontend run build
 
-      - name: Apply Prisma Migrations (Production)
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
-        run: npx --prefix apps/backend prisma migrate deploy --schema apps/backend/prisma/schema.prisma
+      # Preferível: Pre-deploy Command na Coolify (backend):
+      #   npx prisma migrate deploy --schema prisma/schema.prisma
+      - name: Prisma migrate via SSH (opcional)
+        if: ${{ env.VPS_SSH_HOST != '' }}
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_SSH_HOST }}
+          username: ${{ secrets.VPS_SSH_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            COMPOSE_DIR="${{ secrets.VPS_COMPOSE_DIR }}"
+            if [ -z "$COMPOSE_DIR" ]; then
+              echo "Defina o secret VPS_COMPOSE_DIR (pasta do compose na VPS)."
+              exit 1
+            fi
+            cd "$COMPOSE_DIR"
+            docker compose -f docker-compose.prod.yml run --rm --no-deps backend \
+              npx prisma migrate deploy --schema prisma/schema.prisma
 
-      - name: Install Vercel CLI
-        run: npm i -g vercel@latest
-
-      - name: Vercel Pull (Production)
-        working-directory: apps/frontend
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel pull --yes --environment=production --token $VERCEL_TOKEN
-
-      - name: Vercel Build (Production)
-        working-directory: apps/frontend
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel build --token $VERCEL_TOKEN
-
-      - name: Vercel Deploy (Production)
-        working-directory: apps/frontend
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: vercel deploy --prebuilt --prod --token $VERCEL_TOKEN
+      - name: Deploy Coolify (Production)
+        run: |
+          if [ -z "$COOLIFY_WEBHOOK" ]; then
+            echo "COOLIFY_WEBHOOK_PROD não definido — configure o webhook na Coolify."
+            exit 1
+          fi
+          curl --fail --retry 3 --retry-delay 5 -X POST "$COOLIFY_WEBHOOK"
 
       - name: Backend health (opcional)
-        if: ${{ secrets.BACKEND_PROD_HEALTH_URL != '' }}
-        run: curl --fail --retry 6 --retry-delay 5 "${{ secrets.BACKEND_PROD_HEALTH_URL }}"
+        run: |
+          if [ -z "$HEALTH_URL" ]; then
+            echo "BACKEND_PROD_HEALTH_URL vazio — skip."
+            exit 0
+          fi
+          sleep 25
+          curl --fail --retry 8 --retry-delay 5 "$HEALTH_URL"

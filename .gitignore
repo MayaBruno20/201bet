@@ -1,6 +1,7 @@
 node_modules
 .env
 .env.local
+.env.production
 coverage
 .nyc_output
 
@@ -16,3 +17,7 @@ apps/frontend/node_modules
 *.tfstate.*
 infra/terraform/envs/*/terraform.tfvars
 infra/terraform/shared/terraform.tfvars
+
+# Hostinger migration dumps / local prod env
+infra/hostinger/.dumps/
+*.dump
