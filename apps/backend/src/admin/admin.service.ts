@@ -61,6 +61,9 @@ type MatchupOrigin = {
   // Id do matchup de origem — é ele que os endpoints de abrir/fechar/auditar
   // recebem (PATCH matchups/:id/market, POST matchups/:id/settle).
   matchupId: string;
+  // Id do EVENTO de origem (listEventId / armageddonEventId / categoryEventId) —
+  // usado pelos controles em lote do Modo Pista (gerar rodada, abrir/fechar todos).
+  originEventId: string;
   leftPosition: number | null;
   rightPosition: number | null;
   // Localização legível pro operador/auditor ("Chave B · R2", "9s · Super Final").
@@ -1592,6 +1595,10 @@ export class AdminService {
       where: {
         ...statusWhere,
         ...(eventId ? { eventId } : {}),
+        // Não mostra resíduos de eventos já finalizados/cancelados (mercados
+        // "vivos" que sobraram de embates passados). Só eventos ativos entram
+        // no Modo Pista / Mercados ao vivo.
+        event: { status: { notIn: [EventStatus.FINISHED, EventStatus.CANCELED] } },
       },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -1618,18 +1625,18 @@ export class AdminService {
     const [listMatchups, armaMatchups, categoryMatchups] = await Promise.all([
       this.prisma.listMatchup.findMany({
         where: { duelId: { in: duelIds } },
-        select: { id: true, duelId: true, leftPosition: true, rightPosition: true, roundNumber: true, roundType: true },
+        select: { id: true, duelId: true, listEventId: true, leftPosition: true, rightPosition: true, roundNumber: true, roundType: true },
       }),
       this.prisma.armageddonMatchup.findMany({
         where: { duelId: { in: duelIds } },
         select: {
-          id: true, duelId: true, leftPosition: true, rightPosition: true,
+          id: true, duelId: true, eventId: true, leftPosition: true, rightPosition: true,
           roundNumber: true, stage: true, bracketKey: true, isFinal: true, isThirdPlace: true,
         },
       }),
       this.prisma.categoryMatchup.findMany({
         where: { duelId: { in: duelIds } },
-        select: { id: true, duelId: true, roundNumber: true, position: true, isSuperFinal: true, bracket: { select: { category: true } } },
+        select: { id: true, duelId: true, roundNumber: true, position: true, isSuperFinal: true, bracket: { select: { category: true, categoryEventId: true } } },
       }),
     ]);
 
@@ -1639,6 +1646,7 @@ export class AdminService {
         originByDuel.set(m.duelId, {
           type: 'LIST',
           matchupId: m.id,
+          originEventId: m.listEventId,
           leftPosition: m.leftPosition,
           rightPosition: m.rightPosition,
           context: m.roundType === 'SHARK_TANK' ? 'Shark Tank' : `Rodada ${m.roundNumber}`,
@@ -1655,6 +1663,7 @@ export class AdminService {
         originByDuel.set(m.duelId, {
           type: 'ARMAGEDDON',
           matchupId: m.id,
+          originEventId: m.eventId,
           leftPosition: m.leftPosition,
           rightPosition: m.rightPosition,
           context,
@@ -1668,6 +1677,7 @@ export class AdminService {
         originByDuel.set(m.duelId, {
           type: 'CATEGORY',
           matchupId: m.id,
+          originEventId: m.bracket?.categoryEventId ?? '',
           leftPosition: null,
           rightPosition: null,
           context: cat ? `${cat} · ${stage}` : stage,

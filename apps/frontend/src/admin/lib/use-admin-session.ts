@@ -33,7 +33,8 @@ export function useAdminSession({ requiredRoles }: { requiredRoles?: AdminUser['
         return;
       }
       if (requiredRoles && !requiredRoles.includes(me.role)) {
-        router.replace('/dashboard'); // tem sessão mas role insuficiente — manda pro dashboard
+        // Role insuficiente. Auditor só acessa o Modo Pista; demais vão pro dashboard.
+        router.replace(me.role === 'AUDITOR' ? '/pista' : '/dashboard');
         return;
       }
       setUser(me);

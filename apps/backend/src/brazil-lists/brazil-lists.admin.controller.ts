@@ -171,6 +171,9 @@ export class BrazilListEventsAdminController {
     return this.service.adminDeleteEvent(id, this.auditFromReq(req));
   }
 
+  // Controles em lote (Modo Pista): Auditor/Operator também podem gerar rodada,
+  // abrir todos e fechar todos os mercados do evento.
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Post(':id/generate-matchups')
   generateMatchups(
     @Param('id') id: string,
@@ -180,6 +183,7 @@ export class BrazilListEventsAdminController {
     return this.service.adminGenerateMatchups(id, dto, this.auditFromReq(req));
   }
 
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Post(':id/open-all-markets')
   openAllMarkets(
     @Param('id') id: string,
@@ -194,6 +198,12 @@ export class BrazilListEventsAdminController {
       : undefined;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return this.service.adminOpenAllMatchupsForRound(id, filter as any, this.auditFromReq(req));
+  }
+
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
+  @Post(':id/close-all-markets')
+  closeAllMarkets(@Param('id') id: string, @Req() req: ReqUser) {
+    return this.service.adminCloseAllMatchups(id, this.auditFromReq(req));
   }
 
   @Post(':id/matchups')

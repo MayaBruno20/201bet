@@ -165,6 +165,15 @@ export function BettingExperience({
 
   const selectedEvent = useMemo(() => board?.events.find((e) => e.id === selectedEventId) ?? null, [board, selectedEventId]);
 
+  // Sem evento selecionado (ex.: o evento abriu depois via socket) → seleciona o
+  // AO VIVO automaticamente, pra o usuário não precisar clicar.
+  useEffect(() => {
+    if (selectedEventId || !board?.events.length) return;
+    const preferred = board.events.find((e) => e.status === 'LIVE') ?? board.events[0];
+    setSelectedEventId(preferred.id);
+    setSelectedDuelId(preferred.currentDuelId ?? preferred.stages[0]?.duelId ?? '');
+  }, [board, selectedEventId]);
+
   /** Mapeia o snapshot + matchup pra um DuelStatus do novo componente. */
   const classifyDuelStatus = (stage: BoardStage): DuelStatus => {
     if (stage.matchupStatus === 'CANCELED' || stage.status === 'CANCELED') return 'CANCELED';
@@ -337,8 +346,10 @@ export function BettingExperience({
         setSelectedEventId(firstSnapshot.eventId);
         setSelectedDuelId(firstSnapshot.duelId);
       } else if (boardData.events.length > 0) {
-        setSelectedEventId(boardData.events[0].id);
-        setSelectedDuelId(boardData.events[0].currentDuelId ?? boardData.events[0].stages[0]?.duelId ?? '');
+        // Prefere o evento AO VIVO (aberto) como padrão, em vez do primeiro da lista.
+        const preferred = boardData.events.find((e) => e.status === 'LIVE') ?? boardData.events[0];
+        setSelectedEventId(preferred.id);
+        setSelectedDuelId(preferred.currentDuelId ?? preferred.stages[0]?.duelId ?? '');
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Erro ao carregar');

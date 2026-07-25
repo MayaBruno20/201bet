@@ -57,9 +57,11 @@ export const Topbar: React.FC<Props> = ({ openCmdK, openMobileNav }) => {
         <I.Bell size={17}/>
         <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent)' }}/>
       </button>
-      <Link href="/eventos" className="btn btn-primary focusable">
-        <I.Plus size={15}/> <span className="hidden sm:inline">Novo evento</span>
-      </Link>
+      {user?.role !== 'AUDITOR' && (
+        <Link href="/eventos" className="btn btn-primary focusable">
+          <I.Plus size={15}/> <span className="hidden sm:inline">Novo evento</span>
+        </Link>
+      )}
 
       {/* Avatar + menu de usuário (logado) */}
       <div ref={menuRef} className="relative">

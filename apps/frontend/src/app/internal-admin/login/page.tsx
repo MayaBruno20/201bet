@@ -31,8 +31,8 @@ export default function LoginPage() {
         setStep('2fa');
         setTimeout(() => refs.current[0]?.focus(), 100);
       } else {
-        // Login direto (sem 2FA habilitado)
-        router.replace('/dashboard');
+        // Login direto (sem 2FA habilitado). Auditor só acessa o Modo Pista.
+        router.replace(result.user.role === 'AUDITOR' ? '/pista' : '/dashboard');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao entrar');
@@ -54,8 +54,8 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      await loginVerify2FA(tempToken, submittedCode);
-      router.replace('/dashboard');
+      const { user } = await loginVerify2FA(tempToken, submittedCode);
+      router.replace(user.role === 'AUDITOR' ? '/pista' : '/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Código inválido');
     } finally {

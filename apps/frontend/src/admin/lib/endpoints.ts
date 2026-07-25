@@ -149,6 +149,7 @@ export const ENDPOINTS = {
       delete: (eventId: string) => `/admin/brazil-list-events/${eventId}`,
       generateMatchups: (eventId: string) => `/admin/brazil-list-events/${eventId}/generate-matchups`,
       openAllMarkets: (eventId: string) => `/admin/brazil-list-events/${eventId}/open-all-markets`,
+      closeAllMarkets: (eventId: string) => `/admin/brazil-list-events/${eventId}/close-all-markets`,
     },
     rosters: {
       upsert: (listId: string) => `/admin/brazil-lists/${listId}/roster`,
