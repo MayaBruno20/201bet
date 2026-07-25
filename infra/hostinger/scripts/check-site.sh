@@ -5,7 +5,7 @@
 #   sudo cp infra/hostinger/scripts/check-site.sh /root/check-site.sh
 #   sudo chmod +x /root/check-site.sh
 #   (crontab -l 2>/dev/null | grep -v check-site.sh; \
-#     echo '*/10 * * * * /root/check-site.sh >> /var/log/check-site.log 2>&1') | crontab -
+#     echo '*/2 * * * * /root/check-site.sh >> /var/log/check-site.log 2>&1') | crontab -
 #
 # Override URL: SITE_HEALTH_URL=https://... /root/check-site.sh
 set -euo pipefail
