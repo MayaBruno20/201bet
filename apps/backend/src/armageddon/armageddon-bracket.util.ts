@@ -50,9 +50,34 @@ export const FIRST_DRAW_KEYS: ReadonlyArray<{ key: string; size: number; qualifi
 export const TOTAL_PILOTS = FIRST_DRAW_KEYS.reduce((s, k) => s + k.size, 0); // 144
 export const SECOND_DRAW_SIZE = FIRST_DRAW_KEYS.reduce((s, k) => s + k.qualifiers, 0); // 32
 
+/**
+ * Shark Tank: 4 chaves (A-D) de 8 pilotos, eliminação simples 8→4→2→1, um
+ * finalista por chave. Os 4 finalistas vão pra Fase Final (4 desafios contra
+ * pilotos do Top 20 da Lista, definidos manualmente no admin).
+ */
+export const SHARK_TANK_KEYS: ReadonlyArray<{ key: string; size: number; qualifiers: number }> = [
+  { key: 'A', size: 8, qualifiers: 1 },
+  { key: 'B', size: 8, qualifiers: 1 },
+  { key: 'C', size: 8, qualifiers: 1 },
+  { key: 'D', size: 8, qualifiers: 1 },
+];
+
+export const SHARK_TANK_TOTAL = SHARK_TANK_KEYS.reduce((s, k) => s + k.size, 0); // 32
+export const SHARK_TANK_CHALLENGES = SHARK_TANK_KEYS.length; // 4
+
+/** Config de chaves por tipo de bracket (p/ validação de roster e rótulos). */
+export function keysForBracketType(
+  bracketType: string,
+): ReadonlyArray<{ key: string; size: number; qualifiers: number }> {
+  return bracketType === 'SHARK_TANK' ? SHARK_TANK_KEYS : FIRST_DRAW_KEYS;
+}
+
 /** Tamanho máximo de roster de uma chave (p/ validar posição). */
-export function bracketSize(bracketKey: string): number | null {
-  return FIRST_DRAW_KEYS.find((k) => k.key === bracketKey)?.size ?? null;
+export function bracketSize(
+  bracketKey: string,
+  keys: ReadonlyArray<{ key: string; size: number }> = FIRST_DRAW_KEYS,
+): number | null {
+  return keys.find((k) => k.key === bracketKey)?.size ?? null;
 }
 
 function sideFor(order: number): Side {
@@ -143,6 +168,54 @@ export function buildArmageddonSecondDraw(): MatchupSpec[] {
     isThirdPlace: true,
     isFinal: false,
   });
+
+  return specs;
+}
+
+/** Chave lógica do desafio da Fase Final de uma chave (idx 0..3). */
+function sharkChallengeKey(index: number): string {
+  return `F:1:${index + 1}`;
+}
+
+/**
+ * Gera o chaveamento do SHARK_TANK:
+ *   - 4 chaves (A-D) de 8, eliminação simples 8→4→2→1 (FIRST_DRAW).
+ *   - O vencedor de cada chave avança (LEFT) para um desafio da Fase Final.
+ *   - 4 desafios (SECOND_DRAW, round 1, order 1..4): LEFT = finalista (via avanço),
+ *     RIGHT = piloto do Top 20 da Lista, preenchido manualmente no admin.
+ * Não há final única nem 3º lugar — são 4 confrontos "toma a vaga" independentes.
+ */
+export function buildSharkTankBracket(): MatchupSpec[] {
+  const specs: MatchupSpec[] = [];
+
+  SHARK_TANK_KEYS.forEach((k, idx) => {
+    const chave = buildSingleElim(k.key, 'FIRST_DRAW', k.size, k.qualifiers); // 8→4→2→1
+    const terminal = chave.find((s) => s.nextKey === null);
+    if (terminal) {
+      terminal.nextKey = sharkChallengeKey(idx); // finalista vai pra Fase Final
+      terminal.nextSlotSide = 'LEFT';
+    }
+    specs.push(...chave);
+  });
+
+  // Fase Final: 4 desafios (finalista x piloto da Lista definido no admin).
+  for (let i = 0; i < SHARK_TANK_KEYS.length; i++) {
+    specs.push({
+      key: sharkChallengeKey(i),
+      stage: 'SECOND_DRAW',
+      bracketKey: null,
+      roundNumber: 1,
+      order: i + 1,
+      leftPosition: null,
+      rightPosition: null,
+      nextKey: null,
+      nextSlotSide: null,
+      loserKey: null,
+      loserSlotSide: null,
+      isThirdPlace: false,
+      isFinal: false,
+    });
+  }
 
   return specs;
 }

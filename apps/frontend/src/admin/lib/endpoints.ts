@@ -211,6 +211,37 @@ export const ENDPOINTS = {
     },
   },
 
+  // Shark Tank: hub separado, mesmo motor de brackets (4 chaves de 8 → Fase Final).
+  SHARK_TANK: {
+    list: '/admin/shark-tank',
+    create: '/admin/shark-tank',
+    detail: (id: string) => `/admin/shark-tank/${id}`,
+    update: (id: string) => `/admin/shark-tank/${id}`,
+    delete: (id: string) => `/admin/shark-tank/${id}`,
+    financialSummary: (id: string) => `/admin/shark-tank/${id}/financial-summary`,
+    driverSearch: (q: string) => `/admin/shark-tank/drivers/search?q=${encodeURIComponent(q)}`,
+    roster: {
+      upsert: (eventId: string) => `/admin/shark-tank/${eventId}/roster`,
+      clear: (eventId: string) => `/admin/shark-tank/${eventId}/roster`,
+      delete: (eventId: string, rosterId: string) => `/admin/shark-tank/${eventId}/roster/${rosterId}`,
+    },
+    generate: (eventId: string) => `/admin/shark-tank/${eventId}/generate`,
+    clearKeys: (eventId: string) => `/admin/shark-tank/${eventId}/clear-keys`,
+    resetEvent: (eventId: string) => `/admin/shark-tank/${eventId}/reset`,
+    openAllReady: (eventId: string, opts?: { bracketKey?: string; roundNumber?: number; stage?: string }) =>
+      `/admin/shark-tank/${eventId}/open-all-ready${armaMarketQuery(opts)}`,
+    closeAllOpen: (eventId: string, opts?: { bracketKey?: string; roundNumber?: number; stage?: string }) =>
+      `/admin/shark-tank/${eventId}/close-all-open${armaMarketQuery(opts)}`,
+    matchups: {
+      toggleMarket: (matchupId: string) => `/admin/shark-tank/matchups/${matchupId}/market`,
+      settle: (matchupId: string) => `/admin/shark-tank/matchups/${matchupId}/settle`,
+      reopen: (matchupId: string) => `/admin/shark-tank/matchups/${matchupId}/reopen`,
+      // Fase Final: define o rival (Top 20 da Lista) do desafio.
+      setOpponent: (matchupId: string) => `/admin/shark-tank/matchups/${matchupId}/opponent`,
+      delete: (matchupId: string) => `/admin/shark-tank/matchups/${matchupId}`,
+    },
+  },
+
   QUICK_DUELS: {
     list: '/admin/quick-duels',
     create: '/admin/quick-duels',

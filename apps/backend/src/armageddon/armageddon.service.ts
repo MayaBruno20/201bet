@@ -30,7 +30,9 @@ import { buildBracketPairs } from '../brazil-lists/brazil-lists.service';
 import {
   buildArmageddonFirstDraw,
   buildArmageddonSecondDraw,
+  buildSharkTankBracket,
   bracketSize,
+  keysForBracketType,
   FIRST_DRAW_KEYS,
   MatchupSpec,
 } from './armageddon-bracket.util';
@@ -70,13 +72,36 @@ export class ArmageddonService {
 
   async listPublic() {
     const events = await this.prisma.armageddonEvent.findMany({
-      where: { status: { in: [ArmageddonStatus.IN_PROGRESS, ArmageddonStatus.FINISHED] } },
+      where: {
+        status: { in: [ArmageddonStatus.IN_PROGRESS, ArmageddonStatus.FINISHED] },
+        // Shark Tank tem hub público próprio (/shark-tank) — fora do Armageddon.
+        bracketType: { not: ArmageddonBracketType.SHARK_TANK },
+      },
       orderBy: { scheduledAt: 'desc' },
       include: {
         roster: {
           include: { driver: true },
           orderBy: { position: 'asc' },
         },
+        matchups: {
+          orderBy: [{ roundNumber: 'asc' }, { order: 'asc' }],
+          include: { leftDriver: true, rightDriver: true },
+        },
+      },
+    });
+    return events.map((e) => this.serializeEvent(e));
+  }
+
+  /** Hub público do Shark Tank (só eventos SHARK_TANK em andamento/encerrados). */
+  async listPublicSharkTank() {
+    const events = await this.prisma.armageddonEvent.findMany({
+      where: {
+        status: { in: [ArmageddonStatus.IN_PROGRESS, ArmageddonStatus.FINISHED] },
+        bracketType: ArmageddonBracketType.SHARK_TANK,
+      },
+      orderBy: { scheduledAt: 'desc' },
+      include: {
+        roster: { include: { driver: true }, orderBy: { position: 'asc' } },
         matchups: {
           orderBy: [{ roundNumber: 'asc' }, { order: 'asc' }],
           include: { leftDriver: true, rightDriver: true },
@@ -105,6 +130,24 @@ export class ArmageddonService {
 
   async adminListAll() {
     const events = await this.prisma.armageddonEvent.findMany({
+      // Shark Tank tem módulo admin próprio (/internal-admin/shark-tank).
+      where: { bracketType: { not: ArmageddonBracketType.SHARK_TANK } },
+      orderBy: { scheduledAt: 'desc' },
+      include: {
+        roster: { include: { driver: true }, orderBy: { position: 'asc' } },
+        matchups: {
+          orderBy: [{ roundNumber: 'asc' }, { order: 'asc' }],
+          include: { leftDriver: true, rightDriver: true },
+        },
+      },
+    });
+    return events.map((e) => this.serializeEvent(e));
+  }
+
+  /** Lista (admin) só os eventos SHARK_TANK — para o módulo Shark Tank. */
+  async adminListSharkTank() {
+    const events = await this.prisma.armageddonEvent.findMany({
+      where: { bracketType: ArmageddonBracketType.SHARK_TANK },
       orderBy: { scheduledAt: 'desc' },
       include: {
         roster: { include: { driver: true }, orderBy: { position: 'asc' } },
@@ -393,16 +436,22 @@ export class ArmageddonService {
     const event = await this.prisma.armageddonEvent.findUnique({ where: { id: eventId } });
     if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
 
-    const isElim = event.bracketType === ArmageddonBracketType.ELIMINATION_144;
+    const isBracketed =
+      event.bracketType === ArmageddonBracketType.ELIMINATION_144 ||
+      event.bracketType === ArmageddonBracketType.SHARK_TANK;
     let bracketKey: string | null = null;
     let maxPositions: number;
 
-    if (isElim) {
-      // Eliminação: piloto entra numa chave A-E, posição limitada ao tamanho da chave.
+    if (isBracketed) {
+      // Eliminação (144: chaves A-E de 32/28; Shark Tank: chaves A-D de 8): o
+      // piloto entra numa chave, posição limitada ao tamanho dela.
+      const keys = keysForBracketType(event.bracketType);
       bracketKey = (dto.bracketKey ?? '').toUpperCase();
-      const size = bracketKey ? bracketSize(bracketKey) : null;
+      const size = bracketKey ? bracketSize(bracketKey, keys) : null;
       if (!size) {
-        throw new BadRequestException('Informe a chave (A, B, C, D ou E) para este piloto');
+        throw new BadRequestException(
+          `Informe a chave (${keys.map((k) => k.key).join(', ')}) para este piloto`,
+        );
       }
       maxPositions = size;
     } else {
@@ -411,7 +460,7 @@ export class ArmageddonService {
 
     if (dto.position < 1 || dto.position > maxPositions) {
       throw new BadRequestException(
-        `Posição inválida. ${isElim ? `Chave ${bracketKey}` : 'Este evento'} aceita posições 1–${maxPositions}.`,
+        `Posição inválida. ${isBracketed ? `Chave ${bracketKey}` : 'Este evento'} aceita posições 1–${maxPositions}.`,
       );
     }
 
@@ -669,6 +718,109 @@ export class ArmageddonService {
     }
   }
 
+  private requireSharkTank(event: { bracketType: ArmageddonBracketType }) {
+    if (event.bracketType !== ArmageddonBracketType.SHARK_TANK) {
+      throw new BadRequestException('Disponível apenas para eventos Shark Tank');
+    }
+  }
+
+  /** Aceita qualquer torneio de eliminação por árvore (144 ou Shark Tank). */
+  private requireBracketed(event: { bracketType: ArmageddonBracketType }) {
+    if (event.bracketType === ArmageddonBracketType.LADDER) {
+      throw new BadRequestException('Disponível apenas para eventos de eliminação por chaves');
+    }
+  }
+
+  // ── Admin: SHARK_TANK (4 chaves de 8 → Fase Final: finalista x Top 20) ──
+
+  /**
+   * Gera o chaveamento do Shark Tank: 4 chaves (A-D) de 8, eliminação 8→4→2→1,
+   * + os 4 desafios da Fase Final. A 1ª rodada das chaves é preenchida a partir
+   * do roster (bracketKey + posição). O finalista de cada chave avança sozinho
+   * (LEFT) para o desafio; o rival (RIGHT) é definido depois no admin.
+   */
+  async adminGenerateSharkTankBracket(eventId: string, audit: AuditContext) {
+    const event = await this.prisma.armageddonEvent.findUnique({
+      where: { id: eventId },
+      include: { roster: true },
+    });
+    if (!event) throw new NotFoundException('Evento Shark Tank não encontrado');
+    this.requireSharkTank(event);
+
+    const settled = await this.prisma.armageddonMatchup.count({
+      where: { eventId, winnerSide: { not: null } },
+    });
+    if (settled > 0) {
+      throw new BadRequestException('Já há embates auditados — use "Reiniciar evento" para estornar e recomeçar.');
+    }
+    const withMarket = await this.prisma.armageddonMatchup.count({
+      where: { eventId, OR: [{ marketOpen: true }, { duelId: { not: null } }] },
+    });
+    if (withMarket > 0) {
+      throw new BadRequestException('Há mercados abertos/criados — feche-os antes de regerar as chaves.');
+    }
+
+    const driverAt = (bk: string | null, pos: number) =>
+      event.roster.find((r) => r.bracketKey === bk && r.position === pos)?.driverId;
+    const specs = buildSharkTankBracket();
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.armageddonMatchup.deleteMany({ where: { eventId } });
+      await this.persistBracket(tx, eventId, specs, driverAt);
+      if (event.status === ArmageddonStatus.DRAFT || event.status === ArmageddonStatus.ROSTER_OPEN) {
+        await tx.armageddonEvent.update({ where: { id: eventId }, data: { status: ArmageddonStatus.IN_PROGRESS } });
+      }
+      await this.logAudit(tx, 'ARMAGEDDON_SHARK_TANK_GENERATE', 'ArmageddonEvent', eventId, {
+        count: specs.length, rosterFilled: event.roster.length,
+      }, audit);
+      return { stage: 'SHARK_TANK', matchups: specs.length, rosterFilled: event.roster.length };
+    }, { timeout: 30000, maxWait: 10000 });
+  }
+
+  /**
+   * Define o rival (RIGHT) de um desafio da Fase Final — um piloto do Top 20 da
+   * Lista escolhido pelo admin. O finalista (LEFT) entra por avanço quando a
+   * chave termina. Recusa se o desafio já tem mercado aberto ou foi auditado.
+   */
+  async adminSetChallengeOpponent(
+    matchupId: string,
+    dto: { driverId?: string; driverName?: string; driverNickname?: string },
+    audit: AuditContext,
+  ) {
+    const m = await this.prisma.armageddonMatchup.findUnique({
+      where: { id: matchupId },
+      include: { event: { select: { bracketType: true } } },
+    });
+    if (!m) throw new NotFoundException('Desafio não encontrado');
+    if (
+      m.event.bracketType !== ArmageddonBracketType.SHARK_TANK ||
+      m.stage !== ArmageddonStage.SECOND_DRAW
+    ) {
+      throw new BadRequestException('Este confronto não é um desafio da Fase Final do Shark Tank');
+    }
+    if (m.winnerSide || m.marketOpen) {
+      throw new BadRequestException('Não dá pra trocar o rival de um desafio com mercado aberto ou já auditado.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const nickname = dto.driverNickname?.trim() || null;
+      let driverId = dto.driverId;
+      if (!driverId) {
+        if (!dto.driverName?.trim()) throw new BadRequestException('Informe driverId ou driverName');
+        const driver = await tx.driver.create({ data: { name: dto.driverName.trim(), nickname } });
+        driverId = driver.id;
+      } else if (nickname) {
+        await tx.driver.update({ where: { id: driverId }, data: { nickname } });
+      }
+      const updated = await tx.armageddonMatchup.update({
+        where: { id: matchupId },
+        data: { rightDriverId: driverId },
+      });
+      await this.logAudit(tx, 'ARMAGEDDON_SHARK_CHALLENGE_OPPONENT', 'ArmageddonMatchup', matchupId, { driverId }, audit);
+      return updated;
+    });
+  }
+
   /** Driver vencedor de um embate terminal (classificado do 1º sorteio). */
   private winnerDriverId(m: { winnerSide: MatchupSide | null; leftDriverId: string | null; rightDriverId: string | null }) {
     if (!m.winnerSide) return null;
@@ -720,7 +872,7 @@ export class ArmageddonService {
   async adminClearKeys(eventId: string, audit: AuditContext) {
     const event = await this.prisma.armageddonEvent.findUnique({ where: { id: eventId } });
     if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
-    this.requireElimination(event);
+    this.requireBracketed(event);
 
     const settled = await this.prisma.armageddonMatchup.count({
       where: { eventId, winnerSide: { not: null } },
@@ -764,7 +916,7 @@ export class ArmageddonService {
       include: { roster: true, matchups: { select: { id: true, duelId: true } } },
     });
     if (!event) throw new NotFoundException('Evento Armageddon não encontrado');
-    this.requireElimination(event);
+    this.requireBracketed(event);
 
     // 1) Reembolsa/anula mercado a mercado (fora da tx estrutural, isolando falhas).
     const duelIds = event.matchups.map((m) => m.duelId).filter((id): id is string => !!id);
@@ -792,10 +944,13 @@ export class ArmageddonService {
       }
     }
 
-    // 2) Reset estrutural: cancela duelos, fecha mercados, apaga matchups e regenera o 1º sorteio.
+    // 2) Reset estrutural: cancela duelos, fecha mercados, apaga matchups e regenera as chaves.
     const driverAt = (bk: string | null, pos: number) =>
       event.roster.find((r) => r.bracketKey === bk && r.position === pos)?.driverId;
-    const specs = buildArmageddonFirstDraw();
+    const specs =
+      event.bracketType === ArmageddonBracketType.SHARK_TANK
+        ? buildSharkTankBracket()
+        : buildArmageddonFirstDraw();
 
     await this.prisma.$transaction(async (tx) => {
       if (event.eventId) {
@@ -1452,10 +1607,11 @@ export class ArmageddonService {
         },
       });
 
-      if (matchup.event.bracketType === ArmageddonBracketType.ELIMINATION_144) {
-        // AVANÇO DE ÁRVORE: grava o vencedor no slot (next*) da próxima bateria.
-        // O perdedor da semi vai para o jogo de 3º lugar (loser*). O nome do
-        // piloto já aparece na bateria seguinte — sem swap de ladder.
+      if (matchup.event.bracketType !== ArmageddonBracketType.LADDER) {
+        // ELIMINAÇÃO (144 e SHARK_TANK) → AVANÇO DE ÁRVORE: grava o vencedor no
+        // slot (next*) da próxima bateria. O perdedor da semi vai para o jogo de
+        // 3º lugar (loser*). O nome do piloto já aparece na bateria seguinte —
+        // sem swap de ladder.
         const winnerDriverId = dto.winnerSide === 'LEFT' ? matchup.leftDriverId : matchup.rightDriverId;
         const loserDriverId = dto.winnerSide === 'LEFT' ? matchup.rightDriverId : matchup.leftDriverId;
 
@@ -1482,6 +1638,26 @@ export class ArmageddonService {
             where: { id: matchup.eventId },
             data: { status: ArmageddonStatus.FINISHED },
           });
+        } else if (
+          matchup.event.bracketType === ArmageddonBracketType.SHARK_TANK &&
+          matchup.stage === ArmageddonStage.SECOND_DRAW
+        ) {
+          // Shark Tank: encerra o evento quando os 4 desafios da Fase Final
+          // (SECOND_DRAW) tiverem sido todos auditados.
+          const pending = await tx.armageddonMatchup.count({
+            where: {
+              eventId: matchup.eventId,
+              stage: ArmageddonStage.SECOND_DRAW,
+              id: { not: matchupId },
+              winnerSide: null,
+            },
+          });
+          if (pending === 0) {
+            await tx.armageddonEvent.update({
+              where: { id: matchup.eventId },
+              data: { status: ArmageddonStatus.FINISHED },
+            });
+          }
         }
 
         await this.logAudit(tx, 'ARMAGEDDON_ADVANCE', 'ArmageddonMatchup', matchupId, {
@@ -1558,9 +1734,11 @@ export class ArmageddonService {
 
       // Auto-abrir a(s) próxima(s) bateria(s)
       try {
-        if (matchup.event.bracketType === ArmageddonBracketType.ELIMINATION_144) {
-          // Eliminação: as baterias-alvo (vencedor e 3º lugar) que ficaram com os
-          // dois pilotos definidos agora abrem mercado automaticamente.
+        if (matchup.event.bracketType !== ArmageddonBracketType.LADDER) {
+          // Eliminação (144 e SHARK_TANK): as baterias-alvo (vencedor e 3º lugar)
+          // que ficaram com os dois pilotos definidos agora abrem mercado
+          // automaticamente. No Shark Tank, o desafio da Fase Final só tem o
+          // finalista (LEFT); só abre depois que o admin define o rival (RIGHT).
           const targetIds = [matchup.nextMatchupId, matchup.loserToMatchupId].filter(
             (id): id is string => !!id,
           );
@@ -1698,9 +1876,10 @@ export class ArmageddonService {
       });
     }
 
-    // 3) LADDER legado: desfaz o swap de posições do roster
+    // 3) LADDER legado: desfaz o swap de posições do roster (só no LADDER; no
+    //    SHARK_TANK/144 o avanço é por árvore e já foi revertido na cascata acima)
     if (
-      m.event.bracketType !== ArmageddonBracketType.ELIMINATION_144 &&
+      m.event.bracketType === ArmageddonBracketType.LADDER &&
       m.winnerSide === MatchupSide.LEFT &&
       m.leftPosition && m.rightPosition && m.leftDriverId && m.rightDriverId &&
       m.roundType !== 'SHARK_TANK'
@@ -1714,8 +1893,18 @@ export class ArmageddonService {
       });
     }
 
-    // 4) Final reaberta → evento volta a IN_PROGRESS
+    // 4) Final reaberta → evento volta a IN_PROGRESS. No Shark Tank não há final
+    //    única: reabrir qualquer desafio da Fase Final destrava o evento se ele
+    //    havia sido encerrado.
     if (m.isFinal) {
+      await this.prisma.armageddonEvent.updateMany({
+        where: { id: m.eventId, status: ArmageddonStatus.FINISHED },
+        data: { status: ArmageddonStatus.IN_PROGRESS },
+      });
+    } else if (
+      m.event.bracketType === ArmageddonBracketType.SHARK_TANK &&
+      m.stage === ArmageddonStage.SECOND_DRAW
+    ) {
       await this.prisma.armageddonEvent.updateMany({
         where: { id: m.eventId, status: ArmageddonStatus.FINISHED },
         data: { status: ArmageddonStatus.IN_PROGRESS },

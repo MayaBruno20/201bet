@@ -261,7 +261,7 @@ const MarketCard: React.FC<CardProps> = ({ m, auditing, isBusy, onClose, onOpen,
 /* ─── Barra de controle do evento (abrir/fechar todos + gerar rodada) ─── */
 
 const EventControls: React.FC<{
-  ev: { originEventId: string; eventName: string };
+  ev: { originEventId: string; eventName: string; kind: 'LIST' | 'ARMAGEDDON' };
   busy: boolean;
   onOpenAll: () => void;
   onCloseAll: () => void;
@@ -271,13 +271,19 @@ const EventControls: React.FC<{
   return (
     <div className="surface p-3 flex items-center gap-2 flex-wrap">
       <div className="font-display text-[13px] font-bold flex-1 min-w-0 truncate">{ev.eventName}</div>
-      <select className="input" style={{ width: 96 }} value={rt} onChange={(e) => setRt(e.target.value as 'ODD' | 'EVEN')} disabled={busy}>
-        <option value="ODD">Ímpar</option>
-        <option value="EVEN">Par</option>
-      </select>
-      <button className="btn btn-ghost" style={{ paddingTop: 10, paddingBottom: 10 }} onClick={() => onGenerate(rt)} disabled={busy}>
-        <I.Plus size={14}/> Gerar rodada
-      </button>
+      {/* Gerar rodada só faz sentido em Listas (ímpar/par). Chaves (Armageddon/
+          Shark Tank) já vêm geradas — o auditor só abre/fecha. */}
+      {ev.kind === 'LIST' && (
+        <>
+          <select className="input" style={{ width: 96 }} value={rt} onChange={(e) => setRt(e.target.value as 'ODD' | 'EVEN')} disabled={busy}>
+            <option value="ODD">Ímpar</option>
+            <option value="EVEN">Par</option>
+          </select>
+          <button className="btn btn-ghost" style={{ paddingTop: 10, paddingBottom: 10 }} onClick={() => onGenerate(rt)} disabled={busy}>
+            <I.Plus size={14}/> Gerar rodada
+          </button>
+        </>
+      )}
       <button className="btn btn-ghost" style={{ paddingTop: 10, paddingBottom: 10, color: '#3ee093' }} onClick={onOpenAll} disabled={busy}>
         <I.Play size={14}/> Abrir todos
       </button>
@@ -477,20 +483,34 @@ export default function PistaPage() {
   /* ─── Controles em lote por evento (Listas Brasil) ─── */
 
   const listEvents = React.useMemo(() => {
-    const map = new Map<string, { originEventId: string; eventName: string }>();
+    const map = new Map<string, { originEventId: string; eventName: string; kind: 'LIST' | 'ARMAGEDDON' }>();
     for (const m of markets) {
-      if (m.matchupOrigin?.type === 'LIST' && m.matchupOrigin.originEventId) {
-        map.set(m.matchupOrigin.originEventId, { originEventId: m.matchupOrigin.originEventId, eventName: m.eventName });
+      const t = m.matchupOrigin?.type;
+      // Listas e chaves (Armageddon/Shark Tank) ganham controles em lote no pista.
+      if ((t === 'LIST' || t === 'ARMAGEDDON') && m.matchupOrigin?.originEventId) {
+        map.set(m.matchupOrigin.originEventId, {
+          originEventId: m.matchupOrigin.originEventId,
+          eventName: m.eventName,
+          kind: t,
+        });
       }
     }
     return Array.from(map.values());
   }, [markets]);
 
-  type ListEvt = { originEventId: string; eventName: string };
+  type ListEvt = { originEventId: string; eventName: string; kind: 'LIST' | 'ARMAGEDDON' };
   const openAllRound = (ev: ListEvt) =>
-    run(ev.originEventId, () => api.post(ENDPOINTS.BRAZIL_LISTS.events.openAllMarkets(ev.originEventId)), 'Mercados abertos', ev.eventName);
+    run(ev.originEventId, () => api.post(
+      ev.kind === 'ARMAGEDDON'
+        ? ENDPOINTS.ARMAGEDDON.openAllReady(ev.originEventId)
+        : ENDPOINTS.BRAZIL_LISTS.events.openAllMarkets(ev.originEventId),
+    ), 'Mercados abertos', ev.eventName);
   const closeAllRound = (ev: ListEvt) =>
-    run(ev.originEventId, () => api.post(ENDPOINTS.BRAZIL_LISTS.events.closeAllMarkets(ev.originEventId)), 'Mercados fechados', ev.eventName);
+    run(ev.originEventId, () => api.post(
+      ev.kind === 'ARMAGEDDON'
+        ? ENDPOINTS.ARMAGEDDON.closeAllOpen(ev.originEventId)
+        : ENDPOINTS.BRAZIL_LISTS.events.closeAllMarkets(ev.originEventId),
+    ), 'Mercados fechados', ev.eventName);
   const generateRound = (ev: ListEvt, roundType: 'ODD' | 'EVEN') =>
     run(ev.originEventId, () => api.post(ENDPOINTS.BRAZIL_LISTS.events.generateMatchups(ev.originEventId), { roundType }),
       'Rodada gerada', `${ev.eventName} · ${roundType === 'ODD' ? 'Ímpar' : 'Par'}`);
