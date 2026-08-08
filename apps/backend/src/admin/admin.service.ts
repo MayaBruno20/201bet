@@ -1631,7 +1631,8 @@ export class AdminService {
         where: { duelId: { in: duelIds } },
         select: {
           id: true, duelId: true, eventId: true, leftPosition: true, rightPosition: true,
-          roundNumber: true, stage: true, bracketKey: true, isFinal: true, isThirdPlace: true,
+          roundNumber: true, order: true, stage: true, bracketKey: true, isFinal: true, isThirdPlace: true,
+          event: { select: { bracketType: true } },
         },
       }),
       this.prisma.categoryMatchup.findMany({
@@ -1655,11 +1656,13 @@ export class AdminService {
     }
     for (const m of armaMatchups) {
       if (m.duelId) {
+        const isShark = m.event?.bracketType === 'SHARK_TANK';
         const context = m.isFinal ? 'Final'
           : m.isThirdPlace ? '3º lugar'
           : m.bracketKey ? `Chave ${m.bracketKey} · R${m.roundNumber}`
-          : m.stage === 'SECOND_DRAW' ? `Top 32 · R${m.roundNumber}`
-          : `R${m.roundNumber}`;
+          : m.stage === 'SECOND_DRAW'
+            ? (isShark ? `Fase Final · Desafio ${m.order}` : `Top 32 · R${m.roundNumber}`)
+            : `R${m.roundNumber}`;
         originByDuel.set(m.duelId, {
           type: 'ARMAGEDDON',
           matchupId: m.id,

@@ -202,13 +202,17 @@ enum ArmageddonStatus {
 /// Discriminador do mecanismo de chaveamento do Armageddon.
 /// LADDER = comportamento legado (escada "rei do morro", igual Listas Brasil).
 /// ELIMINATION_144 = torneio de eliminação 144→Top 32→campeão + 3º lugar.
+/// SHARK_TANK = 4 chaves (A-D) de 8 → 1 finalista/chave → Fase Final: cada
+///   finalista enfrenta um piloto do Top 20 da Lista (oponente definido no admin).
 enum ArmageddonBracketType {
   LADDER
   ELIMINATION_144
+  SHARK_TANK
 }
 
 /// Fase do torneio de eliminação do Armageddon.
-/// FIRST_DRAW = 1º sorteio nas 5 chaves (A-E). SECOND_DRAW = chave única de 32.
+/// FIRST_DRAW = 1º sorteio nas chaves. SECOND_DRAW = fase única final
+///   (chave de 32 no ELIMINATION_144; os 4 desafios da Fase Final no SHARK_TANK).
 enum ArmageddonStage {
   FIRST_DRAW
   SECOND_DRAW

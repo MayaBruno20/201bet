@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { UserRole } from '@prisma/client';
+import { ArmageddonBracketType, UserRole } from '@prisma/client';
 import { AdminJwtAuthGuard } from '../auth/admin-jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -20,31 +20,28 @@ import {
   CreateArmageddonEventDto,
   UpdateArmageddonEventDto,
 } from './dto/armageddon-event.dto';
-import {
-  ImportRosterFromListsDto,
-  UpsertArmageddonRosterDto,
-} from './dto/armageddon-roster.dto';
-import {
-  GenerateArmageddonMatchupsDto,
-  SaveSecondDrawLayoutDto,
-  SettleArmageddonMatchupDto,
-} from './dto/armageddon-matchup.dto';
-import { CreateArmageddonMultiMarketDto } from './dto/armageddon-multi-market.dto';
+import { UpsertArmageddonRosterDto } from './dto/armageddon-roster.dto';
+import { SettleArmageddonMatchupDto } from './dto/armageddon-matchup.dto';
+import { SetChallengeOpponentDto } from './dto/shark-tank-challenge.dto';
 
 type ReqUser = Request & { user?: { userId?: string; role?: UserRole } };
 
-@Controller('admin/armageddon')
+/**
+ * Módulo admin do Shark Tank (hub separado). Reusa o ArmageddonService por baixo
+ * (bracketType SHARK_TANK): 4 chaves de 8 → Fase Final (finalista x Top 20 da Lista).
+ */
+@Controller('admin/shark-tank')
 @UseGuards(AdminJwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
-export class ArmageddonAdminController {
+export class SharkTankAdminController {
   constructor(private readonly service: ArmageddonService) {}
 
   @Get()
   listAll() {
-    return this.service.adminListAll();
+    return this.service.adminListSharkTank();
   }
 
-  // Antes de :id para a rota estática não ser capturada pelo param.
+  // Rota estática antes de :id.
   @Get('drivers/search')
   searchDrivers(@Query('q') q: string) {
     return this.service.adminSearchDrivers(q ?? '');
@@ -57,7 +54,11 @@ export class ArmageddonAdminController {
 
   @Post()
   create(@Body() dto: CreateArmageddonEventDto, @Req() req: ReqUser) {
-    return this.service.adminCreate(dto, this.audit(req));
+    // Força o tipo — este módulo só cria eventos Shark Tank.
+    return this.service.adminCreate(
+      { ...dto, bracketType: ArmageddonBracketType.SHARK_TANK },
+      this.audit(req),
+    );
   }
 
   @Patch(':id')
@@ -70,16 +71,7 @@ export class ArmageddonAdminController {
     return this.service.adminDelete(id, this.audit(req));
   }
 
-  // ── Roster ──
-  @Post(':id/roster/import-from-lists')
-  importFromLists(
-    @Param('id') id: string,
-    @Body() dto: ImportRosterFromListsDto,
-    @Req() req: ReqUser,
-  ) {
-    return this.service.adminImportFromLists(id, dto, this.audit(req));
-  }
-
+  // ── Roster (chaves A-D de 8) ──
   @Post(':id/roster')
   upsertRoster(
     @Param('id') id: string,
@@ -103,25 +95,10 @@ export class ArmageddonAdminController {
     return this.service.adminRemoveRoster(id, rosterId, this.audit(req));
   }
 
-  // ── Matchups ──
-  @Post(':id/generate-matchups')
-  generate(
-    @Param('id') id: string,
-    @Body() dto: GenerateArmageddonMatchupsDto,
-    @Req() req: ReqUser,
-  ) {
-    return this.service.adminGenerateMatchups(id, dto, this.audit(req));
-  }
-
-  // ── Eliminação 144 (5 chaves → Top 32 → campeão + 3º lugar) ──
-  @Post(':id/generate-first-draw')
-  generateFirstDraw(@Param('id') id: string, @Req() req: ReqUser) {
-    return this.service.adminGenerateFirstDraw(id, this.audit(req));
-  }
-
-  @Post(':id/generate-second-draw')
-  generateSecondDraw(@Param('id') id: string, @Req() req: ReqUser) {
-    return this.service.adminGenerateSecondDraw(id, this.audit(req));
+  // ── Chaveamento ──
+  @Post(':id/generate')
+  generate(@Param('id') id: string, @Req() req: ReqUser) {
+    return this.service.adminGenerateSharkTankBracket(id, this.audit(req));
   }
 
   @Post(':id/clear-keys')
@@ -134,16 +111,12 @@ export class ArmageddonAdminController {
     return this.service.adminResetEvent(id, this.audit(req));
   }
 
-  @Post(':id/second-draw-layout')
-  saveSecondDrawLayout(
-    @Param('id') id: string,
-    @Body() dto: SaveSecondDrawLayoutDto,
-    @Req() req: ReqUser,
-  ) {
-    return this.service.adminSaveSecondDrawLayout(id, dto, this.audit(req));
+  @Get(':id/financial-summary')
+  financialSummary(@Param('id') id: string) {
+    return this.service.adminGetFinancialSummary(id);
   }
 
-  // Modo Pista: AUDITOR/OPERATOR também abrem/fecham todos em lote.
+  // ── Modo Pista: AUDITOR/OPERATOR abrem/fecham/auditam ──
   @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Post(':id/open-all-ready')
   openAllReady(
@@ -176,34 +149,6 @@ export class ArmageddonAdminController {
     });
   }
 
-  @Get(':id/financial-summary')
-  financialSummary(@Param('id') id: string) {
-    return this.service.adminGetFinancialSummary(id);
-  }
-
-  // ── Multi-mercados (campeão / reação / queimada) ──
-
-  @Get(':id/markets')
-  listMultiMarkets(@Param('id') id: string) {
-    return this.service.adminListMultiMarkets(id);
-  }
-
-  @Post(':id/markets')
-  createMultiMarket(
-    @Param('id') id: string,
-    @Body() dto: CreateArmageddonMultiMarketDto,
-    @Req() req: ReqUser,
-  ) {
-    return this.service.adminCreateMultiMarket(id, dto, this.audit(req));
-  }
-
-  /** Reapura manualmente os mercados de classificados (resorteio) — fallback do auto-settle do 2º sorteio. */
-  @Post(':id/settle-qualify')
-  settleQualify(@Param('id') id: string, @Req() req: ReqUser) {
-    return this.service.settleQualifyMarketsForEvent(id, this.audit(req));
-  }
-
-  // Modo Pista: AUDITOR/OPERATOR auditam e abrem/fecham mercados da cabeceira.
   @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Patch('matchups/:matchupId/market')
   toggleMarket(
@@ -224,12 +169,21 @@ export class ArmageddonAdminController {
     return this.service.adminSettleMatchup(matchupId, dto, this.audit(req));
   }
 
-  /** Reabre uma bateria já auditada, revertendo o avanço de chave EM CASCATA
-   *  (estorna as apostas das baterias seguintes). Modo Pista. */
   @Roles(UserRole.ADMIN, UserRole.OPERATOR, UserRole.AUDITOR)
   @Post('matchups/:matchupId/reopen')
   reopen(@Param('matchupId') matchupId: string, @Req() req: ReqUser) {
     return this.service.reopenSettledMatchup(matchupId, this.audit(req));
+  }
+
+  // Fase Final: admin define o rival (Top 20 da Lista) de cada desafio.
+  @Roles(UserRole.ADMIN, UserRole.OPERATOR)
+  @Patch('matchups/:matchupId/opponent')
+  setChallengeOpponent(
+    @Param('matchupId') matchupId: string,
+    @Body() dto: SetChallengeOpponentDto,
+    @Req() req: ReqUser,
+  ) {
+    return this.service.adminSetChallengeOpponent(matchupId, dto, this.audit(req));
   }
 
   @Delete('matchups/:matchupId')

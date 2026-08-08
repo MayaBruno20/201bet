@@ -433,8 +433,12 @@ export class EventsService {
       this.prisma.event.findMany({
         where: {
           featured: true,
-          status: { in: [EventStatus.SCHEDULED, EventStatus.LIVE] },
-          startAt: { gte: featuredCutoff },
+          // Eventos AO VIVO sempre entram no destaque, mesmo que o início já
+          // tenha passado das 24h — o corte de staleness só vale pra agendados.
+          OR: [
+            { status: EventStatus.LIVE },
+            { status: EventStatus.SCHEDULED, startAt: { gte: featuredCutoff } },
+          ],
         },
         orderBy: { startAt: 'asc' },
         select,
@@ -442,9 +446,22 @@ export class EventsService {
       this.prisma.categoryEvent.findMany({
         where: {
           featured: true,
-          status: { not: CategoryEventStatus.CANCELED },
           eventId: null,
-          scheduledAt: { gte: featuredCutoff },
+          // Em andamento (qualifying/em progresso) ignora o corte de 24h.
+          OR: [
+            {
+              status: {
+                in: [
+                  CategoryEventStatus.QUALIFYING,
+                  CategoryEventStatus.IN_PROGRESS,
+                ],
+              },
+            },
+            {
+              status: { not: CategoryEventStatus.CANCELED },
+              scheduledAt: { gte: featuredCutoff },
+            },
+          ],
         },
         orderBy: { scheduledAt: 'asc' },
         select: categorySelect,
@@ -452,8 +469,14 @@ export class EventsService {
       this.prisma.armageddonEvent.findMany({
         where: {
           featured: true,
-          status: { not: ArmageddonStatus.CANCELED },
-          scheduledAt: { gte: featuredCutoff },
+          // Em progresso (ao vivo) ignora o corte de 24h.
+          OR: [
+            { status: ArmageddonStatus.IN_PROGRESS },
+            {
+              status: { not: ArmageddonStatus.CANCELED },
+              scheduledAt: { gte: featuredCutoff },
+            },
+          ],
         },
         orderBy: { scheduledAt: 'asc' },
         select: { ...categorySelect, eventId: true },

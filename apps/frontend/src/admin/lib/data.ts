@@ -54,6 +54,7 @@ export const NAV: NavItem[] = [
   { id: 'eventos', label: 'Copa Categorias', icon: 'Trophy', group: 'Operação', href: '/eventos' },
   { id: 'listas', label: 'Listas Brasil', icon: 'Layers', group: 'Operação', href: '/listas' },
   { id: 'armageddon', label: 'Armageddon', icon: 'Flame', group: 'Operação', href: '/armageddon' },
+  { id: 'shark-tank', label: 'Shark Tank', icon: 'Trophy', group: 'Operação', href: '/shark-tank' },
   { id: 'embates-rapidos', label: 'Embates rápidos', icon: 'Bolt', group: 'Operação', href: '/embates-rapidos' },
   { id: 'personalizados', label: 'Embates personalizados', icon: 'Sparkles', group: 'Operação', href: '/personalizados' },
   { id: 'market-control', label: 'Mercados ao vivo', icon: 'Bolt', group: 'Operação', href: '/market-control' },
