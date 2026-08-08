@@ -341,15 +341,24 @@ export function BettingExperience({
         setSelectedDuelId(wantedDuelId);
         if (targetStage) setSelectedRound(targetStage.roundNumber);
         if (firstSnapshot) setSnapshots({ [firstSnapshot.duelId]: firstSnapshot });
-      } else if (firstSnapshot) {
-        setSnapshots({ [firstSnapshot.duelId]: firstSnapshot });
-        setSelectedEventId(firstSnapshot.eventId);
-        setSelectedDuelId(firstSnapshot.duelId);
       } else if (boardData.events.length > 0) {
-        // Prefere o evento AO VIVO (aberto) como padrão, em vez do primeiro da lista.
-        const preferred = boardData.events.find((e) => e.status === 'LIVE') ?? boardData.events[0];
+        // Padrão: prioriza o evento AO VIVO com bateria rolando (o que o usuário
+        // quer apostar), e só cai no snapshot default do backend / 1º da lista se
+        // não houver nenhum ao vivo. Antes o firstSnapshot vencia e trazia um
+        // evento aleatório, obrigando a clicar no evento aberto.
+        const live = boardData.events.filter((e) => e.status === 'LIVE');
+        const preferred =
+          live.find((e) => e.currentDuelId) ??
+          live[0] ??
+          (firstSnapshot ? boardData.events.find((e) => e.id === firstSnapshot.eventId) : undefined) ??
+          boardData.events[0];
         setSelectedEventId(preferred.id);
-        setSelectedDuelId(preferred.currentDuelId ?? preferred.stages[0]?.duelId ?? '');
+        const duelId =
+          firstSnapshot && firstSnapshot.eventId === preferred.id
+            ? firstSnapshot.duelId
+            : preferred.currentDuelId ?? preferred.stages[0]?.duelId ?? '';
+        setSelectedDuelId(duelId);
+        if (firstSnapshot) setSnapshots({ [firstSnapshot.duelId]: firstSnapshot });
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Erro ao carregar');
