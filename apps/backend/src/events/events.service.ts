@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { ArmageddonStatus, CategoryEventStatus, EventStatus } from '@prisma/client';
+import {
+  ArmageddonBracketType,
+  ArmageddonStatus,
+  CategoryEventStatus,
+  EventStatus,
+} from '@prisma/client';
 import { CacheService } from '../cache/cache.service';
 import { PrismaService } from '../database/prisma.service';
 import { HOUSE_MARGIN_PERCENT, SEED_ODD } from '../market.service';
@@ -469,6 +474,9 @@ export class EventsService {
       this.prisma.armageddonEvent.findMany({
         where: {
           featured: true,
+          // Shark Tank tem hub próprio (/shark-tank) e roteia como evento normal
+          // (o Event vinculado cai no card comum → /apostas), não como Armageddon.
+          bracketType: { not: ArmageddonBracketType.SHARK_TANK },
           // Em progresso (ao vivo) ignora o corte de 24h.
           OR: [
             { status: ArmageddonStatus.IN_PROGRESS },
@@ -527,6 +535,7 @@ export class EventsService {
       this.prisma.armageddonEvent.findMany({
         where: {
           featured: false,
+          bracketType: { not: ArmageddonBracketType.SHARK_TANK },
           status: { not: ArmageddonStatus.CANCELED },
           scheduledAt: { gte: now },
         },
