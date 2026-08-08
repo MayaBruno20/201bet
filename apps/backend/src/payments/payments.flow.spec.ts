@@ -58,9 +58,9 @@ describe('Payments flow (unit)', () => {
         expect.objectContaining({
           amountCents: 20000,
           externalId: 'p1',
-          documentValidation: '12345678901',
         }),
       );
+      expect(valut.createPixQrCode.mock.calls[0][0].documentValidation).toBeUndefined();
       expect(prisma.payment.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'p1' },
@@ -166,7 +166,7 @@ describe('Payments flow (unit)', () => {
             status: PaymentStatus.PENDING,
             provider: 'VALUT_PIX',
             providerRef: null,
-            pixKey: 'k',
+            pixKey: '12345678901',
             pixKeyType: 'document',
           }),
         },
@@ -192,7 +192,7 @@ describe('Payments flow (unit)', () => {
       };
 
       const service = new PaymentsService(prisma as unknown as PrismaService, valut as unknown as ValutService);
-      const res = await service.createWithdraw('u1', { amount: 200, pixKeyType: 'document' as any, pixKey: 'k' });
+      const res = await service.createWithdraw('u1', { amount: 200, pixKeyType: 'document' as any, pixKey: '12345678901' });
 
       expect(tx.wallet.updateMany).toHaveBeenCalled();
       expect(valut.performPixCashout).toHaveBeenCalledWith(
@@ -203,7 +203,10 @@ describe('Payments flow (unit)', () => {
         }),
       );
       expect(prisma.payment.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'wd1' }, data: { providerRef: 'pix_out_1' } }),
+        expect.objectContaining({
+          where: { id: 'wd1' },
+          data: expect.objectContaining({ providerRef: 'pix_out_1' }),
+        }),
       );
       expect(res).toEqual(expect.objectContaining({ paymentId: 'wd1', status: 'PENDING' }));
     });
@@ -252,7 +255,7 @@ describe('Payments flow (unit)', () => {
       process.env.WITHDRAW_AUTO_HOLD_THRESHOLD = original;
     });
 
-    it('createWithdraw refunds wallet on ValutRejectedError (current behavior)', async () => {
+    it('createWithdraw marks UNKNOWN on ValutRejectedError (no auto-refund)', async () => {
       const tx = {
         wallet: {
           updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -286,7 +289,7 @@ describe('Payments flow (unit)', () => {
       const valut = { performPixCashout: jest.fn().mockRejectedValue(new ValutRejectedError('rejected')) };
 
       const service = new PaymentsService(prisma as unknown as PrismaService, valut as unknown as ValutService);
-      await expect(service.createWithdraw('u1', { amount: 200, pixKeyType: 'document' as any, pixKey: 'k' }))
+      await expect(service.createWithdraw('u1', { amount: 200, pixKeyType: 'document' as any, pixKey: '12345678901' }))
         .rejects.toBeInstanceOf(BadRequestException);
 
       // robust behavior: do NOT refund automatically; mark as UNKNOWN for reconciliation/manual review
@@ -298,7 +301,7 @@ describe('Payments flow (unit)', () => {
       );
     });
 
-    it('createWithdraw keeps PENDING on network/timeout error (no refund)', async () => {
+    it('createWithdraw keeps funds held on network/timeout error (no refund)', async () => {
       const tx = {
         wallet: { updateMany: jest.fn().mockResolvedValue({ count: 1 }), update: jest.fn() },
         payment: { create: jest.fn().mockResolvedValue({ id: 'wd1', userId: 'u1', type: PaymentType.WITHDRAW, amount: dec(200), status: PaymentStatus.PENDING }) },
@@ -319,7 +322,7 @@ describe('Payments flow (unit)', () => {
       const valut = { performPixCashout: jest.fn().mockRejectedValue(new ValutNetworkError('timeout')) };
       const service = new PaymentsService(prisma as unknown as PrismaService, valut as unknown as ValutService);
 
-      await expect(service.createWithdraw('u1', { amount: 200, pixKeyType: 'document' as any, pixKey: 'k' }))
+      await expect(service.createWithdraw('u1', { amount: 200, pixKeyType: 'document' as any, pixKey: '12345678901' }))
         .rejects.toBeInstanceOf(BadRequestException);
       expect(tx.wallet.update).not.toHaveBeenCalled();
       expect(prisma.payment.update).toHaveBeenCalledWith(
@@ -360,6 +363,21 @@ describe('Payments flow (unit)', () => {
       process.env.VALUT_WEBHOOK_SECRET = 'shared';
       const controller = new WebhookController({} as PaymentsService, {} as PrismaService);
       await expect(controller.handleWebhook({ pixId: 'x', status: 'paid' }, 'Bearer wrong')).rejects.toThrow();
+    });
+
+    it('confirms deposit with snake_case pix_id and PAID status', async () => {
+      process.env.VALUT_WEBHOOK_SECRET = 'shared';
+      const paymentsService = { findPaymentByProviderRef: jest.fn(), confirmDeposit: jest.fn() };
+      const controller = new WebhookController(paymentsService as unknown as PaymentsService, {} as PrismaService);
+
+      paymentsService.findPaymentByProviderRef.mockResolvedValue({
+        id: 'p1',
+        type: PaymentType.DEPOSIT,
+        status: PaymentStatus.PENDING,
+      });
+      await controller.handleWebhook({ pix_id: 'pix_1', status: 'PAID' }, 'Bearer shared');
+      expect(paymentsService.findPaymentByProviderRef).toHaveBeenCalledWith('pix_1');
+      expect(paymentsService.confirmDeposit).toHaveBeenCalledWith('p1');
     });
 
     it('confirms withdrawal with idempotent updateMany', async () => {
@@ -406,18 +424,31 @@ describe('Payments flow (unit)', () => {
   });
 
   describe('Reconciliation', () => {
-    it('reconciles pending deposit by confirming when Valut says paid', async () => {
-      const prisma = {
+    function mockReconcilePrisma(opts: {
+      recentDeposits?: unknown[];
+      staleDeposits?: unknown[];
+      withdrawals?: unknown[];
+      orphans?: unknown[];
+      remaining?: number;
+      updateMany?: jest.Mock;
+    }) {
+      return {
         payment: {
           findMany: jest.fn()
-            // deposits
-            .mockResolvedValueOnce([{ id: 'd1', type: PaymentType.DEPOSIT, status: PaymentStatus.PENDING, provider: 'VALUT_PIX', providerRef: 'pix_in_1' }])
-            // withdrawals com providerRef
-            .mockResolvedValueOnce([])
-            // orphan UNKNOWN sem providerRef
-            .mockResolvedValueOnce([]),
+            .mockResolvedValueOnce(opts.recentDeposits ?? [])
+            .mockResolvedValueOnce(opts.staleDeposits ?? [])
+            .mockResolvedValueOnce(opts.withdrawals ?? [])
+            .mockResolvedValueOnce(opts.orphans ?? []),
+          updateMany: opts.updateMany ?? jest.fn().mockResolvedValue({ count: 1 }),
+          count: jest.fn().mockResolvedValue(opts.remaining ?? 0),
         },
       };
+    }
+
+    it('reconciles pending deposit by confirming when Valut says paid', async () => {
+      const prisma = mockReconcilePrisma({
+        recentDeposits: [{ id: 'd1', type: PaymentType.DEPOSIT, status: PaymentStatus.PENDING, provider: 'VALUT_PIX', providerRef: 'pix_in_1' }],
+      });
       const valut = {
         getPixQrCode: jest.fn().mockResolvedValue({ pix_id: 'pix_in_1', paid: true, status: 'paid', amount: 20000 }),
         getPixCashout: jest.fn(),
@@ -428,21 +459,72 @@ describe('Payments flow (unit)', () => {
       await (service as any).reconcileOnce();
       expect(valut.getPixQrCode).toHaveBeenCalledWith('pix_in_1');
       expect(spy).toHaveBeenCalledWith('d1');
+      expect(prisma.payment.findMany.mock.calls[0][0].orderBy).toEqual({ createdAt: 'desc' });
+    });
+
+    it('cancels stale unpaid deposit after Valut says not paid', async () => {
+      const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+      const prisma = mockReconcilePrisma({
+        staleDeposits: [{ id: 'old1', type: PaymentType.DEPOSIT, status: PaymentStatus.PENDING, provider: 'VALUT_PIX', providerRef: 'pix_old' }],
+        updateMany,
+      });
+      const valut = {
+        getPixQrCode: jest.fn().mockResolvedValue({ pix_id: 'pix_old', paid: false, status: 'expired', amount: 2000 }),
+        getPixCashout: jest.fn(),
+      };
+      const service = new PaymentsService(prisma as unknown as PrismaService, valut as unknown as ValutService);
+      const spy = jest.spyOn(service, 'confirmDeposit');
+
+      await (service as any).reconcileOnce();
+      expect(spy).not.toHaveBeenCalled();
+      expect(updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'old1', status: PaymentStatus.PENDING, type: PaymentType.DEPOSIT },
+          data: { status: PaymentStatus.CANCELED },
+        }),
+      );
+    });
+
+    it('credits stale deposit when Valut says paid instead of canceling', async () => {
+      const prisma = mockReconcilePrisma({
+        staleDeposits: [{ id: 'old2', type: PaymentType.DEPOSIT, status: PaymentStatus.PENDING, provider: 'VALUT_PIX', providerRef: 'pix_paid_late' }],
+      });
+      const valut = {
+        getPixQrCode: jest.fn().mockResolvedValue({ pix_id: 'pix_paid_late', paid: true, status: 'paid', amount: 5000 }),
+        getPixCashout: jest.fn(),
+      };
+      const service = new PaymentsService(prisma as unknown as PrismaService, valut as unknown as ValutService);
+      const spy = jest.spyOn(service, 'confirmDeposit').mockResolvedValue({ paymentId: 'old2', status: 'APPROVED', balance: 50 } as any);
+
+      await (service as any).reconcileOnce();
+      expect(spy).toHaveBeenCalledWith('old2');
+      expect(prisma.payment.updateMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: PaymentStatus.CANCELED } }),
+      );
+    });
+
+    it('does not cancel stale deposit when Valut lookup fails', async () => {
+      const updateMany = jest.fn();
+      const prisma = mockReconcilePrisma({
+        staleDeposits: [{ id: 'old3', type: PaymentType.DEPOSIT, status: PaymentStatus.PENDING, provider: 'VALUT_PIX', providerRef: 'pix_err' }],
+        updateMany,
+      });
+      const valut = {
+        getPixQrCode: jest.fn().mockRejectedValue(new Error('timeout')),
+        getPixCashout: jest.fn(),
+      };
+      const service = new PaymentsService(prisma as unknown as PrismaService, valut as unknown as ValutService);
+
+      await (service as any).reconcileOnce();
+      expect(updateMany).not.toHaveBeenCalled();
     });
 
     it('reconciles pending withdrawal by marking APPROVED when Valut says completed', async () => {
-      const prisma = {
-        payment: {
-          findMany: jest.fn()
-            // deposits
-            .mockResolvedValueOnce([])
-            // withdrawals
-            .mockResolvedValueOnce([{ id: 'w1', userId: 'u1', type: PaymentType.WITHDRAW, status: PaymentStatus.UNKNOWN, provider: 'VALUT_PIX', providerRef: 'pix_out_1', amount: dec(200) }])
-            // orphan UNKNOWN sem providerRef
-            .mockResolvedValueOnce([]),
-          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-        },
-      };
+      const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+      const prisma = mockReconcilePrisma({
+        withdrawals: [{ id: 'w1', userId: 'u1', type: PaymentType.WITHDRAW, status: PaymentStatus.UNKNOWN, provider: 'VALUT_PIX', providerRef: 'pix_out_1', amount: dec(200) }],
+        updateMany,
+      });
       const valut = {
         getPixQrCode: jest.fn(),
         getPixCashout: jest.fn().mockResolvedValue({ pix_id: 'pix_out_1', status: 'completed' }),
@@ -451,7 +533,7 @@ describe('Payments flow (unit)', () => {
 
       await (service as any).reconcileOnce();
       expect(valut.getPixCashout).toHaveBeenCalledWith('pix_out_1');
-      expect(prisma.payment.updateMany).toHaveBeenCalledWith(
+      expect(updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'w1', status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] } },
           data: { status: PaymentStatus.APPROVED },
@@ -473,12 +555,9 @@ describe('Payments flow (unit)', () => {
         auditLog: { create: jest.fn().mockResolvedValue({}) },
       };
       const prisma = {
-        payment: {
-          findMany: jest.fn()
-            .mockResolvedValueOnce([]) // deposits
-            .mockResolvedValueOnce([{ id: 'w1', userId: 'u1', type: PaymentType.WITHDRAW, status: PaymentStatus.UNKNOWN, provider: 'VALUT_PIX', providerRef: 'pix_out_1', amount: dec(200) }])
-            .mockResolvedValueOnce([]), // orphan UNKNOWN sem providerRef
-        },
+        ...mockReconcilePrisma({
+          withdrawals: [{ id: 'w1', userId: 'u1', type: PaymentType.WITHDRAW, status: PaymentStatus.UNKNOWN, provider: 'VALUT_PIX', providerRef: 'pix_out_1', amount: dec(200) }],
+        }),
         $transaction: jest.fn(async (cb: any) => cb(tx)),
       };
       const valut = {
@@ -497,21 +576,16 @@ describe('Payments flow (unit)', () => {
     });
 
     it('reconciles orphan UNKNOWN withdrawal (sem providerRef) re-disparando idempotente', async () => {
-      const prisma = {
-        payment: {
-          findMany: jest.fn()
-            .mockResolvedValueOnce([]) // deposits
-            .mockResolvedValueOnce([]) // withdrawals com providerRef
-            // orphan: UNKNOWN, providerRef null, holdReason null — o beco sem saída
-            .mockResolvedValueOnce([{
-              id: 'wd9', userId: 'u1', type: PaymentType.WITHDRAW, status: PaymentStatus.UNKNOWN,
-              provider: 'VALUT_PIX', providerRef: null, holdReason: null,
-              pixKey: '12345678901', pixKeyType: 'document', amount: dec(136.1),
-              user: { cpf: '12345678901' },
-            }]),
-          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-        },
-      };
+      const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+      const prisma = mockReconcilePrisma({
+        orphans: [{
+          id: 'wd9', userId: 'u1', type: PaymentType.WITHDRAW, status: PaymentStatus.UNKNOWN,
+          provider: 'VALUT_PIX', providerRef: null, holdReason: null,
+          pixKey: '12345678901', pixKeyType: 'document', amount: dec(136.1),
+          user: { cpf: '12345678901' },
+        }],
+        updateMany,
+      });
       const valut = {
         getPixQrCode: jest.fn(),
         getPixCashout: jest.fn(),
@@ -526,7 +600,7 @@ describe('Payments flow (unit)', () => {
         expect.objectContaining({ externalId: 'wd9', idempotencyKey: 'wd-wd9', documentValidation: '12345678901' }),
       );
       // Adota o pix_id e tira o saque do estado órfão (UNKNOWN + providerRef null).
-      expect(prisma.payment.updateMany).toHaveBeenCalledWith(
+      expect(updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'wd9', status: PaymentStatus.UNKNOWN, providerRef: null },
           data: expect.objectContaining({ providerRef: 'pix_out_9', status: PaymentStatus.PENDING }),

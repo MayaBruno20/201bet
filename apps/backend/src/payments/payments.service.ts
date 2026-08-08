@@ -27,6 +27,12 @@ export class PaymentsService {
   // pendente, volta a false e o ticker para de acordar a Neon.
   // NUNCA abandona um pagamento: enquanto houver pendência, segue ativo.
   private mayHavePending = true;
+  /** Bumped on createDeposit/createWithdraw so a concurrent reconcile can't sleep early. */
+  private reconcileGeneration = 0;
+
+  /** QR Valut = 30min; margem para liquidação atrasada / skew de relógio. */
+  private static readonly DEPOSIT_STALE_MS = 35 * 60_000;
+  private static readonly RECONCILE_DEPOSIT_BATCH = 50;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -35,7 +41,8 @@ export class PaymentsService {
 
   onModuleInit() {
     // Reconciliação automática defensiva (evita PENDING/UNKNOWN infinito)
-    // - Depósitos PENDING: se Valut diz paid, credita
+    // - Depósitos PENDING recentes: se Valut diz paid, credita (prioridade)
+    // - Depósitos PENDING velhos: se paid credita; senão cancela (libera a fila)
     // - Saques PENDING/UNKNOWN com providerRef: se Valut diz paid/completed, aprova; se falhou, reembolsa
     const intervalMs = Number(process.env.PAYMENTS_RECONCILIATION_INTERVAL_MS ?? '60000');
     if (Number.isFinite(intervalMs) && intervalMs >= 10_000) {
@@ -57,6 +64,7 @@ export class PaymentsService {
     // Vai gerar um pagamento PENDING → reativa o reconcile (rede de segurança do
     // crédito) mesmo que a Neon estivesse hibernando.
     this.mayHavePending = true;
+    this.reconcileGeneration += 1;
     this.logger.log(
       `createDeposit start userId=${userId} amount=${payload.amount}`,
     );
@@ -155,8 +163,9 @@ export class PaymentsService {
 
     try {
       const pix = await this.valut.getPixQrCode(payment.providerRef);
+      const paid = this.isPixCashinPaid(pix);
 
-      if (pix.paid && payment.status === 'PENDING') {
+      if (paid && payment.status === 'PENDING') {
         return this.confirmDeposit(payment.id, userId);
       }
 
@@ -165,7 +174,7 @@ export class PaymentsService {
       return {
         paymentId: payment.id,
         status: payment.status,
-        paid: pix.paid,
+        paid,
         amount: Number(payment.amount),
         balance: Number(wallet?.balance ?? 0),
       };
@@ -300,6 +309,7 @@ export class PaymentsService {
   async createWithdraw(userId: string, payload: CreateWithdrawDto) {
     // Saque vira PENDING/UNKNOWN → reativa o reconcile (aprovação/reembolso).
     this.mayHavePending = true;
+    this.reconcileGeneration += 1;
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
     if (!wallet) throw new NotFoundException('Carteira não encontrada');
 
@@ -858,6 +868,18 @@ export class PaymentsService {
 
   // ── Reconciliação ───────────────────────────────────────────────
 
+  /** Cashin pago de forma terminal (não estornado). */
+  private isPixCashinPaid(pix: {
+    paid?: boolean;
+    status?: string;
+    is_refunded?: boolean;
+  }): boolean {
+    if (pix.is_refunded) return false;
+    if (pix.paid === true) return true;
+    const st = (pix.status || '').toLowerCase();
+    return st === 'paid' || st === 'completed';
+  }
+
   private async safeReconcile() {
     // Sem pendência conhecida → não acorda a Neon. Reativado por createDeposit/
     // createWithdraw e pelo seed do boot. Enquanto houver pendência, segue rodando.
@@ -869,29 +891,104 @@ export class PaymentsService {
     }
   }
 
+  private async tryConfirmDepositFromReconcile(paymentId: string) {
+    try {
+      await this.confirmDeposit(paymentId);
+    } catch (e) {
+      this.logger.error(
+        `Reconcile: confirmDeposit failed paymentId=${paymentId}`,
+        e instanceof Error ? e.stack : e,
+      );
+    }
+  }
+
+  private async reconcileRecentDeposit(p: { id: string; providerRef: string | null }) {
+    if (!p.providerRef) return;
+    try {
+      const pix = await this.valut.getPixQrCode(p.providerRef);
+      if (this.isPixCashinPaid(pix)) {
+        await this.tryConfirmDepositFromReconcile(p.id);
+      }
+    } catch (e) {
+      this.logger.warn(
+        `Reconcile: getPixQrCode failed (recent) paymentId=${p.id} err=${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  /**
+   * Depósito além do TTL do QR: se a Valut disser pago, credita; senão cancela.
+   * Em erro de rede NÃO cancela — tenta de novo no próximo tick.
+   */
+  private async reconcileStaleDeposit(p: { id: string; providerRef: string | null }) {
+    if (!p.providerRef) {
+      const canceled = await this.prisma.payment.updateMany({
+        where: { id: p.id, status: PaymentStatus.PENDING, type: PaymentType.DEPOSIT },
+        data: { status: PaymentStatus.CANCELED },
+      });
+      if (canceled.count > 0) {
+        this.logger.log(`Reconcile: depósito sem providerRef cancelado paymentId=${p.id}`);
+      }
+      return;
+    }
+
+    try {
+      const pix = await this.valut.getPixQrCode(p.providerRef);
+      if (this.isPixCashinPaid(pix)) {
+        await this.tryConfirmDepositFromReconcile(p.id);
+        return;
+      }
+
+      const canceled = await this.prisma.payment.updateMany({
+        where: { id: p.id, status: PaymentStatus.PENDING, type: PaymentType.DEPOSIT },
+        data: { status: PaymentStatus.CANCELED },
+      });
+      if (canceled.count > 0) {
+        this.logger.log(`Reconcile: depósito expirado cancelado paymentId=${p.id}`);
+      }
+    } catch (e) {
+      this.logger.warn(
+        `Reconcile: getPixQrCode failed (stale) paymentId=${p.id} err=${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
   private async reconcileOnce() {
-    // 1) Deposits pending: if paid, confirm (idempotent)
-    const pendingDeposits = await this.prisma.payment.findMany({
+    const genSeen = this.reconcileGeneration;
+    const staleBefore = new Date(Date.now() - PaymentsService.DEPOSIT_STALE_MS);
+
+    // 1a) Depósitos PENDING ainda na janela do QR — mais recentes primeiro.
+    //     Evita a fila ficar presa em QR abandonados antigos (take 50 ASC).
+    const recentDeposits = await this.prisma.payment.findMany({
       where: {
         type: PaymentType.DEPOSIT,
         status: PaymentStatus.PENDING,
         provider: 'VALUT_PIX',
         providerRef: { not: null },
+        createdAt: { gte: staleBefore },
       },
-      orderBy: { createdAt: 'asc' },
-      take: 50,
+      orderBy: { createdAt: 'desc' },
+      take: PaymentsService.RECONCILE_DEPOSIT_BATCH,
     });
 
-    for (const p of pendingDeposits) {
-      if (!p.providerRef) continue;
-      try {
-        const pix = await this.valut.getPixQrCode(p.providerRef);
-        if (pix.paid) {
-          await this.confirmDeposit(p.id).catch(() => undefined);
-        }
-      } catch {
-        // ignore and retry next tick
-      }
+    for (const p of recentDeposits) {
+      await this.reconcileRecentDeposit(p);
+    }
+
+    // 1b) Depósitos PENDING além do TTL — credita se pago; senão CANCELED (libera fila).
+    const staleDeposits = await this.prisma.payment.findMany({
+      where: {
+        type: PaymentType.DEPOSIT,
+        status: PaymentStatus.PENDING,
+        provider: 'VALUT_PIX',
+        createdAt: { lt: staleBefore },
+      },
+      orderBy: { createdAt: 'asc' },
+      take: PaymentsService.RECONCILE_DEPOSIT_BATCH,
+    });
+
+    for (const p of staleDeposits) {
+      await this.reconcileStaleDeposit(p);
     }
 
     // 2) Withdrawals pending/unknown with providerRef: fetch status and close/refund
@@ -1001,12 +1098,32 @@ export class PaymentsService {
       }
     }
 
-    // Só dorme quando a checagem confirmou ZERO pendências (deposito e saque).
-    // Se ainda há algo pendente, mantém ativo para tentar de novo no próximo tick.
-    this.mayHavePending =
-      pendingDeposits.length > 0 ||
-      pendingWithdrawals.length > 0 ||
-      orphanUnknownWithdrawals.length > 0;
+    // Idle só com ZERO pendências reconciliáveis no banco. Se createDeposit/saque
+    // bumpou reconcileGeneration durante este tick, mantém ativo (evita race).
+    const remaining = await this.prisma.payment.count({
+      where: {
+        provider: 'VALUT_PIX',
+        OR: [
+          {
+            type: PaymentType.DEPOSIT,
+            status: PaymentStatus.PENDING,
+          },
+          {
+            type: PaymentType.WITHDRAW,
+            status: { in: [PaymentStatus.PENDING, PaymentStatus.UNKNOWN] },
+            providerRef: { not: null },
+          },
+          {
+            type: PaymentType.WITHDRAW,
+            status: PaymentStatus.UNKNOWN,
+            providerRef: null,
+            holdReason: null,
+            pixKey: { not: null },
+          },
+        ],
+      },
+    });
+    this.mayHavePending = remaining > 0 || this.reconcileGeneration !== genSeen;
   }
 
   private async refundFailedWithdraw(paymentId: string, reason: string) {

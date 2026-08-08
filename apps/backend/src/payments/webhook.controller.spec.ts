@@ -2,7 +2,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { PaymentStatus, PaymentType } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { PaymentsService } from './payments.service';
-import { WebhookController } from './webhook.controller';
+import { extractValutPixId, extractValutStatus, WebhookController } from './webhook.controller';
 
 describe('WebhookController', () => {
   const originalSecret = process.env.VALUT_WEBHOOK_SECRET;
@@ -53,5 +53,11 @@ describe('WebhookController', () => {
         data: { status: PaymentStatus.APPROVED },
       }),
     );
+  });
+
+  it('extracts pix_id and case-insensitive status', () => {
+    expect(extractValutPixId({ pix_id: 'abc' })).toBe('abc');
+    expect(extractValutPixId({ data: { pixId: 'nested' } })).toBe('nested');
+    expect(extractValutStatus({ status: 'PAID' })).toBe('paid');
   });
 });

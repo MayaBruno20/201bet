@@ -70,6 +70,7 @@ describe('PaymentsService', () => {
           update: walletUpdate,
         },
         walletTransaction: { create: walletTxCreate },
+        promoEnrollment: { findUnique: jest.fn().mockResolvedValue(null) },
       };
 
       const prisma = {
