@@ -32,6 +32,7 @@ type MyBet = {
   id: string;
   stake: number;
   potentialWin: number;
+  currentPotential?: number | null;
   status: string;
   createdAt: string;
   items: Array<{
@@ -535,8 +536,8 @@ export function BettingExperience({
           status: classifyDuelStatus(stage),
           totalPool: snap?.totalPool ?? 0,
           isSuperFinal: !!stage.isSuperFinal,
-          left:  { label: snap?.duel.left.label  ?? 'Aguardando...', odd: snap?.duel.left.odd  ?? 1.9, poolShare: snap?.duel.left.poolShare  ?? 50, photoUrl: snap?.duel.left.photoUrl  ?? null },
-          right: { label: snap?.duel.right.label ?? 'Aguardando...', odd: snap?.duel.right.odd ?? 1.9, poolShare: snap?.duel.right.poolShare ?? 50, photoUrl: snap?.duel.right.photoUrl ?? null },
+          left:  { label: snap?.duel.left.label  ?? 'Aguardando...', carName: snap?.duel.left.carName,  driverName: snap?.duel.left.driverName,  odd: snap?.duel.left.odd  ?? 1.9, poolShare: snap?.duel.left.poolShare  ?? 50, photoUrl: snap?.duel.left.photoUrl  ?? null },
+          right: { label: snap?.duel.right.label ?? 'Aguardando...', carName: snap?.duel.right.carName, driverName: snap?.duel.right.driverName, odd: snap?.duel.right.odd ?? 1.9, poolShare: snap?.duel.right.poolShare ?? 50, photoUrl: snap?.duel.right.photoUrl ?? null },
           settlement: snap?.settlement ? { winnerSide: snap.settlement.winnerSide } : undefined,
           isInitialOdds: !!snap && snap.totalPool === 0,
         };
@@ -581,6 +582,7 @@ export function BettingExperience({
         status,
         stake: Number(b.stake),
         potentialWin: Number(b.potentialWin),
+        currentPotential: b.currentPotential ?? null,
         oddAtPlacement: item?.oddAtPlacement ?? 0,
         eventName: item?.eventName ?? 'Evento',
         marketName: item?.marketName ?? '—',

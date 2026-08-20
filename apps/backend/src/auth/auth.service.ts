@@ -7,7 +7,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { VerificationTokenType } from '@prisma/client';
+import { BetStatus, VerificationTokenType } from '@prisma/client';
+import { HOUSE_MARGIN_PERCENT } from '../market.service';
 import { OAuth2Client } from 'google-auth-library';
 import type { AppEnv } from '../config/env.validation';
 import { PrismaService } from '../database/prisma.service';
@@ -596,10 +597,53 @@ export class AuthService {
       },
     });
 
+    // Potencial ATUAL pelo rateio ao vivo (bilhetes ABERTOS). Substitui a "odd
+    // travada" no display por um retorno potencial honesto (pari-mutuel) — que é
+    // como o pagamento é de fato calculado no fechamento. Mostrar a odd do
+    // momento da aposta enganava (apostador esperava odd X e recebia o rateio).
+    const openMarketIds = [
+      ...new Set(
+        bets
+          .filter((b) => b.status === BetStatus.OPEN)
+          .flatMap((b) => b.items.map((it) => it.odd.market.id)),
+      ),
+    ];
+    const poolByOdd = new Map<string, number>();
+    const totalByMarket = new Map<string, number>();
+    if (openMarketIds.length) {
+      const rows = await this.prisma.betItem.findMany({
+        where: { bet: { status: BetStatus.OPEN }, odd: { marketId: { in: openMarketIds } } },
+        select: {
+          oddId: true,
+          bet: { select: { stake: true } },
+          odd: { select: { marketId: true } },
+        },
+      });
+      for (const r of rows) {
+        const stake = Number(r.bet.stake);
+        poolByOdd.set(r.oddId, (poolByOdd.get(r.oddId) ?? 0) + stake);
+        totalByMarket.set(r.odd.marketId, (totalByMarket.get(r.odd.marketId) ?? 0) + stake);
+      }
+    }
+    const currentPotentialFor = (marketId: string, oddId: string, stake: number): number | null => {
+      const total = totalByMarket.get(marketId) ?? 0;
+      const pool = poolByOdd.get(oddId) ?? 0;
+      if (pool <= 0 || total <= 0) return null;
+      const net = total * (1 - HOUSE_MARGIN_PERCENT / 100);
+      const odd = Math.max(1, net / pool); // piso 1.0 — mesmo do settlement
+      return Number((stake * odd).toFixed(2));
+    };
+
     return bets.map((bet) => ({
       id: bet.id,
       stake: Number(bet.stake),
       potentialWin: Number(bet.potentialWin),
+      // Retorno potencial pelo rateio atual (só p/ ABERTOS). Null quando o
+      // mercado ainda não tem pote — o front cai no rótulo "definido no rateio".
+      currentPotential:
+        bet.status === BetStatus.OPEN && bet.items[0]
+          ? currentPotentialFor(bet.items[0].odd.market.id, bet.items[0].oddId, Number(bet.stake))
+          : null,
       status: bet.status,
       createdAt: bet.createdAt,
       items: bet.items.map((item) => {

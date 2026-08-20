@@ -16,6 +16,9 @@ export interface BetHistoryItem {
   status: BetHistoryStatus;
   stake: number;
   potentialWin: number;
+  /** Retorno potencial pelo rateio ATUAL (bilhetes abertos). Null = pote vazio. */
+  currentPotential?: number | null;
+  /** @deprecated exibição descontinuada — o pagamento é pari-mutuel, não odd fixa. */
   oddAtPlacement: number;
   eventName: string;
   marketName: string;
@@ -194,14 +197,12 @@ function HistoryRow({ bet }: { bet: BetHistoryItem }) {
         <div className='text-[12px] text-[#767b8a] mt-0.5'>
           {bet.marketName}{' '}
           <span className='text-white/15'>·</span>{' '}
-          <span className='font-mono text-[#b8bcc9] tabular-nums'>@{bet.oddAtPlacement.toFixed(2).replace('.', ',')}</span>{' '}
-          <span className='text-white/15'>·</span>{' '}
           aposta <span className='font-mono text-[#b8bcc9] tabular-nums'>{formatBRL(bet.stake)}</span>
         </div>
       </div>
       <div className='flex sm:flex-col sm:items-end sm:text-right justify-between sm:justify-center gap-1 shrink-0 min-w-[120px]'>
         <div className='text-[10px] uppercase tracking-wider text-[#767b8a]'>
-          {bet.status === 'WON' ? 'recebeu' : bet.status === 'LOST' ? 'perdeu' : 'potencial'}
+          {bet.status === 'WON' ? 'recebeu' : bet.status === 'LOST' ? 'perdeu' : 'retorno potencial'}
         </div>
         <div
           className={`font-mono text-lg font-semibold tabular-nums leading-tight ${
@@ -214,8 +215,19 @@ function HistoryRow({ bet }: { bet: BetHistoryItem }) {
                   : 'text-[#21d97a]'
           }`}
         >
-          {formatBRL(bet.potentialWin)}
+          {/* Pari-mutuel: aberto mostra o rateio ATUAL (dinâmico), não a odd
+              travada. Liquidados mostram o valor real. */}
+          {bet.status === 'OPEN'
+            ? bet.currentPotential != null
+              ? formatBRL(bet.currentPotential)
+              : '—'
+            : formatBRL(bet.potentialWin)}
         </div>
+        {bet.status === 'OPEN' && (
+          <div className='text-[10px] text-[#767b8a] leading-tight sm:max-w-[140px]'>
+            pelo rateio do pote · valor final no fechamento
+          </div>
+        )}
         <div className='text-[11px] text-[#4a4f5d] font-mono sm:mt-0.5'>
           {formatRelative(bet.createdAt)}
         </div>

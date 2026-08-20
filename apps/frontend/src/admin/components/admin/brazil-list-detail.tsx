@@ -598,9 +598,9 @@ function EventModal({ listId, event, onClose, onSaved }: {
                 disabled={isEdit}
                 onChange={(e) => setType(e.target.value as ListEvent['type'])}
               >
+                {/* Armageddon e Shark Tank têm painéis próprios — criação de
+                    evento de Lista aqui é só Regular (ímpar/par). */}
                 <option value='REGULAR'>Regular</option>
-                <option value='ARMAGEDDON'>Armageddon</option>
-                <option value='SHARK_TANK'>Shark Tank</option>
               </select>
             </div>
             {isEdit && (

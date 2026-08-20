@@ -89,6 +89,9 @@ services:
       # Upstash opcional — deixe vazio; cache desliga sozinho.
       UPSTASH_REDIS_REST_URL: ${UPSTASH_REDIS_REST_URL:-}
       UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN:-}
+      # Integração Listas Brasil (sync de pilotos/listas/eventos).
+      LISTAS_BRASIL_API_KEY: ${LISTAS_BRASIL_API_KEY:-}
+      LISTAS_BRASIL_SYNC_INTERVAL_MINUTES: ${LISTAS_BRASIL_SYNC_INTERVAL_MINUTES:-360}
     volumes:
       - backend_uploads:/app/apps/backend/uploads
     depends_on:
