@@ -21,8 +21,8 @@ type PublicDuel = {
   startsAt: Date | string;
   bookingCloseAt: Date | string | null;
   status: string;
-  left: { carId: string; carName: string; driverName: string; category: string };
-  right: { carId: string; carName: string; driverName: string; category: string };
+  left: { carId: string; carName: string; driverName: string; category: string; avatarUrl: string | null; carPhotoUrl: string | null };
+  right: { carId: string; carName: string; driverName: string; category: string; avatarUrl: string | null; carPhotoUrl: string | null };
 };
 
 type PublicEvent = {
@@ -206,12 +206,16 @@ export class EventsService {
           carName: duel.leftCar.name,
           driverName: duel.leftCar.driver.name,
           category: duel.leftCar.category,
+          avatarUrl: duel.leftCar.driver.avatarUrl ?? null,
+          carPhotoUrl: duel.leftCar.photoUrl ?? null,
         },
         right: {
           carId: duel.rightCar.id,
           carName: duel.rightCar.name,
           driverName: duel.rightCar.driver.name,
           category: duel.rightCar.category,
+          avatarUrl: duel.rightCar.driver.avatarUrl ?? null,
+          carPhotoUrl: duel.rightCar.photoUrl ?? null,
         },
       })),
     }));
@@ -311,12 +315,16 @@ export class EventsService {
             carName: duel.leftCar.name,
             driverName: duel.leftCar.driver.name,
             category: duel.leftCar.category,
+            avatarUrl: duel.leftCar.driver.avatarUrl ?? null,
+            carPhotoUrl: duel.leftCar.photoUrl ?? null,
           },
           right: {
             carId: duel.rightCar.id,
             carName: duel.rightCar.name,
             driverName: duel.rightCar.driver.name,
             category: duel.rightCar.category,
+            avatarUrl: duel.rightCar.driver.avatarUrl ?? null,
+            carPhotoUrl: duel.rightCar.photoUrl ?? null,
           },
         }],
       };

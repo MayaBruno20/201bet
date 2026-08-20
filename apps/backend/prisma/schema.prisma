@@ -204,10 +204,13 @@ enum ArmageddonStatus {
 /// ELIMINATION_144 = torneio de eliminação 144→Top 32→campeão + 3º lugar.
 /// SHARK_TANK = 4 chaves (A-D) de 8 → 1 finalista/chave → Fase Final: cada
 ///   finalista enfrenta um piloto do Top 20 da Lista (oponente definido no admin).
+/// LEVA_TUDO = 2 chaves (A-B) de 32 → final de cada chave é a semifinal:
+///   vencedores → Grande Final (Campeão/Vice); perdedores → 3º lugar. 64 embates.
 enum ArmageddonBracketType {
   LADDER
   ELIMINATION_144
   SHARK_TANK
+  LEVA_TUDO
 }
 
 /// Fase do torneio de eliminação do Armageddon.
@@ -470,6 +473,9 @@ model Market {
   settledAt      DateTime?
   duelId         String?
   bookingCloseAt DateTime?
+  /// Multi-mercado que deve FECHAR automaticamente quando a semifinal abrir
+  /// (ex.: mercados de 2º/3º lugar do Leva Tudo).
+  autoCloseAtSemifinal Boolean @default(false)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 

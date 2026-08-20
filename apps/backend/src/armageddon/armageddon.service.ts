@@ -31,6 +31,7 @@ import {
   buildArmageddonFirstDraw,
   buildArmageddonSecondDraw,
   buildSharkTankBracket,
+  buildLevaTudoBracket,
   bracketSize,
   keysForBracketType,
   FIRST_DRAW_KEYS,
@@ -75,7 +76,7 @@ export class ArmageddonService {
       where: {
         status: { in: [ArmageddonStatus.IN_PROGRESS, ArmageddonStatus.FINISHED] },
         // Shark Tank tem hub público próprio (/shark-tank) — fora do Armageddon.
-        bracketType: { not: ArmageddonBracketType.SHARK_TANK },
+        bracketType: { notIn: [ArmageddonBracketType.SHARK_TANK, ArmageddonBracketType.LEVA_TUDO] },
       },
       orderBy: { scheduledAt: 'desc' },
       include: {
@@ -111,6 +112,25 @@ export class ArmageddonService {
     return events.map((e) => this.serializeEvent(e));
   }
 
+  /** Hub público do Leva Tudo (só eventos LEVA_TUDO em andamento/encerrados). */
+  async listPublicLevaTudo() {
+    const events = await this.prisma.armageddonEvent.findMany({
+      where: {
+        status: { in: [ArmageddonStatus.IN_PROGRESS, ArmageddonStatus.FINISHED] },
+        bracketType: ArmageddonBracketType.LEVA_TUDO,
+      },
+      orderBy: { scheduledAt: 'desc' },
+      include: {
+        roster: { include: { driver: true }, orderBy: { position: 'asc' } },
+        matchups: {
+          orderBy: [{ roundNumber: 'asc' }, { order: 'asc' }],
+          include: { leftDriver: true, rightDriver: true },
+        },
+      },
+    });
+    return events.map((e) => this.serializeEvent(e));
+  }
+
   async getPublicById(id: string) {
     const event = await this.prisma.armageddonEvent.findUnique({
       where: { id },
@@ -131,7 +151,7 @@ export class ArmageddonService {
   async adminListAll() {
     const events = await this.prisma.armageddonEvent.findMany({
       // Shark Tank tem módulo admin próprio (/internal-admin/shark-tank).
-      where: { bracketType: { not: ArmageddonBracketType.SHARK_TANK } },
+      where: { bracketType: { notIn: [ArmageddonBracketType.SHARK_TANK, ArmageddonBracketType.LEVA_TUDO] } },
       orderBy: { scheduledAt: 'desc' },
       include: {
         roster: { include: { driver: true }, orderBy: { position: 'asc' } },
@@ -148,6 +168,22 @@ export class ArmageddonService {
   async adminListSharkTank() {
     const events = await this.prisma.armageddonEvent.findMany({
       where: { bracketType: ArmageddonBracketType.SHARK_TANK },
+      orderBy: { scheduledAt: 'desc' },
+      include: {
+        roster: { include: { driver: true }, orderBy: { position: 'asc' } },
+        matchups: {
+          orderBy: [{ roundNumber: 'asc' }, { order: 'asc' }],
+          include: { leftDriver: true, rightDriver: true },
+        },
+      },
+    });
+    return events.map((e) => this.serializeEvent(e));
+  }
+
+  /** Lista (admin) só os eventos LEVA_TUDO — para o módulo Leva Tudo. */
+  async adminListLevaTudo() {
+    const events = await this.prisma.armageddonEvent.findMany({
+      where: { bracketType: ArmageddonBracketType.LEVA_TUDO },
       orderBy: { scheduledAt: 'desc' },
       include: {
         roster: { include: { driver: true }, orderBy: { position: 'asc' } },
@@ -438,7 +474,8 @@ export class ArmageddonService {
 
     const isBracketed =
       event.bracketType === ArmageddonBracketType.ELIMINATION_144 ||
-      event.bracketType === ArmageddonBracketType.SHARK_TANK;
+      event.bracketType === ArmageddonBracketType.SHARK_TANK ||
+      event.bracketType === ArmageddonBracketType.LEVA_TUDO;
     let bracketKey: string | null = null;
     let maxPositions: number;
 
@@ -724,6 +761,12 @@ export class ArmageddonService {
     }
   }
 
+  private requireLevaTudo(event: { bracketType: ArmageddonBracketType }) {
+    if (event.bracketType !== ArmageddonBracketType.LEVA_TUDO) {
+      throw new BadRequestException('Disponível apenas para eventos Leva Tudo');
+    }
+  }
+
   /** Aceita qualquer torneio de eliminação por árvore (144 ou Shark Tank). */
   private requireBracketed(event: { bracketType: ArmageddonBracketType }) {
     if (event.bracketType === ArmageddonBracketType.LADDER) {
@@ -775,6 +818,82 @@ export class ArmageddonService {
       }, audit);
       return { stage: 'SHARK_TANK', matchups: specs.length, rosterFilled: event.roster.length };
     }, { timeout: 30000, maxWait: 10000 });
+  }
+
+  // ── Admin: LEVA_TUDO (2 chaves de 32 → semi/final/3º) ──
+
+  /**
+   * Gera o chaveamento do Leva Tudo: 2 chaves (A-B) de 32 (eliminação 32→…→1)
+   * + Grande Final (Campeão/Vice) e 3º lugar. A 1ª rodada de cada chave é
+   * preenchida a partir do roster; vencedor/perdedor da final de cada chave
+   * (semifinal) avançam automaticamente pra Grande Final e 3º lugar.
+   */
+  async adminGenerateLevaTudoBracket(eventId: string, audit: AuditContext) {
+    const event = await this.prisma.armageddonEvent.findUnique({
+      where: { id: eventId },
+      include: { roster: true },
+    });
+    if (!event) throw new NotFoundException('Evento Leva Tudo não encontrado');
+    this.requireLevaTudo(event);
+
+    const settled = await this.prisma.armageddonMatchup.count({
+      where: { eventId, winnerSide: { not: null } },
+    });
+    if (settled > 0) {
+      throw new BadRequestException('Já há embates auditados — use "Reiniciar evento" para estornar e recomeçar.');
+    }
+    const withMarket = await this.prisma.armageddonMatchup.count({
+      where: { eventId, OR: [{ marketOpen: true }, { duelId: { not: null } }] },
+    });
+    if (withMarket > 0) {
+      throw new BadRequestException('Há mercados abertos/criados — feche-os antes de regerar as chaves.');
+    }
+
+    const driverAt = (bk: string | null, pos: number) =>
+      event.roster.find((r) => r.bracketKey === bk && r.position === pos)?.driverId;
+    const specs = buildLevaTudoBracket();
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.armageddonMatchup.deleteMany({ where: { eventId } });
+      await this.persistBracket(tx, eventId, specs, driverAt);
+      if (event.status === ArmageddonStatus.DRAFT || event.status === ArmageddonStatus.ROSTER_OPEN) {
+        await tx.armageddonEvent.update({ where: { id: eventId }, data: { status: ArmageddonStatus.IN_PROGRESS } });
+      }
+      await this.logAudit(tx, 'ARMAGEDDON_LEVA_TUDO_GENERATE', 'ArmageddonEvent', eventId, {
+        count: specs.length, rosterFilled: event.roster.length,
+      }, audit);
+      return { stage: 'LEVA_TUDO', matchups: specs.length, rosterFilled: event.roster.length };
+    }, { timeout: 30000, maxWait: 10000 });
+  }
+
+  /**
+   * WO / não compareceu ("acesso rápido" da cabeceira): fecha o mercado (se
+   * aberto) e audita o piloto PRESENTE como vencedor — ele avança na chave e
+   * paga quem apostou nele (rateio normal). Para imprevistos (quebra sem
+   * substituto, falta) depois do embate já aberto — substituição só vale antes.
+   */
+  async adminWalkover(matchupId: string, presentSide: MatchupSide, audit: AuditContext) {
+    const m = await this.prisma.armageddonMatchup.findUnique({ where: { id: matchupId } });
+    if (!m) throw new NotFoundException('Confronto não encontrado');
+    if (m.winnerSide && m.settledAt) {
+      throw new BadRequestException('Esta bateria já foi auditada.');
+    }
+    if (presentSide !== MatchupSide.LEFT && presentSide !== MatchupSide.RIGHT) {
+      throw new BadRequestException('Informe o lado presente (LEFT ou RIGHT).');
+    }
+    const presentDriver = presentSide === MatchupSide.LEFT ? m.leftDriverId : m.rightDriverId;
+    if (!presentDriver) {
+      throw new BadRequestException('O lado presente não tem piloto definido.');
+    }
+    // Fecha o mercado antes de auditar (evita aposta nova no meio do WO).
+    if (m.marketOpen) {
+      await this.adminToggleMatchupMarket(matchupId, false, audit).catch(() => undefined);
+    }
+    return this.adminSettleMatchup(
+      matchupId,
+      { winnerSide: presentSide, notes: 'WO / não compareceu' },
+      audit,
+    );
   }
 
   /**
@@ -950,7 +1069,9 @@ export class ArmageddonService {
     const specs =
       event.bracketType === ArmageddonBracketType.SHARK_TANK
         ? buildSharkTankBracket()
-        : buildArmageddonFirstDraw();
+        : event.bracketType === ArmageddonBracketType.LEVA_TUDO
+          ? buildLevaTudoBracket()
+          : buildArmageddonFirstDraw();
 
     await this.prisma.$transaction(async (tx) => {
       if (event.eventId) {
@@ -1355,6 +1476,7 @@ export class ArmageddonService {
           type: marketType,
           status: MarketStatus.OPEN,
           bookingCloseAt,
+          autoCloseAtSemifinal: dto.autoCloseAtSemifinal ?? false,
           odds: {
             create: rosterEntries.map((r) => ({
               label: r.driver.name,
@@ -1450,7 +1572,7 @@ export class ArmageddonService {
     const leftDriver = matchup.leftDriver;
     const rightDriver = matchup.rightDriver;
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Múltiplos mercados podem ficar abertos simultaneamente neste evento Armageddon.
 
       let duelId = matchup.duelId;
@@ -1580,6 +1702,34 @@ export class ArmageddonService {
       );
       return updated;
     }, { timeout: 20000, maxWait: 5000 });
+
+    // Leva Tudo: ao ABRIR a semifinal (final de chave que alimenta a Grande
+    // Final), fecha os multi-mercados marcados (2º/3º) — não recebem mais aposta.
+    if (
+      open &&
+      matchup.event.bracketType === ArmageddonBracketType.LEVA_TUDO &&
+      matchup.stage === ArmageddonStage.FIRST_DRAW &&
+      matchup.nextMatchupId &&
+      matchup.event.eventId
+    ) {
+      const next = await this.prisma.armageddonMatchup.findUnique({
+        where: { id: matchup.nextMatchupId },
+        select: { isFinal: true },
+      });
+      if (next?.isFinal) {
+        await this.prisma.market
+          .updateMany({
+            where: {
+              eventId: matchup.event.eventId,
+              autoCloseAtSemifinal: true,
+              status: MarketStatus.OPEN,
+            },
+            data: { status: MarketStatus.SUSPENDED },
+          })
+          .catch(() => undefined);
+      }
+    }
+    return result;
   }
 
   async adminSettleMatchup(matchupId: string, dto: SettleArmageddonMatchupDto, audit: AuditContext) {

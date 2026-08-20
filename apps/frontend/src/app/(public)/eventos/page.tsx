@@ -10,6 +10,32 @@ import { getPublicApiUrl } from '@/lib/env-public';
 
 const apiUrl = getPublicApiUrl();
 
+/** Foto do lado do embate: avatar do piloto → foto do carro → iniciais.
+ *  `/api/images/:id` (re-hospedado) resolve no mesmo domínio via nginx. */
+function DuelPhoto({ side }: { side: ApiEvent['duels'][number]['left'] }) {
+  const url = side.avatarUrl || side.carPhotoUrl || null;
+  const initials =
+    side.driverName
+      .replace(/["“”']/g, '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? '')
+      .join('') || '?';
+  return url ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt={side.driverName}
+      className='h-11 w-11 sm:h-12 sm:w-12 rounded-full object-cover border border-white/10 shrink-0'
+    />
+  ) : (
+    <span className='h-11 w-11 sm:h-12 sm:w-12 rounded-full flex items-center justify-center bg-gradient-to-br from-blue-500/15 to-orange-500/15 border border-white/10 text-white/60 text-[12px] font-bold shrink-0'>
+      {initials}
+    </span>
+  );
+}
+
 export default function EventosPage() {
   const [events, setEvents] = useState<ApiEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -202,9 +228,9 @@ export default function EventosPage() {
                         return (
                           <div key={duel.id} className='rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.03] to-transparent p-4 transition-colors hover:border-white/15'>
                             {/* Matchup Layout */}
-                            <div className='flex items-center gap-3'>
+                            <div className='flex items-center gap-2 sm:gap-3'>
                               {/* Left Side */}
-                              <div className='flex-1 text-right'>
+                              <div className='flex-1 min-w-0 text-right'>
                                 <p className='font-medium text-white/90 truncate'>{duel.left.driverName}</p>
                                 {duel.left.carName?.trim() && (
                                   <p className='text-xs text-white/40 truncate'>{duel.left.carName}</p>
@@ -214,15 +240,15 @@ export default function EventosPage() {
                                 )}
                               </div>
 
-                              {/* VS Badge */}
-                              <div className='flex flex-col items-center shrink-0'>
-                                <div className='h-10 w-10 rounded-full bg-gradient-to-br from-blue-500/20 to-orange-500/20 border border-white/10 flex items-center justify-center'>
-                                  <span className='text-[10px] font-bold tracking-widest text-white/70'>VS</span>
-                                </div>
-                              </div>
+                              <DuelPhoto side={duel.left} />
+
+                              {/* VS */}
+                              <span className='shrink-0 text-[10px] font-bold tracking-widest text-white/40'>VS</span>
+
+                              <DuelPhoto side={duel.right} />
 
                               {/* Right Side */}
-                              <div className='flex-1'>
+                              <div className='flex-1 min-w-0'>
                                 <p className='font-medium text-white/90 truncate'>{duel.right.driverName}</p>
                                 {duel.right.carName?.trim() && (
                                   <p className='text-xs text-white/40 truncate'>{duel.right.carName}</p>

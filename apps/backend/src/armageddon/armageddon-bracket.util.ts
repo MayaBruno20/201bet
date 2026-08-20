@@ -65,11 +65,25 @@ export const SHARK_TANK_KEYS: ReadonlyArray<{ key: string; size: number; qualifi
 export const SHARK_TANK_TOTAL = SHARK_TANK_KEYS.reduce((s, k) => s + k.size, 0); // 32
 export const SHARK_TANK_CHALLENGES = SHARK_TANK_KEYS.length; // 4
 
+/**
+ * Leva Tudo: 2 chaves (A-B) de 32, eliminação simples 32→16→8→4→2→1. A FINAL de
+ * cada chave é a semifinal do torneio: o vencedor vai à Grande Final (Campeão/
+ * Vice) e o perdedor ao 3º lugar. Total: 31×2 + final + 3º = 64 embates.
+ */
+export const LEVA_TUDO_KEYS: ReadonlyArray<{ key: string; size: number; qualifiers: number }> = [
+  { key: 'A', size: 32, qualifiers: 1 },
+  { key: 'B', size: 32, qualifiers: 1 },
+];
+
+export const LEVA_TUDO_TOTAL = LEVA_TUDO_KEYS.reduce((s, k) => s + k.size, 0); // 64
+
 /** Config de chaves por tipo de bracket (p/ validação de roster e rótulos). */
 export function keysForBracketType(
   bracketType: string,
 ): ReadonlyArray<{ key: string; size: number; qualifiers: number }> {
-  return bracketType === 'SHARK_TANK' ? SHARK_TANK_KEYS : FIRST_DRAW_KEYS;
+  if (bracketType === 'SHARK_TANK') return SHARK_TANK_KEYS;
+  if (bracketType === 'LEVA_TUDO') return LEVA_TUDO_KEYS;
+  return FIRST_DRAW_KEYS;
 }
 
 /** Tamanho máximo de roster de uma chave (p/ validar posição). */
@@ -216,6 +230,68 @@ export function buildSharkTankBracket(): MatchupSpec[] {
       isFinal: false,
     });
   }
+
+  return specs;
+}
+
+/**
+ * Gera o chaveamento do LEVA_TUDO:
+ *   - 2 chaves (A-B) de 32, eliminação simples 32→16→8→4→2→1.
+ *   - A FINAL de cada chave é a semifinal: vencedor → Grande Final (LEFT=A,
+ *     RIGHT=B), perdedor → 3º lugar (LEFT=A, RIGHT=B).
+ *   - Grande Final (isFinal) = Campeão/Vice. 3º lugar (isThirdPlace).
+ * Total: 31×2 + final + 3º = 64 embates.
+ */
+export function buildLevaTudoBracket(): MatchupSpec[] {
+  const specs: MatchupSpec[] = [];
+  const grandFinalKey = 'F:1:1';
+  const thirdKey = 'F:1:2';
+
+  LEVA_TUDO_KEYS.forEach((k, idx) => {
+    const chave = buildSingleElim(k.key, 'FIRST_DRAW', k.size, 1); // 32→…→1
+    const terminal = chave.find((s) => s.nextKey === null); // final da chave = semifinal
+    if (terminal) {
+      const side: Side = idx === 0 ? 'LEFT' : 'RIGHT';
+      terminal.nextKey = grandFinalKey; // vencedor da chave → Grande Final
+      terminal.nextSlotSide = side;
+      terminal.loserKey = thirdKey; // perdedor da semifinal → 3º lugar
+      terminal.loserSlotSide = side;
+    }
+    specs.push(...chave);
+  });
+
+  // Grande Final (Campeão/Vice) — slots preenchidos por avanço.
+  specs.push({
+    key: grandFinalKey,
+    stage: 'SECOND_DRAW',
+    bracketKey: null,
+    roundNumber: 1,
+    order: 1,
+    leftPosition: null,
+    rightPosition: null,
+    nextKey: null,
+    nextSlotSide: null,
+    loserKey: null,
+    loserSlotSide: null,
+    isThirdPlace: false,
+    isFinal: true,
+  });
+  // 3º lugar — slots preenchidos pelos perdedores das semifinais.
+  specs.push({
+    key: thirdKey,
+    stage: 'SECOND_DRAW',
+    bracketKey: null,
+    roundNumber: 1,
+    order: 2,
+    leftPosition: null,
+    rightPosition: null,
+    nextKey: null,
+    nextSlotSide: null,
+    loserKey: null,
+    loserSlotSide: null,
+    isThirdPlace: true,
+    isFinal: false,
+  });
 
   return specs;
 }

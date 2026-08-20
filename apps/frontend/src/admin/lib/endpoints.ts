@@ -242,6 +242,41 @@ export const ENDPOINTS = {
     },
   },
 
+  // Leva Tudo: hub separado (2 chaves de 32 → Grande Final + 3º), mesmo motor.
+  LEVA_TUDO: {
+    list: '/admin/leva-tudo',
+    create: '/admin/leva-tudo',
+    detail: (id: string) => `/admin/leva-tudo/${id}`,
+    update: (id: string) => `/admin/leva-tudo/${id}`,
+    delete: (id: string) => `/admin/leva-tudo/${id}`,
+    financialSummary: (id: string) => `/admin/leva-tudo/${id}/financial-summary`,
+    driverSearch: (q: string) => `/admin/leva-tudo/drivers/search?q=${encodeURIComponent(q)}`,
+    roster: {
+      upsert: (eventId: string) => `/admin/leva-tudo/${eventId}/roster`,
+      clear: (eventId: string) => `/admin/leva-tudo/${eventId}/roster`,
+      delete: (eventId: string, rosterId: string) => `/admin/leva-tudo/${eventId}/roster/${rosterId}`,
+    },
+    generate: (eventId: string) => `/admin/leva-tudo/${eventId}/generate`,
+    clearKeys: (eventId: string) => `/admin/leva-tudo/${eventId}/clear-keys`,
+    resetEvent: (eventId: string) => `/admin/leva-tudo/${eventId}/reset`,
+    openAllReady: (eventId: string, opts?: { bracketKey?: string; roundNumber?: number; stage?: string }) =>
+      `/admin/leva-tudo/${eventId}/open-all-ready${armaMarketQuery(opts)}`,
+    closeAllOpen: (eventId: string, opts?: { bracketKey?: string; roundNumber?: number; stage?: string }) =>
+      `/admin/leva-tudo/${eventId}/close-all-open${armaMarketQuery(opts)}`,
+    markets: {
+      list: (eventId: string) => `/admin/leva-tudo/${eventId}/markets`,
+      create: (eventId: string) => `/admin/leva-tudo/${eventId}/markets`,
+    },
+    matchups: {
+      toggleMarket: (matchupId: string) => `/admin/leva-tudo/matchups/${matchupId}/market`,
+      settle: (matchupId: string) => `/admin/leva-tudo/matchups/${matchupId}/settle`,
+      reopen: (matchupId: string) => `/admin/leva-tudo/matchups/${matchupId}/reopen`,
+      // Acesso rápido — WO / não compareceu (audita o presente como vencedor).
+      walkover: (matchupId: string) => `/admin/leva-tudo/matchups/${matchupId}/walkover`,
+      delete: (matchupId: string) => `/admin/leva-tudo/matchups/${matchupId}`,
+    },
+  },
+
   // Integração Listas Brasil (sync de pilotos/listas/eventos).
   INTEGRATIONS: {
     listasBrasil: {

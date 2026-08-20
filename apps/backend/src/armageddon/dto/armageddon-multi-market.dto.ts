@@ -2,6 +2,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsOptional,
@@ -40,4 +41,9 @@ export class CreateArmageddonMultiMarketDto {
   @IsOptional()
   @IsDateString()
   bookingCloseAt?: string;
+
+  /** Fecha automaticamente quando a semifinal abrir (2º/3º do Leva Tudo). */
+  @IsOptional()
+  @IsBoolean()
+  autoCloseAtSemifinal?: boolean;
 }

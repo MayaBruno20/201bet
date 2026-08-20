@@ -1657,7 +1657,8 @@ export class AdminService {
     for (const m of armaMatchups) {
       if (m.duelId) {
         const isShark = m.event?.bracketType === 'SHARK_TANK';
-        const context = m.isFinal ? 'Final'
+        const isLeva = m.event?.bracketType === 'LEVA_TUDO';
+        const context = m.isFinal ? (isLeva ? 'Grande Final' : 'Final')
           : m.isThirdPlace ? '3º lugar'
           : m.bracketKey ? `Chave ${m.bracketKey} · R${m.roundNumber}`
           : m.stage === 'SECOND_DRAW'

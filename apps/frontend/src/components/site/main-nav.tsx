@@ -112,6 +112,8 @@ export function MainNav() {
   const [disclaimers, setDisclaimers] = useState<Disclaimer[]>([]);
   // Armageddon ativo → a aba "Apostas" some e vira "Armageddon" (tudo concentrado lá).
   const [armaActive, setArmaActive] = useState(false);
+  // Leva Tudo ativo → mesma lógica (Apostas → Leva Tudo). Armageddon tem precedência.
+  const [levaActive, setLevaActive] = useState(false);
 
   // Carrega os disclaimers públicos (já vêm filtrados por active=true e
   // ordenados por priority desc no backend). Sem polling — a barra é estática
@@ -124,6 +126,8 @@ export function MainNav() {
     try {
       const cached = sessionStorage.getItem('armaActive');
       if (cached !== null) setArmaActive(cached === '1');
+      const cachedLeva = sessionStorage.getItem('levaActive');
+      if (cachedLeva !== null) setLevaActive(cachedLeva === '1');
     } catch { /* sessionStorage indisponível */ }
 
     fetch(`${apiUrl}/site-disclaimers`, { cache: 'no-store' })
@@ -140,6 +144,16 @@ export function MainNav() {
         try { sessionStorage.setItem('armaActive', active ? '1' : '0'); } catch { /* ignore */ }
       })
       .catch(() => { /* silencioso — sem Armageddon, navbar fica padrão */ });
+
+    // Detecta evento Leva Tudo ativo (IN_PROGRESS) e atualiza o cache.
+    fetch(`${apiUrl}/leva-tudo`, { cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: Array<{ status?: string }>) => {
+        const active = Array.isArray(data) && data.some((e) => e?.status === 'IN_PROGRESS');
+        if (alive) setLevaActive(active);
+        try { sessionStorage.setItem('levaActive', active ? '1' : '0'); } catch { /* ignore */ }
+      })
+      .catch(() => { /* silencioso — sem Leva Tudo, navbar fica padrão */ });
     return () => { alive = false; };
   }, []);
 
@@ -230,18 +244,23 @@ export function MainNav() {
 
   const links = useMemo(() => {
     let out = baseLinks;
-    // Com Armageddon ativo, "Apostas" some e "Armageddon" entra no mesmo lugar.
+    // Com Armageddon (ou Leva Tudo) ativo, "Apostas" some e o evento entra no
+    // mesmo lugar. Armageddon tem precedência se os dois estiverem ativos.
     if (armaActive) {
       out = baseLinks.map((l) =>
         l.href === '/apostas' ? { href: '/armageddon', label: 'Armageddon', live: true } : l,
       );
+    } else if (levaActive) {
+      out = baseLinks.map((l) =>
+        l.href === '/apostas' ? { href: '/leva-tudo', label: 'Leva Tudo', live: true } : l,
+      );
     }
     return out.filter((link) => !link.requiresAuth || !!user);
     // Admin foi externalizado para admin.201-bet.com — não aparece mais aqui.
-  }, [user, armaActive]);
+  }, [user, armaActive, levaActive]);
 
-  // CTA "Apostar agora" leva para onde a ação está (Armageddon quando ativo).
-  const primaryBetHref = armaActive ? '/armageddon' : '/apostas';
+  // CTA "Apostar agora" leva para onde a ação está (Armageddon/Leva Tudo quando ativo).
+  const primaryBetHref = armaActive ? '/armageddon' : levaActive ? '/leva-tudo' : '/apostas';
 
   async function logout() {
     await logoutSession();

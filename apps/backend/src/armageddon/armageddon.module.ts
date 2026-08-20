@@ -3,6 +3,8 @@ import { ArmageddonController } from './armageddon.controller';
 import { ArmageddonAdminController } from './armageddon.admin.controller';
 import { SharkTankController } from './shark-tank.controller';
 import { SharkTankAdminController } from './shark-tank.admin.controller';
+import { LevaTudoController } from './leva-tudo.controller';
+import { LevaTudoAdminController } from './leva-tudo.admin.controller';
 import { ArmageddonService } from './armageddon.service';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { SettlementService } from '../settlement.service';
@@ -15,6 +17,8 @@ import { CacheModule } from '../cache/cache.module';
     ArmageddonAdminController,
     SharkTankController,
     SharkTankAdminController,
+    LevaTudoController,
+    LevaTudoAdminController,
   ],
   providers: [ArmageddonService, RolesGuard, SettlementService],
   exports: [ArmageddonService],

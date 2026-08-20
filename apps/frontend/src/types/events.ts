@@ -34,12 +34,16 @@ export type ApiEvent = {
       carName: string;
       driverName: string;
       category: string;
+      avatarUrl?: string | null;
+      carPhotoUrl?: string | null;
     };
     right: {
       carId: string;
       carName: string;
       driverName: string;
       category: string;
+      avatarUrl?: string | null;
+      carPhotoUrl?: string | null;
     };
   }>;
 };
