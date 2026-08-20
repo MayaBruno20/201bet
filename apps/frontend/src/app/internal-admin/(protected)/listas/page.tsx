@@ -8,6 +8,7 @@ import { useToast } from '@admin/components/ui/toast';
 import { api } from '@admin/lib/api';
 import { ENDPOINTS } from '@admin/lib/endpoints';
 import { BrazilListDetail } from '@admin/components/admin/brazil-list-detail';
+import { ListasBrasilSync } from '@admin/components/admin/listas-brasil-sync';
 
 export default function ListasPage() {
   const [lists, setLists] = React.useState<ListItem[]>([]);
@@ -68,6 +69,7 @@ export default function ListasPage() {
     <Page eyebrow="Operação" title="Listas Brasil"
       sub="Gerencie listas por DDD, pilotos do TOP 10/20, eventos e chaves PAR/ÍMPAR."
       actions={<button className="btn btn-ghost focusable" onClick={load}><I.Activity size={15}/> Atualizar</button>}>
+      <ListasBrasilSync />
       <div className="grid grid-cols-12 gap-5">
         <div className="col-span-12 lg:col-span-4 space-y-4">
           <Card className="p-4">

@@ -242,6 +242,14 @@ export const ENDPOINTS = {
     },
   },
 
+  // Integração Listas Brasil (sync de pilotos/listas/eventos).
+  INTEGRATIONS: {
+    listasBrasil: {
+      status: '/admin/integrations/listas-brasil/status',
+      sync: '/admin/integrations/listas-brasil/sync',
+    },
+  },
+
   QUICK_DUELS: {
     list: '/admin/quick-duels',
     create: '/admin/quick-duels',

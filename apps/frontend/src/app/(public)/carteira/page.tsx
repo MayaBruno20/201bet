@@ -38,6 +38,7 @@ type MyBet = {
   id: string;
   stake: number;
   potentialWin: number;
+  currentPotential?: number | null;
   status: string;
   createdAt: string;
   items: Array<{ id: string; oddAtPlacement: number; oddLabel: string; marketName: string; eventName: string }>;
@@ -531,7 +532,7 @@ export default function CarteiraPage() {
                 {bets.map((bet) => (
                   <article key={bet.id} className='rounded-2xl border border-white/8 bg-gradient-to-br from-white/[0.04] to-transparent p-5 transition-colors hover:border-white/15'>
                     <p className='text-xs text-white/40'>{new Date(bet.createdAt).toLocaleString('pt-BR')}</p>
-                    <p className='mt-1 font-medium'>R$ {bet.stake.toFixed(2)} <span className='text-white/40 mx-1'>•</span> Retorno: <span className='text-emerald-400'>R$ {bet.potentialWin.toFixed(2)}</span></p>
+                    <p className='mt-1 font-medium'>R$ {bet.stake.toFixed(2)} <span className='text-white/40 mx-1'>•</span> {bet.status === 'OPEN' ? 'Retorno potencial' : 'Retorno'}: <span className='text-emerald-400'>R$ {(bet.status === 'OPEN' ? (bet.currentPotential ?? bet.potentialWin) : bet.potentialWin).toFixed(2)}</span>{bet.status === 'OPEN' && <span className='text-white/35 text-xs'> (pelo rateio, final no fechamento)</span>}</p>
                     <p className='text-sm text-white/50'>Status: {traduzirStatusAposta(bet.status)}</p>
                   </article>
                 ))}

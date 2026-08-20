@@ -11,6 +11,7 @@ import { PrismaModule } from './database/prisma.module';
 import { ArmageddonModule } from './armageddon/armageddon.module';
 import { ImagesModule } from './images/images.module';
 import { BrazilListsModule } from './brazil-lists/brazil-lists.module';
+import { ListasBrasilModule } from './listas-brasil/listas-brasil.module';
 import { CategoryEventsModule } from './category-events/category-events.module';
 import { EventsModule } from './events/events.module';
 import { MailModule } from './mail/mail.module';
@@ -35,6 +36,7 @@ import { SettlementService } from './settlement.service';
     AuthModule,
     EventsModule,
     BrazilListsModule,
+    ListasBrasilModule,
     CategoryEventsModule,
     ArmageddonModule,
     ImagesModule,

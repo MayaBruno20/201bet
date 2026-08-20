@@ -365,6 +365,8 @@ model Event {
 
 model Driver {
   id        String   @id @default(uuid())
+  /// UUID do piloto no Listas Brasil (fonte oficial) — chave de sincronização.
+  listasBrasilId String? @unique
   name      String
   nickname  String?
   carNumber String?
@@ -694,6 +696,8 @@ model PromoEnrollment {
 model BrazilList {
   id                String     @id @default(uuid())
   areaCode          Int        @unique
+  /// UUID da lista no Listas Brasil (fonte oficial) — chave de sincronização.
+  listasBrasilId    String?    @unique
   name              String
   format            ListFormat @default(TOP_20)
   administratorName String?
@@ -731,6 +735,8 @@ model ListRoster {
 model ListEvent {
   id          String          @id @default(uuid())
   listId      String
+  /// UUID do evento no Listas Brasil (fonte oficial) — chave de sincronização.
+  listasBrasilId String?      @unique
   name        String
   scheduledAt DateTime
   endsAt      DateTime?
@@ -1024,5 +1030,28 @@ model UploadedImage {
   mimeType  String
   data      Bytes
   sizeBytes Int
+  createdAt DateTime @default(now())
+}
+
+/// Estado da sincronização com integrações externas (ex.: Listas Brasil).
+/// Um registro por recurso ("listas-brasil:pilots", "listas-brasil:events").
+model IntegrationSyncState {
+  id            String    @id @default(uuid())
+  resource      String    @unique
+  lastRunAt     DateTime?
+  lastStatus    String? // "ok" | "error" | "running"
+  lastMessage   String?
+  stats         Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+/// Cache de imagens externas re-hospedadas no nosso store (UploadedImage).
+/// Evita rebaixar a mesma URL a cada sync — dedupe por URL de origem.
+model ExternalImageCache {
+  id        String   @id @default(uuid())
+  sourceUrl String   @unique
+  imageId   String
+  url       String // "/api/images/:id"
   createdAt DateTime @default(now())
 }

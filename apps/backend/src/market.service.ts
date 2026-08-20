@@ -948,6 +948,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         left: {
           id: state.left.carId,
           label: `${state.left.carName} (${state.left.driverName})`,
+          carName: state.left.carName,
+          driverName: state.left.driverName,
           odd: state.left.odd,
           tickets: state.left.tickets,
           pool: Number(state.left.pool.toFixed(2)),
@@ -960,6 +962,8 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
         right: {
           id: state.right.carId,
           label: `${state.right.carName} (${state.right.driverName})`,
+          carName: state.right.carName,
+          driverName: state.right.driverName,
           odd: state.right.odd,
           tickets: state.right.tickets,
           pool: Number(state.right.pool.toFixed(2)),

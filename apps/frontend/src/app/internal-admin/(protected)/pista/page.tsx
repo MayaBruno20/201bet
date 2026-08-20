@@ -517,22 +517,13 @@ export default function PistaPage() {
 
   /* ─── Filtros ─── */
 
-  const counts = React.useMemo(() => ({
-    all: markets.length,
-    open: markets.filter((m) => m.status === 'OPEN').length,
-    waiting: markets.filter((m) => m.status === 'CLOSED' || m.status === 'SUSPENDED').length,
-    settled: markets.filter((m) => m.status === 'SETTLED').length,
-  }), [markets]);
-
   const events = React.useMemo(() => ['all', ...Array.from(new Set(markets.map((m) => m.eventName)))], [markets]);
 
-  const filtered = React.useMemo(() => {
+  // Base = mercados após evento + busca (SEM a aba). Os contadores das abas saem
+  // daqui, então "Aguardando (N)" bate com o que está visível pro evento/busca
+  // selecionados — antes contavam o global e não fechavam com a lista filtrada.
+  const base = React.useMemo(() => {
     const q = query.trim().toLowerCase();
-    const byTab = (m: MarketRow) =>
-      tab === 'all' ? true
-      : tab === 'open' ? m.status === 'OPEN'
-      : tab === 'waiting' ? m.status === 'CLOSED' || m.status === 'SUSPENDED'
-      : m.status === 'SETTLED';
     const byEvent = (m: MarketRow) => eventFilter === 'all' || m.eventName === eventFilter;
     const byQuery = (m: MarketRow) => {
       if (!q) return true;
@@ -545,12 +536,43 @@ export default function PistaPage() {
       ].join(' ').toLowerCase();
       return q.split(/\s+/).every((part) => hay.includes(part));
     };
+    return markets.filter((m) => byEvent(m) && byQuery(m));
+  }, [markets, eventFilter, query]);
+
+  const counts = React.useMemo(() => ({
+    all: base.length,
+    open: base.filter((m) => m.status === 'OPEN').length,
+    waiting: base.filter((m) => m.status === 'CLOSED' || m.status === 'SUSPENDED').length,
+    settled: base.filter((m) => m.status === 'SETTLED').length,
+  }), [base]);
+
+  const filtered = React.useMemo(() => {
+    const byTab = (m: MarketRow) =>
+      tab === 'all' ? true
+      : tab === 'open' ? m.status === 'OPEN'
+      : tab === 'waiting' ? m.status === 'CLOSED' || m.status === 'SUSPENDED'
+      : m.status === 'SETTLED';
     const ORDER: Record<MarketRow['status'], number> = { OPEN: 0, CLOSED: 1, SUSPENDED: 1, SETTLED: 2 };
-    return markets.filter((m) => byTab(m) && byEvent(m) && byQuery(m)).sort((a, b) =>
+    return base.filter(byTab).sort((a, b) =>
       ORDER[a.status] - ORDER[b.status]
       || a.eventName.localeCompare(b.eventName)
       || (a.matchupOrigin?.leftPosition ?? 999) - (b.matchupOrigin?.leftPosition ?? 999));
-  }, [markets, tab, eventFilter, query]);
+  }, [base, tab]);
+
+  // D3: agrupa por rodada/chave (o `context` da origem) pra facilitar a leitura
+  // na cabeceira. Grupos ordenados pelo nº extraído do rótulo (Rodada 1, 2 … / R1…).
+  const groups = React.useMemo(() => {
+    const map = new Map<string, MarketRow[]>();
+    for (const m of filtered) {
+      const key = m.matchupOrigin?.context?.trim() || 'Sem rodada';
+      const arr = map.get(key);
+      if (arr) arr.push(m); else map.set(key, [m]);
+    }
+    const firstNum = (s: string) => { const mt = s.match(/\d+/); return mt ? Number(mt[0]) : 9999; };
+    return Array.from(map.entries())
+      .sort((a, b) => firstNum(a[0]) - firstNum(b[0]) || a[0].localeCompare(b[0]))
+      .map(([label, rows]) => ({ label, rows }));
+  }, [filtered]);
 
   /* ─── Render ─── */
 
@@ -626,18 +648,27 @@ export default function PistaPage() {
             Nenhum embate nessa visão.
           </div>
         )}
-        {filtered.map((m) => (
-          <MarketCard key={m.id} m={m}
-            auditing={auditingId === m.id}
-            isBusy={busy.has(m.id)}
-            onClose={() => void closeMarket(m)}
-            onOpen={() => void openMarket(m)}
-            onStartAudit={() => setAuditingId(m.id)}
-            onCancelAudit={() => setAuditingId(null)}
-            onSettleDuel={(side) => void settleDuel(m, side)}
-            onSettleMulti={(oddId) => void settleMulti(m, oddId)}
-            onReopen={() => void reopenMarket(m)}
-          />
+        {groups.map((g) => (
+          <div key={g.label} className="space-y-3">
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-[10.5px] font-semibold tracking-[0.14em] uppercase shrink-0" style={{ color: 'var(--text-3)' }}>{g.label}</span>
+              <span className="text-[10.5px] shrink-0" style={{ color: 'var(--text-4)' }}>· {g.rows.length}</span>
+              <div className="flex-1 h-px" style={{ background: 'var(--border)' }}/>
+            </div>
+            {g.rows.map((m) => (
+              <MarketCard key={m.id} m={m}
+                auditing={auditingId === m.id}
+                isBusy={busy.has(m.id)}
+                onClose={() => void closeMarket(m)}
+                onOpen={() => void openMarket(m)}
+                onStartAudit={() => setAuditingId(m.id)}
+                onCancelAudit={() => setAuditingId(null)}
+                onSettleDuel={(side) => void settleDuel(m, side)}
+                onSettleMulti={(oddId) => void settleMulti(m, oddId)}
+                onReopen={() => void reopenMarket(m)}
+              />
+            ))}
+          </div>
         ))}
       </div>
     </Page>

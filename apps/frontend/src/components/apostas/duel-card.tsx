@@ -19,6 +19,10 @@ export type DuelSide = 'LEFT' | 'RIGHT';
 
 export interface DuelSideData {
   label: string;
+  /** Nome do carro (linha de cima do card). Fallback: `label`. */
+  carName?: string;
+  /** Nome do piloto (linha de baixo do card). */
+  driverName?: string;
   odd: number;
   poolShare: number; // 0-100, distribuição atual das apostas no lado
   photoUrl?: string | null;
@@ -257,12 +261,26 @@ function SideButton({ side, data, selected, isWinner, isLoser, interactive, onSe
         </span>
       )}
 
-      <div
-        className='text-[13px] sm:text-[14px] text-[#f1f3f8] font-medium leading-snug line-clamp-2 pr-5 min-h-[2.3em]'
-        title={data.label}
-      >
-        {data.label}
-      </div>
+      {data.carName ? (
+        // Carro em cima (destaque), piloto embaixo.
+        <div className='pr-5 min-h-[2.3em]' title={data.label}>
+          <div className='text-[13px] sm:text-[14px] text-[#f1f3f8] font-semibold leading-tight line-clamp-1'>
+            {data.carName}
+          </div>
+          {data.driverName && (
+            <div className='mt-0.5 text-[11.5px] sm:text-[12px] text-[#8b90a0] leading-tight line-clamp-1'>
+              {data.driverName}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div
+          className='text-[13px] sm:text-[14px] text-[#f1f3f8] font-medium leading-snug line-clamp-2 pr-5 min-h-[2.3em]'
+          title={data.label}
+        >
+          {data.label}
+        </div>
+      )}
 
       <div className='mt-3 flex items-baseline justify-between gap-2'>
         <span className={`font-mono text-[26px] sm:text-[28px] font-bold tabular-nums leading-none ${accent.text}`}>
