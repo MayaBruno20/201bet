@@ -91,6 +91,8 @@ export type MarketSnapshot = {
     left: {
       id: string;
       label: string;
+      carName?: string;
+      driverName?: string;
       odd: number;
       tickets: number;
       pool: number;
@@ -101,6 +103,8 @@ export type MarketSnapshot = {
     right: {
       id: string;
       label: string;
+      carName?: string;
+      driverName?: string;
       odd: number;
       tickets: number;
       pool: number;
