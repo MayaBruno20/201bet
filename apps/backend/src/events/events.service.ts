@@ -495,7 +495,7 @@ export class EventsService {
           ],
         },
         orderBy: { scheduledAt: 'asc' },
-        select: { ...categorySelect, eventId: true },
+        select: { ...categorySelect, eventId: true, bracketType: true },
       }),
     ]);
 
@@ -549,7 +549,7 @@ export class EventsService {
         },
         orderBy: { scheduledAt: 'asc' },
         take: 3,
-        select: { ...categorySelect, eventId: true },
+        select: { ...categorySelect, eventId: true, bracketType: true },
       }),
     ]);
 
@@ -597,15 +597,18 @@ export class EventsService {
     scheduledAt: Date;
     status: ArmageddonStatus;
     featured: boolean;
+    bracketType: ArmageddonBracketType;
   }): FeaturedEvent {
+    // Leva Tudo tem hub próprio (/leva-tudo) — roteia via prefixo dedicado no id.
+    const isLeva = e.bracketType === ArmageddonBracketType.LEVA_TUDO;
     return {
-      id: `armageddon:${e.id}`,
+      id: `${isLeva ? 'leva-tudo' : 'armageddon'}:${e.id}`,
       name: e.name,
       description: e.description,
       bannerUrl: e.bannerUrl,
       startAt: e.scheduledAt,
       status: this.mapArmageddonStatus(e.status),
-      sport: 'ARMAGEDDON',
+      sport: isLeva ? 'LEVA_TUDO' : 'ARMAGEDDON',
       featured: e.featured,
     };
   }

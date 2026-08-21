@@ -43,7 +43,11 @@ export function FeaturedEvents() {
 
   const active = events[activeIdx];
   // Armageddon → hub dedicado (apostas inline); demais → página de apostas.
-  const eventHref = active.id.startsWith('armageddon:') ? '/armageddon' : '/apostas';
+  const eventHref = active.id.startsWith('armageddon:')
+    ? '/armageddon'
+    : active.id.startsWith('leva-tudo:')
+      ? '/leva-tudo'
+      : '/apostas';
 
   return (
     <section className='mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 mt-4'>
