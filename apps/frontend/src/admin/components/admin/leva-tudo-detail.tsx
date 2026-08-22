@@ -68,6 +68,9 @@ type Matchup = {
   nextSlotSide: 'LEFT' | 'RIGHT' | null;
   isFinal: boolean;
   isThirdPlace: boolean;
+  // Bye avançável: um lado tem piloto e o vazio não espera classificado.
+  canAdvanceBye?: boolean;
+  byePresentSide?: 'LEFT' | 'RIGHT' | null;
 };
 
 type Detail = {
@@ -742,6 +745,13 @@ function MatchupRow({ m, fin, busy, onToggleMarket, onSettle, onReopen, onWalkov
             </div>
           )}
         </>
+      )}
+      {!settled && !ready && m.canAdvanceBye && m.byePresentSide && (
+        <button className="w-full text-[10px] font-bold py-1.5 border-t border-[color:var(--border)]" disabled={busy === m.id}
+          onClick={() => onWalkover(m, m.byePresentSide as 'LEFT' | 'RIGHT')}
+          style={{ background: 'var(--emerald-soft)', color: 'var(--emerald)' }}>
+          ▶ Passar de fase (sem adversário)
+        </button>
       )}
       {settled && (
         <button className="w-full text-[10px] font-bold py-1.5 border-t border-[color:var(--border)]" disabled={busy === m.id}

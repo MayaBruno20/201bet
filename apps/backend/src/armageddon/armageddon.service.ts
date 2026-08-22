@@ -856,6 +856,10 @@ export class ArmageddonService {
     return this.prisma.$transaction(async (tx) => {
       await tx.armageddonMatchup.deleteMany({ where: { eventId } });
       await this.persistBracket(tx, eventId, specs, driverAt);
+      // Pilotos que ficaram sem adversário na 1ª rodada (roster < 32) já sobem
+      // sozinhos — senão a chave trava em "Aguardando…" esperando um rival que
+      // nunca existiu.
+      await this.autoAdvanceByes(tx, eventId);
       if (event.status === ArmageddonStatus.DRAFT || event.status === ArmageddonStatus.ROSTER_OPEN) {
         await tx.armageddonEvent.update({ where: { id: eventId }, data: { status: ArmageddonStatus.IN_PROGRESS } });
       }
@@ -864,6 +868,63 @@ export class ArmageddonService {
       }, audit);
       return { stage: 'LEVA_TUDO', matchups: specs.length, rosterFilled: event.roster.length };
     }, { timeout: 30000, maxWait: 10000 });
+  }
+
+  /**
+   * Avança automaticamente os byes: embate com UM piloto só, cujo lado vazio não
+   * recebe classificado de ninguém (roster < tamanho da chave). O piloto sobe
+   * para a próxima bateria e o bye é marcado como decidido. Roda em loop porque
+   * um bye pode habilitar outro nível acima (raro, mas coberto). Sem mercado/
+   * aposta envolvidos (byes existem antes de abrir mercado).
+   */
+  private async autoAdvanceByes(tx: Prisma.TransactionClient, eventId: string) {
+    const ms = await tx.armageddonMatchup.findMany({
+      where: { eventId },
+      select: {
+        id: true, leftDriverId: true, rightDriverId: true, winnerSide: true,
+        nextMatchupId: true, nextSlotSide: true, loserToMatchupId: true, loserToSlotSide: true,
+      },
+    });
+    const byId = new Map(ms.map((m) => [m.id, m]));
+    const fed = new Set<string>();
+    for (const m of ms) {
+      if (m.nextMatchupId && m.nextSlotSide) fed.add(`${m.nextMatchupId}:${m.nextSlotSide}`);
+      if (m.loserToMatchupId && m.loserToSlotSide) fed.add(`${m.loserToMatchupId}:${m.loserToSlotSide}`);
+    }
+    let advanced = true;
+    let guard = 0;
+    while (advanced && guard++ < 20) {
+      advanced = false;
+      for (const m of ms) {
+        if (m.winnerSide) continue;
+        const hasLeft = !!m.leftDriverId;
+        const hasRight = !!m.rightDriverId;
+        if (hasLeft === hasRight) continue; // 0 ou 2 pilotos: não é bye
+        const emptySide = hasLeft ? MatchupSide.RIGHT : MatchupSide.LEFT;
+        if (fed.has(`${m.id}:${emptySide}`)) continue; // aguarda classificado → não é bye
+        const presentSide = hasLeft ? MatchupSide.LEFT : MatchupSide.RIGHT;
+        const driverId = hasLeft ? m.leftDriverId : m.rightDriverId;
+        if (m.nextMatchupId && m.nextSlotSide) {
+          const next = byId.get(m.nextMatchupId);
+          if (next) {
+            if (m.nextSlotSide === MatchupSide.LEFT) next.leftDriverId = driverId;
+            else next.rightDriverId = driverId;
+          }
+          await tx.armageddonMatchup.update({
+            where: { id: m.nextMatchupId },
+            data: m.nextSlotSide === MatchupSide.LEFT
+              ? { leftDriverId: driverId }
+              : { rightDriverId: driverId },
+          });
+        }
+        await tx.armageddonMatchup.update({
+          where: { id: m.id },
+          data: { winnerSide: presentSide, settledAt: new Date(), notes: 'Passou sem adversário (bye)' },
+        });
+        m.winnerSide = presentSide;
+        advanced = true;
+      }
+    }
   }
 
   /**
@@ -884,6 +945,26 @@ export class ArmageddonService {
     const presentDriver = presentSide === MatchupSide.LEFT ? m.leftDriverId : m.rightDriverId;
     if (!presentDriver) {
       throw new BadRequestException('O lado presente não tem piloto definido.');
+    }
+    // Se o oponente está VAZIO, só deixa avançar quando é um bye de verdade —
+    // ou seja, o lado vazio não recebe classificado de nenhum outro embate.
+    // Sem isso, o operador poderia adiantar um piloto cujo rival ainda vem.
+    const opponentDriver = presentSide === MatchupSide.LEFT ? m.rightDriverId : m.leftDriverId;
+    if (!opponentDriver) {
+      const emptySide = presentSide === MatchupSide.LEFT ? MatchupSide.RIGHT : MatchupSide.LEFT;
+      const feeder = await this.prisma.armageddonMatchup.findFirst({
+        where: {
+          eventId: m.eventId,
+          OR: [
+            { nextMatchupId: m.id, nextSlotSide: emptySide },
+            { loserToMatchupId: m.id, loserToSlotSide: emptySide },
+          ],
+        },
+        select: { id: true },
+      });
+      if (feeder) {
+        throw new BadRequestException('O lado vazio ainda aguarda o classificado de outro embate — não dá pra avançar por bye.');
+      }
     }
     // Fecha o mercado antes de auditar (evita aposta nova no meio do WO).
     if (m.marketOpen) {
@@ -2136,6 +2217,14 @@ export class ArmageddonService {
     }));
     const king = roster.find((r: any) => r.isKing) ?? null;
 
+    // Slots que RECEBEM um classificado de outro embate (vencedor→next, perdedor→3º).
+    // Um lado vazio que está neste conjunto está "aguardando classificado" — NÃO é bye.
+    const fedSlots = new Set<string>();
+    for (const mm of (event.matchups ?? [])) {
+      if (mm.nextMatchupId && mm.nextSlotSide) fedSlots.add(`${mm.nextMatchupId}:${mm.nextSlotSide}`);
+      if (mm.loserToMatchupId && mm.loserToSlotSide) fedSlots.add(`${mm.loserToMatchupId}:${mm.loserToSlotSide}`);
+    }
+
     return {
       id: event.id,
       name: event.name,
@@ -2177,6 +2266,16 @@ export class ArmageddonService {
         duelId: m.duelId,
         settledAt: m.settledAt,
         notes: m.notes,
+        // Bye avançável: exatamente um lado tem piloto, não está auditado e o
+        // lado vazio NÃO recebe classificado de ninguém (senão é "aguardando").
+        canAdvanceBye:
+          (!!m.leftDriverId !== !!m.rightDriverId) &&
+          !m.winnerSide &&
+          !fedSlots.has(`${m.id}:${m.leftDriverId ? 'RIGHT' : 'LEFT'}`),
+        byePresentSide:
+          (!!m.leftDriverId !== !!m.rightDriverId)
+            ? (m.leftDriverId ? 'LEFT' : 'RIGHT')
+            : null,
       })),
     };
   }
