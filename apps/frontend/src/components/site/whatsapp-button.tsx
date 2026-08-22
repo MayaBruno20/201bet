@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 
-const WHATSAPP_NUMBER = '5543998173846';
+const WHATSAPP_NUMBER = '551152950411';
 const DEFAULT_MESSAGE = 'Olá! Tenho uma dúvida sobre o Palpite201.';
 const STORAGE_KEY = '201bet_wa_minimized';
 
