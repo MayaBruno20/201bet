@@ -101,14 +101,16 @@ export class ListasBrasilSyncService implements OnModuleInit {
       // 1) Garante as BrazilList (por área). Guarda listaId → brazilListId.
       const listMap = new Map<string, string>();
       const skippedLists: string[] = [];
-      const seenLists = new Map<string, string>();
+      // Captura tb o campo `area` (DDD real) do 1º piloto de cada lista — é a
+      // fonte confiável da área, não o número do NOME (que pode não bater).
+      const seenLists = new Map<string, { name: string; area: string | null }>();
       for (const p of all) {
-        if (p.listaId && !seenLists.has(p.listaId)) seenLists.set(p.listaId, p.listaName);
+        if (p.listaId && !seenLists.has(p.listaId)) seenLists.set(p.listaId, { name: p.listaName, area: p.area });
       }
-      for (const [listaId, listaName] of seenLists) {
-        const brazilListId = await this.ensureList(listaId, listaName);
+      for (const [listaId, meta] of seenLists) {
+        const brazilListId = await this.ensureList(listaId, meta.name, meta.area);
         if (brazilListId) listMap.set(listaId, brazilListId);
-        else if (!skippedLists.includes(listaName)) skippedLists.push(listaName);
+        else if (!skippedLists.includes(meta.name)) skippedLists.push(meta.name);
       }
 
       // 2) Upsert de pilotos (Driver) + carro (Car) + fotos re-hospedadas.
@@ -136,20 +138,35 @@ export class ListasBrasilSyncService implements OnModuleInit {
     }
   }
 
-  private async ensureList(listaId: string, listaName: string): Promise<string | null> {
+  private async ensureList(listaId: string, listaName: string, apiArea?: string | null): Promise<string | null> {
     const byExternal = await this.prisma.brazilList.findUnique({ where: { listasBrasilId: listaId } });
     if (byExternal) return byExternal.id;
 
-    const area = parseAreaCode(listaName);
-    if (area == null) return null; // ex.: "Listas Paraguay" — sem código numérico
+    // Área = campo `area` da API (DDD real) quando presente — mesmo que dê null
+    // (ex.: "ARG"), NÃO caímos no nome, senão uma lista argentina "Área 11"
+    // roubaria o DDD 11 brasileiro. Só usa o nome quando a API não manda area.
+    const area =
+      apiArea != null && apiArea.trim() !== ''
+        ? parseAreaCode(apiArea)
+        : parseAreaCode(listaName);
+    if (area == null) return null; // "ARG"/"Paraguay"/sem código → fora das áreas numéricas
 
     const byArea = await this.prisma.brazilList.findUnique({ where: { areaCode: area } });
     if (byArea) {
-      await this.prisma.brazilList.update({
-        where: { id: byArea.id },
-        data: { listasBrasilId: listaId },
-      });
-      return byArea.id;
+      // Vincula só se a área ainda não tem dono externo. Se já pertence a OUTRA
+      // lista, é colisão — NÃO sobrescreve (era isso que trocava o roster da
+      // Área 11 pela lista errada).
+      if (byArea.listasBrasilId == null || byArea.listasBrasilId === listaId) {
+        await this.prisma.brazilList.update({
+          where: { id: byArea.id },
+          data: { listasBrasilId: listaId },
+        });
+        return byArea.id;
+      }
+      this.logger.warn(
+        `Colisão de área ${area}: lista ${listaId} ("${listaName}") ignorada — área já é da lista ${byArea.listasBrasilId}.`,
+      );
+      return null;
     }
     const created = await this.prisma.brazilList.create({
       data: { areaCode: area, listasBrasilId: listaId, name: `Lista ${listaName}`, format: ListFormat.TOP_20 },
