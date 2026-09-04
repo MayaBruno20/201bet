@@ -29,6 +29,7 @@ type RunnerState = {
 type MultiRunnerEngineState = {
   marketId: string;
   marketType: MarketType;
+  championRole: string | null;
   eventId: string;
   eventName: string;
   name: string;
@@ -46,6 +47,8 @@ type MultiRunnerEngineState = {
 export type MultiRunnerSnapshot = {
   marketId: string;
   marketType: string;
+  /** Papel no pódio: 'CHAMPION' | 'RUNNER_UP' | 'THIRD' | null. */
+  championRole: string | null;
   eventId: string;
   eventName: string;
   marketName: string;
@@ -326,6 +329,7 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
       const state: MultiRunnerEngineState = {
         marketId: market.id,
         marketType: market.type,
+        championRole: market.championRole ?? null,
         eventId: market.eventId,
         eventName: market.event.name,
         name: market.name,
@@ -401,6 +405,7 @@ export class MultiRunnerMarketService implements OnModuleInit, OnModuleDestroy {
     return {
       marketId: state.marketId,
       marketType: state.marketType,
+      championRole: state.championRole,
       eventId: state.eventId,
       eventName: state.eventName,
       marketName: state.name,

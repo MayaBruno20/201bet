@@ -41,6 +41,8 @@ export type MarketSnapshot = {
 export type MultiRunnerSnapshot = {
   marketId: string;
   marketType: 'WINNER' | 'QUALIFY' | 'BEST_REACTION' | 'FALSE_START';
+  /** Papel no pódio do Leva Tudo: 'CHAMPION' | 'RUNNER_UP' | 'THIRD' | null. */
+  championRole?: 'CHAMPION' | 'RUNNER_UP' | 'THIRD' | null;
   eventId: string;
   eventName: string;
   marketName: string;

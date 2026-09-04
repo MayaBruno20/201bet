@@ -567,9 +567,9 @@ export class AdminController {
 
   @Post('config/margin')
   updateMargin() {
-    // A margem da casa é FIXA por regulamento (HOUSE_MARGIN_PERCENT = 20%).
-    // Toda a math de odds/settlement depende disso ser estável; admins não podem alterar.
-    throw new BadRequestException('A margem da casa é fixa em 20% por regulamento e não pode ser alterada.');
+    // A margem da casa (HOUSE_MARGIN_PERCENT) é definida por ambiente/config, não pela API —
+    // a math de odds/settlement depende de estabilidade. Ajuste via env, entre eventos.
+    throw new BadRequestException('A margem da casa é definida na configuração do ambiente (env HOUSE_MARGIN_PERCENT), não por aqui.');
   }
 
   @Post('config/min-bet')

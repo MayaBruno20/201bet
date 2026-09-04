@@ -373,8 +373,10 @@ function CreateMultiMarketModal({ armageddonEventId, roster, eventName, endpoint
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [filter, setFilter] = React.useState('');
   const [busy, setBusy] = React.useState(false);
-  // Fecha automaticamente quando a semifinal abrir (ex.: 2º/3º do Leva Tudo).
-  const [autoCloseAtSemifinal, setAutoCloseAtSemifinal] = React.useState(false);
+  // Papel no pódio (Leva Tudo): habilita auto-fechamento + auto-liquidação.
+  // '' = mercado comum (fecha/paga manual). 2º/3º fecham na semifinal; Campeão
+  // fecha na Grande Final. Deriva o autoCloseAtSemifinal no envio.
+  const [championRole, setChampionRole] = React.useState<'' | 'CHAMPION' | 'RUNNER_UP' | 'THIRD'>('');
   const { push } = useToast();
 
   const onTypeChange = (t: MultiMarket['type']) => {
@@ -397,7 +399,9 @@ function CreateMultiMarketModal({ armageddonEventId, roster, eventName, endpoint
         name: name.trim(),
         type,
         ...(mode === 'pick' ? { driverIds: [...picked] } : {}),
-        ...(autoCloseAtSemifinal ? { autoCloseAtSemifinal: true } : {}),
+        ...(championRole ? { championRole } : {}),
+        // 2º/3º fecham na semifinal; Campeão fecha na Grande Final (backend).
+        ...(championRole === 'RUNNER_UP' || championRole === 'THIRD' ? { autoCloseAtSemifinal: true } : {}),
       });
       push({ title: 'Multi-mercado criado', body: `${name.trim()} aberto para apostas.`, tone: 'emerald' });
       onSaved();
@@ -432,13 +436,20 @@ function CreateMultiMarketModal({ armageddonEventId, roster, eventName, endpoint
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Ex.: Campeão — Armageddon 2026"/>
 
         {type === 'WINNER' && (
-          <label className="mt-3 flex items-start gap-2 cursor-pointer select-none">
-            <input type="checkbox" className="mt-0.5" checked={autoCloseAtSemifinal} onChange={(e) => setAutoCloseAtSemifinal(e.target.checked)}/>
-            <span className="text-[12px]">
-              <span className="font-semibold">Fechar automaticamente na semifinal</span>
-              <span className="block text-[11px] text-[color:var(--text-3)] mt-0.5">Marque nos mercados de <strong>2º/3º lugar</strong> (Leva Tudo): as apostas encerram quando a semifinal abrir. Deixe <strong>desmarcado</strong> no Campeão.</span>
-            </span>
-          </label>
+          <div className="mt-3">
+            <div className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] mb-1.5">
+              Papel no pódio (Leva Tudo)
+            </div>
+            <select className="input" value={championRole} onChange={(e) => setChampionRole(e.target.value as typeof championRole)}>
+              <option value="">Nenhum — mercado comum (fecha e paga manual)</option>
+              <option value="CHAMPION">Campeão (1º) — fecha na Grande Final, paga o vencedor</option>
+              <option value="RUNNER_UP">2º lugar — fecha na semifinal, paga o vice</option>
+              <option value="THIRD">3º lugar — fecha na semifinal, paga o 3º</option>
+            </select>
+            <p className="text-[11px] text-[color:var(--text-3)] mt-1">
+              Com um papel definido, o mercado <strong>fecha e paga sozinho</strong> no momento certo, e os pilotos eliminados somem da tabela conforme perdem. &quot;Nenhum&quot; = você controla fechamento e pagamento manualmente.
+            </p>
+          </div>
         )}
 
         <div className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[color:var(--text-3)] mt-4 mb-2">

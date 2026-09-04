@@ -46,4 +46,13 @@ export class CreateArmageddonMultiMarketDto {
   @IsOptional()
   @IsBoolean()
   autoCloseAtSemifinal?: boolean;
+
+  /**
+   * Papel no pódio do Leva Tudo. Habilita o auto-fechamento e a auto-liquidação:
+   * CHAMPION paga o vencedor da Grande Final; RUNNER_UP paga o vice (perdedor da
+   * final); THIRD paga o vencedor do embate de 3º lugar. Ausente = sem automação.
+   */
+  @IsOptional()
+  @IsIn(['CHAMPION', 'RUNNER_UP', 'THIRD'])
+  championRole?: 'CHAMPION' | 'RUNNER_UP' | 'THIRD';
 }

@@ -2313,7 +2313,7 @@ export class AdminService {
         if (bi.bet.status === BetStatus.WON) totalPayout += Number(bi.bet.potentialWin);
       }
 
-      // Margem fixa de 20% (HOUSE_MARGIN_PERCENT) — a coluna market.rakePercent é ignorada.
+      // Margem = HOUSE_MARGIN_PERCENT (default 25%, via env) — market.rakePercent é ignorada.
       const rakePercent = HOUSE_MARGIN_PERCENT;
       const rakeCollected = totalPool * (rakePercent / 100);
       // Lucro = margem REALIZADA (pote − prêmios pagos), sempre >= 0. Afiliados ficam

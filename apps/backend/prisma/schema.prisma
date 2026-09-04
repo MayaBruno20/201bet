@@ -476,6 +476,10 @@ model Market {
   /// Multi-mercado que deve FECHAR automaticamente quando a semifinal abrir
   /// (ex.: mercados de 2º/3º lugar do Leva Tudo).
   autoCloseAtSemifinal Boolean @default(false)
+  /// Papel do mercado no pódio do Leva Tudo: 'CHAMPION' | 'RUNNER_UP' | 'THIRD'.
+  /// Usado pelo auto-fechamento e pela auto-liquidação (paga cada pódio com o
+  /// resultado certo). Null = mercado comum, sem automação de pódio.
+  championRole String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 

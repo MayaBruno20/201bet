@@ -857,7 +857,7 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
   private recalculateOdds(state: EngineState) {
     // Pari-mutuel puro (referência 201Bet):
     //   pool  = leftPool + rightPool
-    //   net   = pool * (1 - rake)         rake fixo 20% (regulamento da casa)
+    //   net   = pool * (1 - rake)         rake = HOUSE_MARGIN_PERCENT (default 25%)
     //   odd_X = net / pool_X              piso 1.01, sem teto
     // Quando um lado ainda não tem aposta, exibimos a cotação inicial seed (1.00) —
     // o cliente sabe que é só projeção e que vai se formar conforme o pote.
@@ -1151,16 +1151,25 @@ export class MarketService implements OnModuleInit, OnModuleDestroy {
 }
 
 /**
- * Constantes seladas do mecanismo de odds da 201bet. Não dependem de env nem
- * de configuração por mercado — uma mudança aqui é mudança de regulamento.
+ * Constantes do mecanismo de odds da 201bet.
  *
- *  HOUSE_MARGIN_PERCENT = 20  → comissão da casa fixa
- *  SEED_ODD             = 1.0 → cotação exibida quando o pool de um lado é 0
+ *  HOUSE_MARGIN_PERCENT → comissão da casa (rake). Default 25%. Pode ser
+ *    ajustada pela env HOUSE_MARGIN_PERCENT (0–100) SEM novo deploy — vale
+ *    após reiniciar o backend. Ajuste APENAS entre eventos (sem mercado
+ *    aberto): a liquidação usa o valor VIGENTE no fechamento, então mudar
+ *    com bilhetes abertos altera retroativamente o retorno de quem já apostou.
+ *  SEED_ODD = 1.0 → cotação exibida quando o pool de um lado é 0
  *
  * A invariante de proteção da casa é garantida pelo piso 1.0 no settlement:
  * mesmo em "mega esmagamento" (ex.: 50 num lado, 1000 no outro), o pagamento
- * total não excede o pool total — a casa pode coletar menos que 20%, mas
- * nunca paga do próprio bolso.
+ * total não excede o pool total — a casa pode coletar menos que a margem
+ * nominal, mas nunca paga do próprio bolso.
  */
-export const HOUSE_MARGIN_PERCENT = 20;
+function resolveHouseMargin(): number {
+  const raw = process.env.HOUSE_MARGIN_PERCENT?.trim();
+  if (!raw) return 25;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 25;
+}
+export const HOUSE_MARGIN_PERCENT = resolveHouseMargin();
 export const SEED_ODD = 1.0;

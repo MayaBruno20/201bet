@@ -1558,6 +1558,7 @@ export class ArmageddonService {
           status: MarketStatus.OPEN,
           bookingCloseAt,
           autoCloseAtSemifinal: dto.autoCloseAtSemifinal ?? false,
+          championRole: dto.championRole ?? null,
           odds: {
             create: rosterEntries.map((r) => ({
               label: r.driver.name,
@@ -1810,6 +1811,26 @@ export class ArmageddonService {
           .catch(() => undefined);
       }
     }
+
+    // Leva Tudo: ao ABRIR a Grande Final, fecha o mercado de Campeão — o campeão
+    // será decidido nessa bateria, então não recebe mais aposta.
+    if (
+      open &&
+      matchup.event.bracketType === ArmageddonBracketType.LEVA_TUDO &&
+      matchup.isFinal &&
+      matchup.event.eventId
+    ) {
+      await this.prisma.market
+        .updateMany({
+          where: {
+            eventId: matchup.event.eventId,
+            championRole: 'CHAMPION',
+            status: MarketStatus.OPEN,
+          },
+          data: { status: MarketStatus.SUSPENDED },
+        })
+        .catch(() => undefined);
+    }
     return result;
   }
 
@@ -1997,6 +2018,22 @@ export class ArmageddonService {
         this.logger.warn(`Falha ao abrir proximo confronto Armageddon: ${e instanceof Error ? e.message : e}`);
       }
 
+      // Pódio (Leva Tudo): tira o eliminado dos mercados de Campeão/2º/3º e
+      // auto-liquida quando o resultado é conhecido (final → Campeão+2º; embate
+      // de 3º → 3º). Não-bloqueante — nunca derruba a auditoria do embate.
+      if (matchup.event.bracketType === ArmageddonBracketType.LEVA_TUDO) {
+        const podiumWinnerDriverId = dto.winnerSide === 'LEFT' ? matchup.leftDriverId : matchup.rightDriverId;
+        const podiumLoserDriverId = dto.winnerSide === 'LEFT' ? matchup.rightDriverId : matchup.leftDriverId;
+        await this.syncPodiumMarketsAfterSettle({
+          eventBettingId: matchup.event.eventId,
+          winnerDriverId: podiumWinnerDriverId,
+          loserDriverId: podiumLoserDriverId,
+          isFinal: matchup.isFinal,
+          isThirdPlace: matchup.isThirdPlace,
+          audit,
+        }).catch((e) => this.logger.error(`syncPodiumMarketsAfterSettle falhou: ${e instanceof Error ? e.message : e}`));
+      }
+
       if (payoutError) {
         throw new BadRequestException(
           `Vencedor auditado mas LIQUIDACAO DAS APOSTAS FALHOU: ${payoutError}. Reconcilie manualmente em /admin/audit-logs.`,
@@ -2005,6 +2042,82 @@ export class ArmageddonService {
 
       return result;
     });
+  }
+
+  /**
+   * Pós-auditoria de embate (Leva Tudo): (1) tira o piloto ELIMINADO (perdedor)
+   * dos mercados de pódio ainda em jogo — a odd dele vira CLOSED e ele some da
+   * tabela no próximo refresh do snapshot (~30s); (2) auto-liquida os pódios
+   * quando o resultado é conhecido: Grande Final → Campeão (vencedor) + 2º
+   * (perdedor da final); embate de 3º lugar → 3º (vencedor). Não-bloqueante.
+   */
+  private async syncPodiumMarketsAfterSettle(params: {
+    eventBettingId: string | null;
+    winnerDriverId: string | null;
+    loserDriverId: string | null;
+    isFinal: boolean;
+    isThirdPlace: boolean;
+    audit: AuditContext;
+  }) {
+    const { eventBettingId, winnerDriverId, loserDriverId, isFinal, isThirdPlace, audit } = params;
+    if (!eventBettingId) return;
+
+    // 1) Remove o eliminado dos mercados WINNER ainda em jogo (OPEN/SUSPENDED).
+    if (loserDriverId) {
+      const winnerMarkets = await this.prisma.market.findMany({
+        where: {
+          eventId: eventBettingId,
+          type: MarketType.WINNER,
+          status: { in: [MarketStatus.OPEN, MarketStatus.SUSPENDED] },
+        },
+        select: { id: true },
+      });
+      const ids = winnerMarkets.map((m) => m.id);
+      if (ids.length) {
+        await this.prisma.odd
+          .updateMany({
+            where: { marketId: { in: ids }, driverId: loserDriverId, status: OddStatus.ACTIVE },
+            data: { status: OddStatus.CLOSED },
+          })
+          .catch((e) => this.logger.error(`Falha ao remover eliminado dos pódios: ${e instanceof Error ? e.message : e}`));
+      }
+    }
+
+    // 2) Auto-liquidação dos pódios (cada um paga quem apostou no driver certo).
+    if (isFinal) {
+      await this.autoSettlePodium(eventBettingId, 'CHAMPION', winnerDriverId, audit);
+      await this.autoSettlePodium(eventBettingId, 'RUNNER_UP', loserDriverId, audit);
+    }
+    if (isThirdPlace) {
+      await this.autoSettlePodium(eventBettingId, 'THIRD', winnerDriverId, audit);
+    }
+  }
+
+  private async autoSettlePodium(
+    eventBettingId: string,
+    role: 'CHAMPION' | 'RUNNER_UP' | 'THIRD',
+    winnerDriverId: string | null,
+    audit: AuditContext,
+  ) {
+    if (!winnerDriverId) return;
+    const markets = await this.prisma.market.findMany({
+      where: {
+        eventId: eventBettingId,
+        championRole: role,
+        type: MarketType.WINNER,
+        status: { not: MarketStatus.SETTLED },
+      },
+      include: { odds: true },
+    });
+    for (const m of markets) {
+      const winnerOdd = m.odds.find((o) => o.driverId === winnerDriverId);
+      if (!winnerOdd) continue; // a opção do vencedor não existe nesse mercado
+      try {
+        await this.settlementService.settleMultiWinnerMarket(m.id, [winnerOdd.id], audit);
+      } catch (e) {
+        this.logger.error(`Auto-liquidação do pódio ${role} (market ${m.id}) falhou: ${e instanceof Error ? e.message : e}`);
+      }
+    }
   }
 
   /**
@@ -2034,7 +2147,7 @@ export class ArmageddonService {
   }> {
     const m = await this.prisma.armageddonMatchup.findUnique({
       where: { id: matchupId },
-      include: { event: { select: { id: true, bracketType: true } } },
+      include: { event: { select: { id: true, bracketType: true, eventId: true } } },
     });
     if (!m) throw new NotFoundException('Confronto não encontrado');
     if (!m.settledAt && !m.winnerSide) {
@@ -2140,6 +2253,46 @@ export class ArmageddonService {
         where: { id: m.eventId, status: ArmageddonStatus.FINISHED },
         data: { status: ArmageddonStatus.IN_PROGRESS },
       });
+    }
+
+    // 5) Pódio (Leva Tudo): desfaz o que a auditoria fez nos mercados de pódio.
+    if (m.event.bracketType === ArmageddonBracketType.LEVA_TUDO && m.event.eventId) {
+      // 5a) O eliminado volta à(s) tabela(s): odd CLOSED → ACTIVE (só nos mercados
+      //     ainda em jogo). Reabrir a bateria devolve o perdedor à disputa.
+      if (loserDriverId) {
+        const winnerMarkets = await this.prisma.market.findMany({
+          where: { eventId: m.event.eventId, type: MarketType.WINNER, status: { in: [MarketStatus.OPEN, MarketStatus.SUSPENDED] } },
+          select: { id: true },
+        });
+        const ids = winnerMarkets.map((x) => x.id);
+        if (ids.length) {
+          await this.prisma.odd
+            .updateMany({
+              where: { marketId: { in: ids }, driverId: loserDriverId, status: OddStatus.CLOSED },
+              data: { status: OddStatus.ACTIVE },
+            })
+            .catch(() => undefined);
+        }
+      }
+      // 5b) Se era a final / o 3º lugar, ESTORNA os pódios auto-liquidados
+      //     (refundSettledMarket: devolve stakes, estorna pagamentos, reabre).
+      const roles: string[] = [];
+      if (m.isFinal) roles.push('CHAMPION', 'RUNNER_UP');
+      if (m.isThirdPlace) roles.push('THIRD');
+      if (roles.length) {
+        const podium = await this.prisma.market.findMany({
+          where: { eventId: m.event.eventId, championRole: { in: roles }, status: MarketStatus.SETTLED },
+          select: { id: true },
+        });
+        for (const pm of podium) {
+          try {
+            await this.settlementService.refundSettledMarket(pm.id, audit);
+            refundedMarketIds.push(pm.id);
+          } catch (e) {
+            this.logger.error(`Estorno do pódio ao reabrir (market ${pm.id}) falhou: ${e instanceof Error ? e.message : e}`);
+          }
+        }
+      }
     }
 
     await this.prisma.auditLog.create({

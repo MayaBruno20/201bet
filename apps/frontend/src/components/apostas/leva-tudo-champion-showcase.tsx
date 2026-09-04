@@ -41,6 +41,14 @@ const RANK_STYLE = [
   'bg-[linear-gradient(160deg,#e0a36a,#8a5a2b)] text-[#1d1208]',
 ];
 
+/* Pódio: ordem, rótulo e rótulo curto (aba) por papel do mercado. */
+const PODIUM_ORDER: Record<string, number> = { CHAMPION: 0, RUNNER_UP: 1, THIRD: 2 };
+const PODIUM_LABEL: Record<string, string> = { CHAMPION: '🥇 Campeão', RUNNER_UP: '🥈 2º Lugar', THIRD: '🥉 3º Lugar' };
+/** Rótulo do lugar de um mercado (papel > nome). */
+function podiumLabel(m: MultiRunnerSnapshot): string {
+  return (m.championRole && PODIUM_LABEL[m.championRole]) || m.marketName;
+}
+
 export function LevaTudoChampionShowcase({ eventId }: { eventId: string }) {
   const [markets, setMarkets] = React.useState<Record<string, MultiRunnerSnapshot>>({});
   const [me, setMe] = React.useState<Me | null>(null);
@@ -111,11 +119,28 @@ export function LevaTudoChampionShowcase({ eventId }: { eventId: string }) {
     return () => { socket.disconnect(); };
   }, [eventId, refetch, refetchMyBets]);
 
-  // Todos os mercados de vencedor (Campeão / 2º Lugar / 3º Lugar) deste evento.
+  // Mercados de vencedor (Campeão / 2º / 3º), ordenados pelo pódio (Campeão
+  // primeiro), depois por pote. Cada um vira uma aba na vitrine.
   const winners = React.useMemo(
-    () => Object.values(markets).filter((m) => m.marketType === 'WINNER').sort((a, b) => b.totalPool - a.totalPool),
+    () =>
+      Object.values(markets)
+        .filter((m) => m.marketType === 'WINNER')
+        .sort((a, b) => {
+          const oa = a.championRole ? PODIUM_ORDER[a.championRole] ?? 9 : 9;
+          const ob = b.championRole ? PODIUM_ORDER[b.championRole] ?? 9 : 9;
+          return oa !== ob ? oa - ob : b.totalPool - a.totalPool;
+        }),
     [markets],
   );
+
+  // Aba (lugar) selecionada. Mantém válida conforme os mercados mudam.
+  const [activeMarketId, setActiveMarketId] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (winners.length === 0) { if (activeMarketId !== null) setActiveMarketId(null); return; }
+    if (!activeMarketId || !winners.some((m) => m.marketId === activeMarketId)) {
+      setActiveMarketId(winners[0].marketId);
+    }
+  }, [winners, activeMarketId]);
 
   const balance = me?.wallet ? Number(me.wallet.balance) : null;
 
@@ -128,6 +153,7 @@ export function LevaTudoChampionShowcase({ eventId }: { eventId: string }) {
 
   if (!loaded || winners.length === 0) return null;
 
+  const activeMarket = winners.find((m) => m.marketId === activeMarketId) ?? winners[0] ?? null;
   const selectedRunner = bet ? bet.market.runners.find((r) => r.oddId === bet.oddId) ?? null : null;
   const liveBetMarket = bet ? markets[bet.market.marketId] ?? bet.market : null;
 
@@ -153,20 +179,60 @@ export function LevaTudoChampionShowcase({ eventId }: { eventId: string }) {
           <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[#4cc4ff]/30 bg-[#4cc4ff]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-[#9fe0ff]">
             <TrophyIcon size={13} /> Mercados do campeonato
           </div>
-          <h2 className="arma-foil-blue font-display text-3xl font-extrabold tracking-tight sm:text-5xl">Aposte no Campeão</h2>
+          <h2 className="arma-foil-blue font-display text-3xl font-extrabold tracking-tight sm:text-5xl">Aposte no Pódio</h2>
           <p className="max-w-xl text-[13px] leading-relaxed text-white/45">
-            Escolha quem leva o título do Leva Tudo — e também o 2º e o 3º lugar. O prêmio é o pote total dividido
-            entre quem acertar, proporcional ao valor apostado — quem acerta nunca recebe menos que o valor apostado.
+            Escolha o lugar — <strong className="text-white/70">Campeão, 2º ou 3º</strong> — e o piloto. Cada lugar tem seu
+            próprio pote, dividido entre quem acertar, proporcional ao valor apostado. Quem acerta nunca recebe menos que
+            o valor apostado, e pilotos eliminados saem da lista automaticamente.
           </p>
         </div>
       </div>
 
-      {/* Mercados de vencedor (Campeão / 2º / 3º) */}
-      <div className="mt-4 space-y-4">
-        {winners.map((m) => (
-          <MarketBoard key={m.marketId} market={markets[m.marketId] ?? m} accent="#4cc4ff"
-            subtitle="Pote dividido entre quem acertar" onPick={(oddId) => setBet({ market: m, oddId })} pickedOddIds={pickedOddIds} />
-        ))}
+      {/* Seletor de lugar (Campeão / 2º / 3º) + board do lugar selecionado.
+          O apostador escolhe aqui EM QUE LUGAR quer apostar; a lista abaixo já
+          exclui os pilotos eliminados. */}
+      <div className="mt-4">
+        {winners.length > 1 && (
+          <div className="mb-3 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Escolha o lugar da aposta">
+            {winners.map((m) => {
+              const activeTab = m.marketId === activeMarket?.marketId;
+              const isOpen = m.status === 'OPEN';
+              return (
+                <button
+                  key={m.marketId}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab}
+                  onClick={() => setActiveMarketId(m.marketId)}
+                  className="shrink-0 rounded-xl px-4 py-2 text-[13px] font-bold transition"
+                  style={{
+                    border: '1px solid ' + (activeTab ? '#4cc4ff' : 'rgba(255,255,255,0.12)'),
+                    background: activeTab ? 'rgba(76,196,255,0.14)' : 'rgba(255,255,255,0.03)',
+                    color: activeTab ? '#9fe0ff' : 'rgba(255,255,255,0.62)',
+                  }}
+                >
+                  {podiumLabel(m)}
+                  <span
+                    className="ml-2 text-[10px] font-semibold uppercase tracking-wider"
+                    style={{ color: isOpen ? '#3ee08a' : '#e0a34c' }}
+                  >
+                    {isOpen ? '● aberto' : '⏸ encerrado'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {activeMarket && (
+          <MarketBoard
+            key={activeMarket.marketId}
+            market={markets[activeMarket.marketId] ?? activeMarket}
+            accent="#4cc4ff"
+            subtitle="Pote dividido entre quem acertar"
+            onPick={(oddId) => setBet({ market: activeMarket, oddId })}
+            pickedOddIds={pickedOddIds}
+          />
+        )}
       </div>
 
       {bet && selectedRunner && liveBetMarket && (
@@ -382,8 +448,8 @@ function ChampionBetModal({ market, runner, minBet, balance, isLoggedIn, onClose
             className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/40 text-white/80 backdrop-blur transition hover:bg-black/60 hover:text-white">
             <X className="h-4 w-4" />
           </button>
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-[#4cc4ff]/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#9fe0ff]">
-            <CrownIcon size={11} /> {market.marketName}
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-[#4cc4ff]/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#9fe0ff]">
+            <CrownIcon size={11} /> Aposta para: {podiumLabel(market)}
           </div>
           <h2 className="mt-2 font-display text-2xl font-bold leading-tight text-white">{runner.label}</h2>
           <div className="mt-1 flex flex-wrap gap-2 font-mono text-[11px] text-white/45">
