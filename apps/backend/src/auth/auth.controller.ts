@@ -19,7 +19,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async login(@Body() payload: LoginDto, @Res({ passthrough: true }) res: Response) {
     const { accessToken, user } = await this.authService.login(payload);
     attachAccessTokenCookie(res, accessToken);
@@ -27,7 +27,7 @@ export class AuthController {
   }
 
   @Post('register')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 40, ttl: 60_000 } })
   async register(@Body() payload: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const { accessToken, user } = await this.authService.register(payload);
     attachAccessTokenCookie(res, accessToken);
@@ -35,7 +35,7 @@ export class AuthController {
   }
 
   @Post('google')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async google(@Body() payload: GoogleLoginDto, @Res({ passthrough: true }) res: Response) {
     const { accessToken, user } = await this.authService.googleLogin(payload);
     attachAccessTokenCookie(res, accessToken);

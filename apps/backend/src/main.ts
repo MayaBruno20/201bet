@@ -126,6 +126,11 @@ async function bootstrap() {
   await probeRedisConnection();
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Atrás do proxy reverso do Coolify: confia no X-Forwarded-For pra que req.ip
+  // seja o IP REAL do cliente. Sem isto, TODOS os usuários caem no IP do proxy
+  // e compartilham o mesmo balde do rate limiter → "Too Many Requests" em massa.
+  // Ajustável por env (TRUST_PROXY): use 2 se houver Cloudflare na frente.
+  app.set('trust proxy', Number(process.env.TRUST_PROXY ?? 1));
   const prismaService = app.get(PrismaService);
   const corsOrigins = assertCorsForRuntime();
 

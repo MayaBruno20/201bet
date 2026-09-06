@@ -43,8 +43,11 @@ import { SettlementService } from './settlement.service';
     AdminModule,
     PaymentsModule,
     SiteDisclaimersModule,
+    // Limite global por IP/min. Default alto (1200) pra aguentar o pico de um
+    // evento ao vivo e crowds atrás de uma mesma WiFi (NAT). Ajustável por env
+    // THROTTLE_LIMIT sem novo deploy (só reiniciar o backend).
     ThrottlerModule.forRoot({
-      throttlers: [{ ttl: 60_000, limit: 120 }],
+      throttlers: [{ ttl: 60_000, limit: Number(process.env.THROTTLE_LIMIT ?? 1200) }],
     }),
   ],
   controllers: [AppController],
